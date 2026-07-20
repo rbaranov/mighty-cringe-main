@@ -9,7 +9,7 @@
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "tsc --noEmit -p tsconfig.json",
-    "test": "node --test dist/**/*.test.js"
+    "test": "node --test dist/app.test.js"
   },
   "dependencies": {
     "@fastify/cors": "^11.0.0",
