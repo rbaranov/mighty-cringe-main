@@ -1,0 +1,6 @@
+node_modules
+dist
+.pnpm-store
+docs/product/MightyCringe_Mockups_v0.2.8.html
+docs/product/MightyCringe_Overview_v0.2.8.md
+pnpm-lock.yaml
