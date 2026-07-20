@@ -8,7 +8,7 @@
     "build": "pnpm --filter @mighty-cringe/contracts build && pnpm --filter @mighty-cringe/db build && pnpm --filter @mighty-cringe/api build && pnpm --filter @mighty-cringe/worker build && pnpm --filter @mighty-cringe/web build",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",
-    "test": "pnpm -r test",
+    "test": "pnpm build && pnpm --filter @mighty-cringe/api test",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
