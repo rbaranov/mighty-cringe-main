@@ -1,0 +1,30 @@
+name: Deploy production
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    environment: production
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy the approved main revision
+        env:
+          HOST: ${{ secrets.PRODUCTION_SSH_HOST }}
+          USER: ${{ secrets.PRODUCTION_SSH_USER }}
+          SSH_KEY: ${{ secrets.PRODUCTION_SSH_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh -o StrictHostKeyChecking=accept-new "$USER@$HOST" '
+            set -eu
+            cd /srv/mighty-cringe
+            git fetch origin main
+            git reset --hard origin/main
+            cd infra/production
+            docker compose up -d --build
+          '

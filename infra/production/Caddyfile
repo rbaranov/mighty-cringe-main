@@ -1,0 +1,16 @@
+{$DOMAIN} {
+  encode zstd gzip
+  log {
+    output stdout
+    format json
+  }
+
+  @api path /api/* /health
+  reverse_proxy @api api:3000
+  reverse_proxy web:80
+}
+
+www.{$DOMAIN} {
+  redir https://{$DOMAIN}{uri} permanent
+}
+

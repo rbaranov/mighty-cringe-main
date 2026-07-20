@@ -1,0 +1,20 @@
+{
+  "name": "mighty-cringe",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.0.9",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @mighty-cringe/api --filter @mighty-cringe/web --filter @mighty-cringe/worker dev",
+    "build": "pnpm --filter @mighty-cringe/contracts build && pnpm --filter @mighty-cringe/db build && pnpm --filter @mighty-cringe/api build && pnpm --filter @mighty-cringe/worker build && pnpm --filter @mighty-cringe/web build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "prettier": "^3.6.0",
+    "typescript": "^5.8.0"
+  }
+}
