@@ -18,7 +18,12 @@ import { sql } from 'drizzle-orm';
 export const roleEnum = pgEnum('role', ['athlete', 'admin', 'trainer', 'superadmin']);
 export const exerciseScopeEnum = pgEnum('exercise_scope', ['global', 'user']);
 export const exerciseTagEnum = pgEnum('exercise_tag', ['mighty', 'normal', 'cringe']);
-export const voiceStatusEnum = pgEnum('voice_status', ['pending', 'confirmed', 'failed']);
+export const voiceStatusEnum = pgEnum('voice_status', [
+  'pending',
+  'processing',
+  'confirmed',
+  'failed',
+]);
 
 const timestamps = {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -177,12 +182,23 @@ export const voiceEntries = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     objectKey: varchar('object_key', { length: 1024 }).notNull(),
+    mimeType: varchar('mime_type', { length: 255 }).notNull(),
+    audioFormat: varchar('audio_format', { length: 16 }).notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    consentVersion: varchar('consent_version', { length: 32 }).notNull(),
     transcript: text('transcript'),
     parsedResult: jsonb('parsed_result'),
     status: voiceStatusEnum('status').notNull().default('pending'),
+    attempts: integer('attempts').notNull().default(0),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }),
+    lastError: text('last_error'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index('voice_user_created_idx').on(table.userId, table.createdAt)],
+  (table) => [
+    index('voice_user_created_idx').on(table.userId, table.createdAt),
+    index('voice_pending_retry_idx').on(table.status, table.nextAttemptAt),
+  ],
 );
 
 export const measurementEntries = pgTable(

@@ -79,7 +79,7 @@ jobs:
           if ! docker compose --env-file "$PRODUCTION_ENV_FILE" up -d --build --remove-orphans; then
             echo "::error title=Production deployment failed::Compose could not deploy $DEPLOY_REVISION"
             docker compose --env-file "$PRODUCTION_ENV_FILE" ps || true
-            docker compose --env-file "$PRODUCTION_ENV_FILE" logs --no-color --tail=200 migrate api web caddy || true
+            docker compose --env-file "$PRODUCTION_ENV_FILE" logs --no-color --tail=200 migrate api worker web caddy || true
             exit 1
           fi
 
@@ -110,5 +110,5 @@ jobs:
 
           echo "::error title=Production health check failed::$DEPLOY_REVISION did not become healthy after 12 attempts"
           docker compose --env-file "$PRODUCTION_ENV_FILE" ps || true
-          docker compose --env-file "$PRODUCTION_ENV_FILE" logs --no-color --tail=200 api web caddy || true
+          docker compose --env-file "$PRODUCTION_ENV_FILE" logs --no-color --tail=200 api worker web caddy || true
           exit 1

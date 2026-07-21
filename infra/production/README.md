@@ -4,9 +4,8 @@
 
 Create a Hetzner Cloud **CPX12** (x86 regular performance) in Helsinki with Ubuntu 24.04 LTS.
 It is intentionally independent from `emirtest.kz`. Pair it with a private Hetzner Object Storage
-bucket in Helsinki. The current plan is intentionally lean for the initial PWA, API, and
-PostgreSQL. The optional worker is disabled by default; the server can later be resized without
-changing the application architecture.
+bucket in Helsinki. The current plan is intentionally lean for the initial PWA, API, worker, and
+PostgreSQL; the server can later be resized without changing the application architecture.
 
 For the full setup procedure, see
 [Hetzner first deployment](../../docs/deployment/hetzner-first-deploy.md).
@@ -22,8 +21,9 @@ For the full setup procedure, see
 5. Register a self-hosted GitHub Actions runner under that user. It checks out private code using
    GitHub's short-lived workflow token, so no GitHub deploy key or personal access token is stored
    on the server.
-6. Create `/etc/mighty-cringe/production.env` with a unique database password and the Google OAuth
-   Web client credentials; never commit it. Authorize the exact redirect URI
+6. Create `/etc/mighty-cringe/production.env` with a unique database password, Google OAuth Web
+   client credentials, and the voice secrets listed in `.env.example`; never commit it. Authorize
+   the exact redirect URI
    `https://mightycringe.com/api/v1/auth/google/callback` in Google Cloud Console.
 
 ## Deployment
@@ -40,16 +40,16 @@ deployment of its current revision. A failed Compose operation or health check k
 run red and includes service status and bounded logs for diagnosis.
 
 Caddy obtains and renews TLS certificates after the domain records resolve to the server. The
-`migrate` applies the committed Drizzle migrations before the API starts. PostgreSQL is private:
-it has no published host port. To start the optional worker later, use
-`docker compose --profile worker up -d`.
+`migrate` applies the committed Drizzle migrations before the API and worker start. PostgreSQL is
+private and has no published host port. The worker also publishes no port, but has outbound access
+to encrypted Object Storage and OpenRouter.
 
 ## Backup policy before admitting real data
 
 1. Archive PostgreSQL WAL continuously to the private object bucket.
 2. Run an encrypted base backup every 24 hours and test a restore every month.
-3. Store raw audio in the object bucket as soon as it reaches the server; only temporary local
-   files may live on the VPS.
+3. Store raw audio in a dedicated private voice bucket, encrypted with the configured SSE-C key as
+   soon as it reaches the server; only temporary local files may live on the VPS.
 4. Enable server snapshots as an additional recovery mechanism, not as the sole backup.
 
 The application must not begin retaining user audio until steps 1–3 are automated and tested.

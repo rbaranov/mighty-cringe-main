@@ -60,7 +60,9 @@ jobs:
       - name: Test
         run: |
           pnpm --filter @mighty-cringe/db db:migrate
+          pnpm --filter @mighty-cringe/voice test
           pnpm --filter @mighty-cringe/api test
+          pnpm --filter @mighty-cringe/worker test
           pnpm --filter @mighty-cringe/web test
           pnpm --filter @mighty-cringe/web test:pwa
 

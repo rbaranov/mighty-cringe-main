@@ -11,6 +11,7 @@ import type {
 } from '@mighty-cringe/contracts';
 
 import { db, type OutboxMutation, type SyncConflict } from './db';
+import { flushVoiceQueue, refreshVoiceEntries } from './voice';
 
 type MutationResponse =
   | { entityType: 'workout'; entity: WorkoutRecord; duplicate: boolean }
@@ -75,6 +76,11 @@ export function flushOutbox() {
 export async function syncAll() {
   const flushOutcome = await flushOutbox();
   if (flushOutcome !== 'success') return flushOutcome;
+  const voiceOutcome = await flushVoiceQueue();
+  if (voiceOutcome !== 'success') {
+    await finishSync(voiceOutcome);
+    return voiceOutcome;
+  }
   updateSyncStatus({ phase: 'syncing', message: null });
   const refreshOutcome = await refreshHistory().catch(() => 'retry' as const);
   await finishSync(refreshOutcome);
@@ -84,7 +90,11 @@ export async function syncAll() {
 export async function refreshHistory(): Promise<SyncOutcome> {
   if (!browserOnline()) return 'offline';
 
-  const outcomes = await Promise.all([refreshWorkoutHistory(), refreshMeasurementHistory()]);
+  const outcomes = await Promise.all([
+    refreshWorkoutHistory(),
+    refreshMeasurementHistory(),
+    refreshVoiceEntries(),
+  ]);
   return combineOutcomes(outcomes);
 }
 

@@ -6,6 +6,7 @@ import type {
   MeasurementRecord,
   SetRecord,
   SyncMutation,
+  VoiceEntryRecord,
   WorkoutRecord,
 } from '@mighty-cringe/contracts';
 
@@ -25,6 +26,19 @@ export type LocalSet = SetRecord & {
 export type LocalMeasurement = MeasurementRecord & {
   syncState: SyncState;
   deleted: boolean;
+};
+
+export type LocalVoiceStatus = VoiceEntryRecord['status'] | 'queued' | 'uploading' | 'deleting';
+
+export type LocalVoiceEntry = Omit<VoiceEntryRecord, 'status'> & {
+  status: LocalVoiceStatus;
+  audio: Blob | null;
+  mimeType: string;
+  consentVersion: string;
+  serverStored: boolean;
+  uploadAttempts: number;
+  retryable: boolean;
+  nextAttemptAt: string | null;
 };
 
 export type OutboxMutation = {
@@ -54,6 +68,7 @@ export class MightyCringeDatabase extends Dexie {
   sets!: EntityTable<LocalSet, 'id'>;
   exercises!: EntityTable<Exercise, 'id'>;
   measurements!: EntityTable<LocalMeasurement, 'id'>;
+  voiceEntries!: EntityTable<LocalVoiceEntry, 'id'>;
   outbox!: EntityTable<OutboxMutation, 'id'>;
   conflicts!: EntityTable<SyncConflict, 'id'>;
   meta!: EntityTable<LocalMeta, 'key'>;
@@ -143,6 +158,16 @@ export class MightyCringeDatabase extends Dexie {
       conflicts: 'id, entityType, entityId, createdAt',
       meta: 'key',
     });
+    this.version(6).stores({
+      workouts: 'id, startedAt, syncState',
+      sets: 'id, workoutId, exerciseId, performedAt, position, syncState, deleted',
+      exercises: 'id, *primaryMuscles',
+      measurements: 'id, measuredOn, syncState, deleted',
+      voiceEntries: 'id, workoutId, status, createdAt, nextAttemptAt',
+      outbox: 'id, sequence, createdAt',
+      conflicts: 'id, entityType, entityId, createdAt',
+      meta: 'key',
+    });
   }
 }
 
@@ -154,12 +179,13 @@ export async function activateLocalUser(userId: string) {
 
   await db.transaction(
     'rw',
-    [db.workouts, db.sets, db.measurements, db.outbox, db.conflicts, db.meta],
+    [db.workouts, db.sets, db.measurements, db.voiceEntries, db.outbox, db.conflicts, db.meta],
     async () => {
       await Promise.all([
         db.workouts.clear(),
         db.sets.clear(),
         db.measurements.clear(),
+        db.voiceEntries.clear(),
         db.outbox.clear(),
         db.conflicts.clear(),
         db.meta.clear(),
@@ -200,12 +226,13 @@ export async function disableOfflineSession() {
 export async function clearLocalUserData() {
   await db.transaction(
     'rw',
-    [db.workouts, db.sets, db.measurements, db.outbox, db.conflicts, db.meta],
+    [db.workouts, db.sets, db.measurements, db.voiceEntries, db.outbox, db.conflicts, db.meta],
     async () => {
       await Promise.all([
         db.workouts.clear(),
         db.sets.clear(),
         db.measurements.clear(),
+        db.voiceEntries.clear(),
         db.outbox.clear(),
         db.conflicts.clear(),
         db.meta.clear(),

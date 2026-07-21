@@ -15,6 +15,7 @@ import type {
   UpdateSetInput,
   UpdateWorkoutInput,
   UserRole,
+  VoiceEntryRecord,
   WorkoutExercise,
   WorkoutRecord,
 } from '@mighty-cringe/contracts';
@@ -34,9 +35,11 @@ import {
   sessions,
   sets,
   users,
+  voiceEntries,
   workoutExercises,
   workouts,
 } from '@mighty-cringe/db';
+import type { AudioFormat } from '@mighty-cringe/voice';
 
 import { catalog } from './catalog.js';
 
@@ -53,6 +56,16 @@ export type AuthAttempt = {
   nonce: string;
   returnTo: string;
   expiresAt: Date;
+};
+
+export type VoiceEntryCreateInput = {
+  id: string;
+  workoutId: string | null;
+  objectKey: string;
+  mimeType: string;
+  audioFormat: AudioFormat;
+  sizeBytes: number;
+  consentVersion: string;
 };
 
 export type WorkoutMutationResult = {
@@ -115,6 +128,13 @@ export interface WorkoutRepository {
     input: UpdateMeasurementInput,
   ): Promise<MeasurementMutationResult>;
   deleteMeasurement(userId: string, input: DeleteMeasurementInput): Promise<DeleteMutationResult>;
+  listVoiceEntries(userId: string): Promise<VoiceEntryRecord[]>;
+  createVoiceEntry(userId: string, input: VoiceEntryCreateInput): Promise<VoiceEntryRecord>;
+  getVoiceObject(
+    userId: string,
+    voiceEntryId: string,
+  ): Promise<{ objectKey: string; mimeType: string } | null>;
+  deleteVoiceEntry(userId: string, voiceEntryId: string): Promise<boolean>;
   createAuthAttempt(attempt: AuthAttempt): Promise<void>;
   consumeAuthAttempt(stateHash: string, now: Date): Promise<AuthAttempt | null>;
   upsertGoogleUser(identity: GoogleIdentity, requestedRole: UserRole): Promise<CurrentUser>;
@@ -133,12 +153,17 @@ export interface WorkoutRepository {
 type MemoryWorkout = Omit<WorkoutRecord, 'sets'> & { userId: string };
 type MemorySet = SetRecord & { userId: string };
 type MemoryMeasurement = MeasurementRecord & { userId: string };
+type MemoryVoiceEntry = VoiceEntryRecord &
+  VoiceEntryCreateInput & {
+    userId: string;
+  };
 type MemorySession = { tokenHash: string; userId: string; expiresAt: Date; revokedAt: Date | null };
 
 export class MemoryRepository implements WorkoutRepository {
   private readonly workouts = new Map<string, MemoryWorkout>();
   private readonly sets = new Map<string, MemorySet>();
   private readonly measurements = new Map<string, MemoryMeasurement>();
+  private readonly voiceEntries = new Map<string, MemoryVoiceEntry>();
   private readonly mutations = new Set<string>();
   private readonly authAttempts = new Map<string, AuthAttempt>();
   private readonly users = new Map<string, CurrentUser & { googleSubject: string }>();
@@ -414,6 +439,50 @@ export class MemoryRepository implements WorkoutRepository {
       entityId: input.measurementId,
       duplicate: false,
     };
+  }
+
+  async listVoiceEntries(userId: string) {
+    return [...this.voiceEntries.values()]
+      .filter((entry) => entry.userId === userId)
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      .map(toPublicVoiceEntry);
+  }
+
+  async createVoiceEntry(userId: string, input: VoiceEntryCreateInput) {
+    if (input.workoutId) {
+      const workout = this.workouts.get(input.workoutId);
+      if (!workout || workout.userId !== userId) throw new RepositoryNotFoundError();
+    }
+    const existing = this.voiceEntries.get(input.id);
+    if (existing) {
+      if (existing.userId !== userId) throw new RepositoryConflictError(null);
+      return toPublicVoiceEntry(existing);
+    }
+    const now = new Date().toISOString();
+    const entry: MemoryVoiceEntry = {
+      ...input,
+      userId,
+      status: 'pending',
+      transcript: null,
+      createdAt: now,
+      updatedAt: now,
+      lastError: null,
+    };
+    this.voiceEntries.set(entry.id, entry);
+    return toPublicVoiceEntry(entry);
+  }
+
+  async getVoiceObject(userId: string, voiceEntryId: string) {
+    const entry = this.voiceEntries.get(voiceEntryId);
+    return entry?.userId === userId
+      ? { objectKey: entry.objectKey, mimeType: entry.mimeType }
+      : null;
+  }
+
+  async deleteVoiceEntry(userId: string, voiceEntryId: string) {
+    const entry = this.voiceEntries.get(voiceEntryId);
+    if (!entry || entry.userId !== userId) return false;
+    return this.voiceEntries.delete(voiceEntryId);
   }
 
   async createAuthAttempt(attempt: AuthAttempt) {
@@ -987,6 +1056,59 @@ export class PostgresRepository implements WorkoutRepository {
     };
   }
 
+  async listVoiceEntries(userId: string): Promise<VoiceEntryRecord[]> {
+    const rows = await this.db
+      .select()
+      .from(voiceEntries)
+      .where(eq(voiceEntries.userId, userId))
+      .orderBy(desc(voiceEntries.createdAt));
+    return rows.map(toVoiceEntryRecord);
+  }
+
+  async createVoiceEntry(userId: string, input: VoiceEntryCreateInput) {
+    if (input.workoutId) {
+      const workout = await this.db
+        .select({ id: workouts.id })
+        .from(workouts)
+        .where(and(eq(workouts.id, input.workoutId), eq(workouts.userId, userId)))
+        .limit(1);
+      if (!workout.length) throw new RepositoryNotFoundError();
+    }
+
+    await this.db
+      .insert(voiceEntries)
+      .values({
+        ...input,
+        userId,
+      })
+      .onConflictDoNothing({ target: voiceEntries.id });
+    const rows = await this.db
+      .select()
+      .from(voiceEntries)
+      .where(eq(voiceEntries.id, input.id))
+      .limit(1);
+    const entry = rows[0];
+    if (!entry || entry.userId !== userId) throw new RepositoryConflictError(null);
+    return toVoiceEntryRecord(entry);
+  }
+
+  async getVoiceObject(userId: string, voiceEntryId: string) {
+    const rows = await this.db
+      .select({ objectKey: voiceEntries.objectKey, mimeType: voiceEntries.mimeType })
+      .from(voiceEntries)
+      .where(and(eq(voiceEntries.id, voiceEntryId), eq(voiceEntries.userId, userId)))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
+  async deleteVoiceEntry(userId: string, voiceEntryId: string) {
+    const deleted = await this.db
+      .delete(voiceEntries)
+      .where(and(eq(voiceEntries.id, voiceEntryId), eq(voiceEntries.userId, userId)))
+      .returning({ id: voiceEntries.id });
+    return deleted.length > 0;
+  }
+
   async createAuthAttempt(attempt: AuthAttempt) {
     await this.db.delete(authAttempts).where(lt(authAttempts.expiresAt, new Date()));
     await this.db.insert(authAttempts).values(attempt);
@@ -1238,6 +1360,30 @@ function toMeasurementRecord(
 function toPublicMeasurement(measurement: MemoryMeasurement): MeasurementRecord {
   const { userId: _userId, ...record } = measurement;
   return record;
+}
+
+function toVoiceEntryRecord(entry: typeof voiceEntries.$inferSelect): VoiceEntryRecord {
+  return {
+    id: entry.id,
+    workoutId: entry.workoutId,
+    status: entry.status,
+    transcript: entry.transcript,
+    createdAt: entry.createdAt.toISOString(),
+    updatedAt: entry.updatedAt.toISOString(),
+    lastError: entry.lastError,
+  };
+}
+
+function toPublicVoiceEntry(entry: MemoryVoiceEntry): VoiceEntryRecord {
+  return {
+    id: entry.id,
+    workoutId: entry.workoutId,
+    status: entry.status,
+    transcript: entry.transcript,
+    createdAt: entry.createdAt,
+    updatedAt: entry.updatedAt,
+    lastError: entry.lastError,
+  };
 }
 
 function sameWorkoutCreate(

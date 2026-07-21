@@ -215,6 +215,18 @@ GOOGLE_CLIENT_ID=<GOOGLE_OAUTH_WEB_CLIENT_ID>
 GOOGLE_CLIENT_SECRET=<GOOGLE_OAUTH_WEB_CLIENT_SECRET>
 ADMIN_EMAILS=<OWNER_GOOGLE_EMAIL>
 SESSION_TTL_DAYS=30
+
+OPENROUTER_API_KEY=<SPEND_LIMITED_SERVER_KEY>
+OPENROUTER_STT_MODEL=openai/whisper-large-v3
+
+VOICE_S3_ENDPOINT=https://hel1.your-objectstorage.com
+VOICE_S3_REGION=hel1
+VOICE_S3_BUCKET=<UNIQUE_PRIVATE_VOICE_BUCKET>
+VOICE_S3_ACCESS_KEY_ID=<VOICE_ACCESS_KEY>
+VOICE_S3_SECRET_ACCESS_KEY=<VOICE_SECRET_KEY>
+VOICE_S3_FORCE_PATH_STYLE=false
+VOICE_S3_ENCRYPTION_KEY=<BASE64_32_BYTE_SSE_C_KEY>
+WORKER_INTERVAL_MS=15000
 ```
 
 В Google Cloud Console создайте OAuth client типа **Web application** и укажите точный
@@ -229,6 +241,54 @@ https://mightycringe.com/api/v1/auth/google/callback
 список email через запятую; совпавшие подтверждённые Google-аккаунты получают роль `admin` при
 входе. Права на `/etc/mighty-cringe/production.env` уже заданы предыдущей командой.
 
+### Приватный голос: Hetzner Object Storage
+
+Не используйте bucket и credentials бэкапов для голоса. У Hetzner новый S3 key по умолчанию имеет
+доступ ко всем bucket внутри проекта, поэтому самый понятный least-privilege вариант — отдельный
+Hetzner project только для голосового bucket:
+
+1. Создайте отдельный project, например `mighty-cringe-voice-production`.
+2. В нём откройте **Object Storage → Create Bucket**, выберите Helsinki (`hel1`), задайте глобально
+   уникальное имя и visibility **Private**. Не включайте versioning или Object Lock: явное удаление
+   пользователя должно действительно удалять аудио. Включите защиту bucket от случайного удаления.
+3. В этом же отдельном project создайте S3 credentials. Сразу сохраните access key и secret key в
+   менеджере паролей: secret повторно не показывается.
+4. На своём компьютере сгенерируйте отдельный SSE-C key:
+
+   ```bash
+   openssl rand -base64 32
+   ```
+
+   Сохраните результат в менеджере паролей и вставьте без кавычек в
+   `VOICE_S3_ENCRYPTION_KEY`. Резервная копия вне VPS обязательна: Hetzner не хранит этот ключ, а
+   без него уже загруженные записи невозможно прочитать. Не меняйте ключ, пока в bucket остаются
+   записи, если они не были предварительно перешифрованы.
+
+5. Заполните `VOICE_S3_*` в `/etc/mighty-cringe/production.env`. Для Helsinki endpoint —
+   `https://hel1.your-objectstorage.com`, region — `hel1`.
+
+Hetzner документирует отсутствие шифрования объектов по умолчанию и поддержку SSE-C:
+https://docs.hetzner.com/storage/object-storage/faq/general/. Ограничения S3 keys и варианты
+bucket policy описаны здесь:
+https://docs.hetzner.com/storage/object-storage/faq/s3-credentials/.
+
+### Приватный голос: OpenRouter
+
+1. Создайте отдельный API key только для production Mighty & Cringe и установите небольшой credit
+   limit. Не вставляйте ключ в GitHub, браузер или `VITE_*` переменные.
+2. В OpenRouter **Privacy** отключите использование inputs/outputs и включите ZDR для группы,
+   соответствующей выбранной STT-модели. В **Observability** оставьте **Input & Output Logging**
+   выключенным. Код дополнительно отправляет `provider.zdr: true` на каждом запросе и завершает job
+   ошибкой, если у модели нет совместимого ZDR endpoint.
+3. Укажите `OPENROUTER_STT_MODEL=openai/whisper-large-v3` или другой актуальный slug из фильтра
+   Transcription. Модель обязана принимать `webm`, `m4a/mp4` и `ogg`, которые создают мобильные
+   браузеры.
+4. Запишите key и model только в `/etc/mighty-cringe/production.env`.
+
+Актуальный STT endpoint, форматы и поиск моделей:
+https://openrouter.ai/docs/guides/overview/multimodal/stt. Политика ZDR:
+https://openrouter.ai/docs/guides/features/zdr.
+
 ## 6. Первый запуск и проверка
 
 Запустите **Actions → Deploy production → Run workflow** на ветке `main`. Runner выполнит
@@ -241,10 +301,11 @@ cd ~/actions-runner/_work/mighty-cringe-main/mighty-cringe-main/infra/production
 PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose ps
 PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose logs --tail=100 migrate
 PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose logs --tail=100 caddy
+PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose logs --tail=100 worker
 ```
 
-`migrate` должен завершиться с кодом `0`; остальные сервисы должны работать. Worker не
-запускается на CPX12 по умолчанию. Проверка:
+`migrate` должен завершиться с кодом `0`; остальные сервисы, включая `worker`, должны работать.
+Проверка:
 
 ```bash
 curl -fsS https://mightycringe.com/health
@@ -294,8 +355,9 @@ Hetzner server backups — дополнительная защита, а не з
 cd ~/actions-runner/_work/mighty-cringe-main/mighty-cringe-main/infra/production
 PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose ps
 
-# Логи API и reverse proxy
+# Логи API, worker и reverse proxy
 PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose logs --tail=200 api
+PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose logs --tail=200 worker
 PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose logs --tail=200 caddy
 
 # Ручной повторный запуск уже полученной ревизии
