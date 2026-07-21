@@ -37,6 +37,57 @@ export const exerciseSchema = z.object({
   equipment: z.array(z.string()),
 });
 
+export const workoutExerciseSchema = z.object({
+  id: z.string().uuid(),
+  exerciseId: z.string().uuid(),
+  position: z.number().int().nonnegative(),
+  supersetGroup: z.number().int().positive().nullable(),
+});
+
+export const workoutPlanSchema = z
+  .array(workoutExerciseSchema)
+  .max(100)
+  .superRefine((items, context) => {
+    const ids = new Set<string>();
+    const positions = new Set<number>();
+    const groups = new Map<number, number[]>();
+    for (const [index, item] of items.entries()) {
+      if (ids.has(item.id)) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Plan item ids must be unique',
+          path: [index, 'id'],
+        });
+      }
+      if (positions.has(item.position)) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Plan positions must be unique',
+          path: [index, 'position'],
+        });
+      }
+      ids.add(item.id);
+      positions.add(item.position);
+      if (item.supersetGroup !== null) {
+        const groupPositions = groups.get(item.supersetGroup) ?? [];
+        groupPositions.push(item.position);
+        groups.set(item.supersetGroup, groupPositions);
+      }
+    }
+    for (const [group, groupPositions] of groups) {
+      const ordered = groupPositions.sort((left, right) => left - right);
+      const consecutive = ordered.every(
+        (position, index) => index === 0 || position === ordered[index - 1] + 1,
+      );
+      if (ordered.length < 2 || !consecutive) {
+        context.addIssue({
+          code: 'custom',
+          message: `Superset group ${group} must contain consecutive exercises`,
+        });
+      }
+    }
+  });
+
 export const setInputSchema = z.object({
   id: z.string().uuid(),
   exerciseId: z.string().uuid(),
@@ -45,6 +96,7 @@ export const setInputSchema = z.object({
   rir: z.number().int().min(0).max(20).nullable(),
   comment: z.string().max(1_000).nullable(),
   performedAt: z.string().datetime(),
+  position: z.number().int().nonnegative().default(0),
 });
 
 export const setRecordSchema = setInputSchema.extend({
@@ -60,6 +112,7 @@ export const createWorkoutSchema = z.object({
   endedAt: z.string().datetime().nullable().default(null),
   notes: z.string().max(10_000).nullable().default(null),
   locale: z.enum(['ru', 'en']).default('ru'),
+  exercises: workoutPlanSchema.default([]),
 });
 
 export const createSetSchema = z.object({
@@ -73,6 +126,7 @@ const workoutChangesSchema = z
     startedAt: z.string().datetime().optional(),
     endedAt: z.string().datetime().nullable().optional(),
     notes: z.string().max(10_000).nullable().optional(),
+    exercises: workoutPlanSchema.optional(),
   })
   .refine((changes) => Object.keys(changes).length > 0, 'At least one change is required');
 
@@ -96,11 +150,19 @@ export const updateSetSchema = z.object({
   changes: setChangesSchema,
 });
 
+export const deleteSetSchema = z.object({
+  clientMutationId: z.string().uuid(),
+  workoutId: z.string().uuid(),
+  setId: z.string().uuid(),
+  baseRevision: z.number().int().nonnegative(),
+});
+
 export const syncMutationSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('workout.create'), payload: createWorkoutSchema }),
   z.object({ type: z.literal('workout.update'), payload: updateWorkoutSchema }),
   z.object({ type: z.literal('set.create'), payload: createSetSchema }),
   z.object({ type: z.literal('set.update'), payload: updateSetSchema }),
+  z.object({ type: z.literal('set.delete'), payload: deleteSetSchema }),
 ]);
 
 export const workoutRecordSchema = z.object({
@@ -111,15 +173,18 @@ export const workoutRecordSchema = z.object({
   locale: z.enum(['ru', 'en']),
   revision: z.number().int().positive(),
   updatedAt: z.string().datetime(),
+  exercises: workoutPlanSchema,
   sets: z.array(setRecordSchema),
 });
 
 export type Exercise = z.infer<typeof exerciseSchema>;
+export type WorkoutExercise = z.infer<typeof workoutExerciseSchema>;
 export type SetInput = z.infer<typeof setInputSchema>;
 export type CreateWorkoutInput = z.infer<typeof createWorkoutSchema>;
 export type CreateSetInput = z.infer<typeof createSetSchema>;
 export type UpdateWorkoutInput = z.infer<typeof updateWorkoutSchema>;
 export type UpdateSetInput = z.infer<typeof updateSetSchema>;
+export type DeleteSetInput = z.infer<typeof deleteSetSchema>;
 export type SyncMutation = z.infer<typeof syncMutationSchema>;
 export type SetRecord = z.infer<typeof setRecordSchema>;
 export type WorkoutRecord = z.infer<typeof workoutRecordSchema>;

@@ -5,6 +5,7 @@ import cors from '@fastify/cors';
 import {
   createSetSchema,
   createWorkoutSchema,
+  deleteSetSchema,
   syncMutationSchema,
   updateSetSchema,
   updateWorkoutSchema,
@@ -233,6 +234,21 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
     }
   });
 
+  app.delete('/api/v1/sets/:setId', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+
+    const setId = (request.params as { setId?: unknown }).setId;
+    const parsed = deleteSetSchema.safeParse({ ...(request.body as object), setId });
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() });
+
+    try {
+      return await repository.deleteSet(user.id, parsed.data);
+    } catch (error) {
+      return sendRepositoryError(reply, error);
+    }
+  });
+
   app.post('/api/v1/sync', async (request, reply) => {
     const user = await getCurrentUser(request, repository, now());
     if (!user) return reply.status(401).send({ error: 'Authentication required' });
@@ -254,6 +270,9 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
           break;
         case 'set.update':
           result = await repository.updateSet(user.id, parsed.data.payload);
+          break;
+        case 'set.delete':
+          result = await repository.deleteSet(user.id, parsed.data.payload);
           break;
       }
       const created = parsed.data.type === 'workout.create' || parsed.data.type === 'set.create';

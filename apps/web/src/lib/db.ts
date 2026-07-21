@@ -10,6 +10,7 @@ export type LocalWorkout = Omit<WorkoutRecord, 'sets'> & {
 
 export type LocalSet = SetRecord & {
   syncState: SyncState;
+  deleted: boolean;
 };
 
 export type OutboxMutation = {
@@ -89,6 +90,33 @@ export class MightyCringeDatabase extends Dexie {
           .modify((set) => {
             set.revision ??= set.syncState === 'synced' ? 1 : 0;
             set.updatedAt ??= set.performedAt;
+          });
+      });
+    this.version(4)
+      .stores({
+        workouts: 'id, startedAt, syncState',
+        sets: 'id, workoutId, exerciseId, performedAt, position, syncState, deleted',
+        exercises: 'id, *primaryMuscles',
+        outbox: 'id, sequence, createdAt',
+        conflicts: 'id, entityType, entityId, createdAt',
+        meta: 'key',
+      })
+      .upgrade(async (transaction) => {
+        await transaction
+          .table('workouts')
+          .toCollection()
+          .modify((workout) => {
+            workout.exercises ??= [];
+          });
+        const positionByExercise = new Map<string, number>();
+        await transaction
+          .table('sets')
+          .orderBy('performedAt')
+          .modify((set) => {
+            const key = `${set.workoutId}:${set.exerciseId}`;
+            set.position ??= positionByExercise.get(key) ?? 0;
+            positionByExercise.set(key, set.position + 1);
+            set.deleted ??= false;
           });
       });
   }

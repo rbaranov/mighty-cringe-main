@@ -1,4 +1,5 @@
 import type {
+  DeleteSetInput,
   SetRecord,
   SyncMutation,
   UpdateSetInput,
@@ -10,7 +11,8 @@ import { db, type OutboxMutation, type SyncConflict } from './db';
 
 type MutationResponse =
   | { entityType: 'workout'; entity: WorkoutRecord; duplicate: boolean }
-  | { entityType: 'set'; entity: SetRecord; duplicate: boolean };
+  | { entityType: 'set'; entity: SetRecord; duplicate: boolean }
+  | { entityType: 'set'; entity: null; entityId: string; duplicate: boolean };
 
 let lastSequence = 0;
 let activeFlush: Promise<void> | null = null;
@@ -69,7 +71,7 @@ export async function refreshHistory() {
       for (const set of workout.sets) {
         const localSet = await db.sets.get(set.id);
         if (!localSet || localSet.syncState === 'synced') {
-          await db.sets.put({ ...set, syncState: 'synced' });
+          await db.sets.put({ ...set, deleted: false, syncState: 'synced' });
         }
       }
     }
@@ -197,6 +199,14 @@ async function prepareMutation(queued: OutboxMutation) {
       await db.outbox.put(queued);
     }
   }
+  if (queued.mutation.type === 'set.delete') {
+    const set = await db.sets.get(queued.mutation.payload.setId);
+    if (!set || set.revision === 0) return null;
+    if (queued.mutation.payload.baseRevision !== set.revision) {
+      queued.mutation.payload.baseRevision = set.revision;
+      await db.outbox.put(queued);
+    }
+  }
   return queued;
 }
 
@@ -206,6 +216,12 @@ async function applyMutationResult(queued: OutboxMutation, result: MutationRespo
     const hasNewerLocalChange = remaining.some(
       (item) => mutationEntity(item.mutation).key === mutationEntity(queued.mutation).key,
     );
+
+    if (result.entityType === 'set' && result.entity === null) {
+      await db.sets.delete(result.entityId);
+      await db.outbox.delete(queued.id);
+      return;
+    }
 
     if (result.entityType === 'workout') {
       const local = await db.workouts.get(result.entity.id);
@@ -221,7 +237,7 @@ async function applyMutationResult(queued: OutboxMutation, result: MutationRespo
       for (const set of result.entity.sets) {
         const localSet = await db.sets.get(set.id);
         if (!localSet || localSet.syncState === 'synced') {
-          await db.sets.put({ ...set, syncState: 'synced' });
+          await db.sets.put({ ...set, deleted: false, syncState: 'synced' });
         }
       }
     } else {
@@ -233,7 +249,7 @@ async function applyMutationResult(queued: OutboxMutation, result: MutationRespo
           syncState: 'pending',
         });
       } else {
-        await db.sets.put({ ...result.entity, syncState: 'synced' });
+        await db.sets.put({ ...result.entity, deleted: false, syncState: 'synced' });
       }
     }
     await db.outbox.delete(queued.id);
@@ -273,9 +289,11 @@ async function markSyncState(mutation: SyncMutation, syncState: 'pending' | 'con
 async function applyCurrent(current: WorkoutRecord | SetRecord) {
   if ('sets' in current) {
     await db.workouts.put({ ...withoutSets(current), syncState: 'synced' });
-    for (const set of current.sets) await db.sets.put({ ...set, syncState: 'synced' });
+    for (const set of current.sets) {
+      await db.sets.put({ ...set, deleted: false, syncState: 'synced' });
+    }
   } else {
-    await db.sets.put({ ...current, syncState: 'synced' });
+    await db.sets.put({ ...current, deleted: false, syncState: 'synced' });
   }
 }
 
@@ -317,12 +335,13 @@ async function rebaseMutation(conflict: SyncConflict): Promise<SyncMutation | nu
         endedAt: local.endedAt,
         notes: local.notes,
         locale: local.locale,
+        exercises: local.exercises,
       },
     };
   }
   if (conflict.mutation.type === 'set.update' && !conflict.current) {
     const local = await db.sets.get(conflict.mutation.payload.setId);
-    if (!local) return null;
+    if (!local || local.deleted) return null;
     return {
       type: 'set.create',
       payload: {
@@ -336,9 +355,22 @@ async function rebaseMutation(conflict: SyncConflict): Promise<SyncMutation | nu
           rir: local.rir,
           comment: local.comment,
           performedAt: local.performedAt,
+          position: local.position,
         },
       },
     };
+  }
+  if (
+    conflict.mutation.type === 'set.delete' &&
+    conflict.current &&
+    !('sets' in conflict.current)
+  ) {
+    const payload: DeleteSetInput = {
+      ...conflict.mutation.payload,
+      clientMutationId,
+      baseRevision: conflict.current.revision,
+    };
+    return { type: 'set.delete', payload };
   }
   return null;
 }
@@ -364,6 +396,12 @@ function mutationEntity(mutation: SyncMutation) {
         key: `set:${mutation.payload.set.id}`,
       };
     case 'set.update':
+      return {
+        type: 'set' as const,
+        id: mutation.payload.setId,
+        key: `set:${mutation.payload.setId}`,
+      };
+    case 'set.delete':
       return {
         type: 'set' as const,
         id: mutation.payload.setId,
