@@ -6,14 +6,17 @@ import {
   createMeasurementSchema,
   createSetSchema,
   createWorkoutSchema,
+  deletePushSubscriptionSchema,
   deleteMeasurementSchema,
   deleteSetSchema,
   syncMutationSchema,
+  pushSubscriptionSchema,
   trainerAthleteIdSchema,
   trainerInviteAcceptSchema,
   trainerInviteCreateSchema,
   trainerInviteIdSchema,
   updateMeasurementSchema,
+  updateNotificationPreferencesSchema,
   updateSetSchema,
   updateWorkoutSchema,
   voiceEntryIdSchema,
@@ -25,6 +28,7 @@ import {
   voiceConsentVersion,
   type VoiceStorage,
 } from '@mighty-cringe/voice';
+import { nextNotificationAt } from '@mighty-cringe/push';
 import Fastify, { type FastifyBaseLogger, type FastifyReply, type FastifyRequest } from 'fastify';
 
 import { codeChallenge, hashToken, randomToken, type AuthOptions } from './auth.js';
@@ -46,6 +50,7 @@ type AppOptions = {
   auth?: AuthOptions;
   voiceStorage?: VoiceStorage;
   voiceProcessingEnabled?: boolean;
+  pushPublicKey?: string | null;
   now?: () => Date;
 };
 
@@ -362,6 +367,62 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
     const user = await getCurrentUser(request, repository, now());
     if (!user) return reply.status(401).send({ error: 'Authentication required' });
     return { items: await repository.listVoiceEntries(user.id) };
+  });
+
+  app.get('/api/v1/notifications/config', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    return { enabled: Boolean(options.pushPublicKey), publicKey: options.pushPublicKey ?? null };
+  });
+
+  app.get('/api/v1/notifications/preferences', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    return { preferences: await repository.getNotificationPreferences(user.id) };
+  });
+
+  app.patch('/api/v1/notifications/preferences', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    const parsed = updateNotificationPreferencesSchema.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() });
+    if (parsed.data.enabled && !options.pushPublicKey) {
+      return reply.status(503).send({ error: 'Push notifications are not configured' });
+    }
+    try {
+      const nextReminderAt = parsed.data.enabled ? nextNotificationAt(parsed.data, now()) : null;
+      const preferences = await repository.updateNotificationPreferences(
+        user.id,
+        parsed.data,
+        nextReminderAt,
+      );
+      return { preferences };
+    } catch (error) {
+      return reply.status(400).send({
+        error: error instanceof Error ? error.message : 'Invalid notification schedule',
+      });
+    }
+  });
+
+  app.post('/api/v1/notifications/subscriptions', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    if (!options.pushPublicKey) {
+      return reply.status(503).send({ error: 'Push notifications are not configured' });
+    }
+    const parsed = pushSubscriptionSchema.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() });
+    await repository.upsertPushSubscription(user.id, parsed.data, now());
+    return reply.status(201).send();
+  });
+
+  app.delete('/api/v1/notifications/subscriptions', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    const parsed = deletePushSubscriptionSchema.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() });
+    await repository.deletePushSubscription(user.id, parsed.data.endpoint);
+    return reply.status(204).send();
   });
 
   app.get('/api/v1/voice-entries/:voiceEntryId/audio', async (request, reply) => {

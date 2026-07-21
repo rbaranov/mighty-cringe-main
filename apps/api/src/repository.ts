@@ -10,11 +10,14 @@ import type {
   Exercise,
   MeasurementRecord,
   MeasurementValues,
+  NotificationPreferences,
+  PushSubscriptionInput,
   SetRecord,
   TrainerAthleteSummary,
   TrainerInviteRecord,
   TrainerSummary,
   UpdateMeasurementInput,
+  UpdateNotificationPreferences,
   UpdateSetInput,
   UpdateWorkoutInput,
   UserRole,
@@ -35,6 +38,9 @@ import {
   isNull,
   lt,
   measurementEntries,
+  notificationPreferences,
+  notificationJobs,
+  pushSubscriptions,
   sessions,
   sets,
   trainerAthleteLinks,
@@ -157,6 +163,14 @@ export interface WorkoutRepository {
     voiceEntryId: string,
   ): Promise<{ objectKey: string; mimeType: string } | null>;
   deleteVoiceEntry(userId: string, voiceEntryId: string): Promise<boolean>;
+  getNotificationPreferences(userId: string): Promise<NotificationPreferences>;
+  updateNotificationPreferences(
+    userId: string,
+    input: UpdateNotificationPreferences,
+    nextReminderAt: Date | null,
+  ): Promise<NotificationPreferences>;
+  upsertPushSubscription(userId: string, input: PushSubscriptionInput, now: Date): Promise<void>;
+  deletePushSubscription(userId: string, endpoint: string): Promise<void>;
   createAuthAttempt(attempt: AuthAttempt): Promise<void>;
   consumeAuthAttempt(stateHash: string, now: Date): Promise<AuthAttempt | null>;
   upsertGoogleUser(identity: GoogleIdentity, requestedRole: UserRole): Promise<CurrentUser>;
@@ -215,6 +229,7 @@ type MemoryTrainerLink = {
   createdAt: Date;
   updatedAt: Date;
 };
+type MemoryPushSubscription = PushSubscriptionInput & { userId: string; updatedAt: Date };
 
 export class MemoryRepository implements WorkoutRepository {
   private readonly workouts = new Map<string, MemoryWorkout>();
@@ -227,6 +242,8 @@ export class MemoryRepository implements WorkoutRepository {
   private readonly sessions = new Map<string, MemorySession>();
   private readonly trainerInvites = new Map<string, MemoryTrainerInvite>();
   private readonly trainerLinks = new Map<string, MemoryTrainerLink>();
+  private readonly notificationPreferences = new Map<string, NotificationPreferences>();
+  private readonly pushSubscriptions = new Map<string, MemoryPushSubscription>();
 
   async listExercises() {
     return catalog;
@@ -542,6 +559,37 @@ export class MemoryRepository implements WorkoutRepository {
     const entry = this.voiceEntries.get(voiceEntryId);
     if (!entry || entry.userId !== userId) return false;
     return this.voiceEntries.delete(voiceEntryId);
+  }
+
+  async getNotificationPreferences(userId: string) {
+    return this.notificationPreferences.get(userId) ?? defaultNotificationPreferences();
+  }
+
+  async updateNotificationPreferences(
+    userId: string,
+    input: UpdateNotificationPreferences,
+    nextReminderAt: Date | null,
+  ) {
+    const preferences: NotificationPreferences = {
+      ...input,
+      nextReminderAt: nextReminderAt?.toISOString() ?? null,
+    };
+    this.notificationPreferences.set(userId, preferences);
+    if (!input.enabled) {
+      for (const [endpoint, subscription] of this.pushSubscriptions) {
+        if (subscription.userId === userId) this.pushSubscriptions.delete(endpoint);
+      }
+    }
+    return preferences;
+  }
+
+  async upsertPushSubscription(userId: string, input: PushSubscriptionInput, now: Date) {
+    this.pushSubscriptions.set(input.endpoint, { ...input, userId, updatedAt: now });
+  }
+
+  async deletePushSubscription(userId: string, endpoint: string) {
+    const subscription = this.pushSubscriptions.get(endpoint);
+    if (subscription?.userId === userId) this.pushSubscriptions.delete(endpoint);
   }
 
   async createAuthAttempt(attempt: AuthAttempt) {
@@ -1308,6 +1356,80 @@ export class PostgresRepository implements WorkoutRepository {
     return deleted.length > 0;
   }
 
+  async getNotificationPreferences(userId: string) {
+    const rows = await this.db
+      .select()
+      .from(notificationPreferences)
+      .where(eq(notificationPreferences.userId, userId))
+      .limit(1);
+    return rows[0] ? toNotificationPreferences(rows[0]) : defaultNotificationPreferences();
+  }
+
+  async updateNotificationPreferences(
+    userId: string,
+    input: UpdateNotificationPreferences,
+    nextReminderAt: Date | null,
+  ) {
+    return this.db.transaction(async (transaction) => {
+      const rows = await transaction
+        .insert(notificationPreferences)
+        .values({ ...input, userId, nextReminderAt })
+        .onConflictDoUpdate({
+          target: notificationPreferences.userId,
+          set: { ...input, nextReminderAt, updatedAt: new Date() },
+        })
+        .returning();
+      if (!input.enabled) {
+        await transaction.delete(pushSubscriptions).where(eq(pushSubscriptions.userId, userId));
+        for (const status of ['pending', 'processing'] as const) {
+          await transaction
+            .update(notificationJobs)
+            .set({
+              status: 'failed',
+              claimedAt: null,
+              nextAttemptAt: null,
+              lastError: 'Notifications disabled by user',
+              updatedAt: new Date(),
+            })
+            .where(and(eq(notificationJobs.userId, userId), eq(notificationJobs.status, status)));
+        }
+      }
+      return toNotificationPreferences(rows[0]);
+    });
+  }
+
+  async upsertPushSubscription(userId: string, input: PushSubscriptionInput, now: Date) {
+    const expirationTime = input.expirationTime ? new Date(input.expirationTime) : null;
+    await this.db
+      .insert(pushSubscriptions)
+      .values({
+        id: randomUUID(),
+        userId,
+        endpoint: input.endpoint,
+        expirationTime,
+        p256dh: input.keys.p256dh,
+        auth: input.keys.auth,
+      })
+      .onConflictDoUpdate({
+        target: pushSubscriptions.endpoint,
+        set: {
+          userId,
+          expirationTime,
+          p256dh: input.keys.p256dh,
+          auth: input.keys.auth,
+          failureCount: 0,
+          disabledAt: null,
+          updatedAt: now,
+        },
+      });
+  }
+
+  async deletePushSubscription(userId: string, endpoint: string) {
+    await this.db
+      .delete(pushSubscriptions)
+      .where(and(eq(pushSubscriptions.userId, userId), eq(pushSubscriptions.endpoint, endpoint)));
+  }
+
   async createAuthAttempt(attempt: AuthAttempt) {
     await this.db.delete(authAttempts).where(lt(authAttempts.expiresAt, new Date()));
     await this.db.insert(authAttempts).values(attempt);
@@ -1772,6 +1894,34 @@ function toMeasurementRecord(
 function toPublicMeasurement(measurement: MemoryMeasurement): MeasurementRecord {
   const { userId: _userId, ...record } = measurement;
   return record;
+}
+
+function defaultNotificationPreferences(): NotificationPreferences {
+  return {
+    enabled: false,
+    frequency: 'daily',
+    weekday: 1,
+    reminderTime: '19:00',
+    quietStart: '22:00',
+    quietEnd: '08:00',
+    timeZone: 'UTC',
+    nextReminderAt: null,
+  };
+}
+
+function toNotificationPreferences(
+  preferences: typeof notificationPreferences.$inferSelect,
+): NotificationPreferences {
+  return {
+    enabled: preferences.enabled,
+    frequency: preferences.frequency,
+    weekday: preferences.weekday,
+    reminderTime: preferences.reminderTime,
+    quietStart: preferences.quietStart,
+    quietEnd: preferences.quietEnd,
+    timeZone: preferences.timeZone,
+    nextReminderAt: preferences.nextReminderAt?.toISOString() ?? null,
+  };
 }
 
 function toVoiceEntryRecord(entry: typeof voiceEntries.$inferSelect): VoiceEntryRecord {

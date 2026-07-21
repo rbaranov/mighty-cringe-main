@@ -26,8 +26,8 @@ Mighty & Cringe — русскоязычная offline-first PWA для личн
 - Отдельный Object Storage для голоса ещё не настроен. Голосовой код должен оставаться выключенным,
   пока нет private bucket, ограниченных S3 credentials, SSE-C recovery key и приватного OpenRouter
   ключа; не переиспользовать bucket или credentials бэкапов.
-- Никогда не добавлять в репозиторий пароли, OAuth client secret, S3 key, приватные SSH-ключи
-  или содержимое production environment file.
+- Никогда не добавлять в репозиторий пароли, OAuth client secret, S3 key, VAPID private key,
+  приватные SSH-ключи или содержимое production environment file.
 - Изменения автоматически попадают в production только после успешного CI на `main`.
   Ручной запуск `Deploy production` использовать для контролируемого повторного деплоя
   текущего `main`. На сервере использовать пользователя `deploy`, не root.

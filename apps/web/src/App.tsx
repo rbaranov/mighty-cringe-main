@@ -12,6 +12,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { SetSheet } from './components/SetSheet';
 import type { MeasurementDraft } from './components/BodyMeasurementsSection';
 import { ProgressView } from './components/ProgressView';
+import { PushReminderSettings } from './components/PushReminderSettings';
 import { TrainerDashboard, TrainerRelationshipCard } from './components/TrainerAccess';
 import { VoicePanel } from './components/VoicePanel';
 import {
@@ -1217,10 +1218,7 @@ function SettingsView({
         <span>Единицы веса</span>
         <strong>кг</strong>
       </div>
-      <div className="setting">
-        <span>Напоминания</span>
-        <strong>В разработке</strong>
-      </div>
+      <PushReminderSettings />
       <TrainerRelationshipCard refreshKey={relationshipRefreshKey} />
       <p className="privacy-note">
         Перед включением голоса приложение покажет, какие данные будут переданы провайдеру
