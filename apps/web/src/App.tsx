@@ -4,9 +4,16 @@ import type { CurrentUser, Exercise, SetInput } from '@mighty-cringe/contracts';
 import { useLiveQuery } from 'dexie-react-hooks';
 
 import { SetSheet } from './components/SetSheet';
-import { activateLocalUser, clearLocalUserData, db } from './lib/db';
+import {
+  activateLocalUser,
+  clearLocalUserData,
+  db,
+  type LocalSet,
+  type LocalWorkout,
+  type SyncConflict,
+} from './lib/db';
 import { fallbackCatalog } from './lib/fallbackCatalog';
-import { flushOutbox, queueMutation } from './lib/sync';
+import { flushOutbox, queueMutation, resolveConflict, syncAll } from './lib/sync';
 
 type View = 'workout' | 'progress' | 'catalog' | 'settings';
 
@@ -66,7 +73,7 @@ export default function App() {
 
 function AuthenticatedApp({ user, onLogout }: { user: CurrentUser; onLogout: () => void }) {
   const [view, setView] = useState<View>('workout');
-  const [sheetExercise, setSheetExercise] = useState<Exercise | null>(null);
+  const [sheet, setSheet] = useState<{ exercise: Exercise; set: LocalSet | null } | null>(null);
   const [inputOpen, setInputOpen] = useState(false);
   const [online, setOnline] = useState(navigator.onLine);
 
@@ -74,6 +81,11 @@ function AuthenticatedApp({ user, onLogout }: { user: CurrentUser; onLogout: () 
   const sets = useLiveQuery(() => db.sets.toArray(), [], []);
   const exercises = useLiveQuery(() => db.exercises.toArray(), [], []);
   const outboxCount = useLiveQuery(() => db.outbox.count(), [], 0);
+  const conflicts = useLiveQuery(
+    () => db.conflicts.orderBy('createdAt').reverse().toArray(),
+    [],
+    [],
+  );
 
   const activeWorkout = workouts.find((workout) => workout.endedAt === null);
   const suggested = useMemo(
@@ -106,11 +118,11 @@ function AuthenticatedApp({ user, onLogout }: { user: CurrentUser; onLogout: () 
   useEffect(() => {
     const sync = () => {
       setOnline(navigator.onLine);
-      void flushOutbox();
+      void syncAll();
     };
     window.addEventListener('online', sync);
     window.addEventListener('offline', sync);
-    void flushOutbox();
+    void syncAll();
     return () => {
       window.removeEventListener('online', sync);
       window.removeEventListener('offline', sync);
@@ -121,10 +133,26 @@ function AuthenticatedApp({ user, onLogout }: { user: CurrentUser; onLogout: () 
     const id = crypto.randomUUID();
     const clientMutationId = crypto.randomUUID();
     const startedAt = new Date().toISOString();
-    await db.workouts.put({ id, startedAt, endedAt: null, syncState: 'pending' });
+    await db.workouts.put({
+      id,
+      startedAt,
+      endedAt: null,
+      notes: null,
+      locale: 'ru',
+      revision: 0,
+      updatedAt: startedAt,
+      syncState: 'pending',
+    });
     await queueMutation({
       type: 'workout.create',
-      payload: { id, clientMutationId, startedAt, locale: 'ru' },
+      payload: {
+        id,
+        clientMutationId,
+        startedAt,
+        endedAt: null,
+        notes: null,
+        locale: 'ru',
+      },
     });
     await flushOutbox();
   }
@@ -135,26 +163,60 @@ function AuthenticatedApp({ user, onLogout }: { user: CurrentUser; onLogout: () 
     rir: number | null;
     comment: string | null;
   }) {
-    if (!activeWorkout || !sheetExercise) return;
+    if (!activeWorkout || !sheet) return;
+    if (sheet.set) {
+      await db.sets.update(sheet.set.id, { ...input, syncState: 'pending' });
+      await queueMutation({
+        type: 'set.update',
+        payload: {
+          clientMutationId: crypto.randomUUID(),
+          workoutId: activeWorkout.id,
+          setId: sheet.set.id,
+          baseRevision: sheet.set.revision,
+          changes: input,
+        },
+      });
+      setSheet(null);
+      await flushOutbox();
+      return;
+    }
+
     const set: SetInput = {
       id: crypto.randomUUID(),
-      exerciseId: sheetExercise.id,
+      exerciseId: sheet.exercise.id,
       ...input,
       performedAt: new Date().toISOString(),
     };
     const clientMutationId = crypto.randomUUID();
-    await db.sets.put({ ...set, workoutId: activeWorkout.id, syncState: 'pending' });
+    await db.sets.put({
+      ...set,
+      workoutId: activeWorkout.id,
+      revision: 0,
+      updatedAt: set.performedAt,
+      syncState: 'pending',
+    });
     await queueMutation({
       type: 'set.create',
       payload: { clientMutationId, workoutId: activeWorkout.id, set },
     });
-    setSheetExercise(null);
+    setSheet(null);
     await flushOutbox();
   }
 
   async function finishWorkout() {
     if (!activeWorkout) return;
-    await db.workouts.update(activeWorkout.id, { endedAt: new Date().toISOString() });
+    const endedAt = new Date().toISOString();
+    await db.workouts.update(activeWorkout.id, { endedAt, syncState: 'pending' });
+    await queueMutation({
+      type: 'workout.update',
+      payload: {
+        clientMutationId: crypto.randomUUID(),
+        workoutId: activeWorkout.id,
+        baseRevision: activeWorkout.revision,
+        changes: { endedAt },
+      },
+    });
+    await flushOutbox();
   }
 
   return (
@@ -164,8 +226,18 @@ function AuthenticatedApp({ user, onLogout }: { user: CurrentUser; onLogout: () 
           <p className="brand">Mighty &amp; Cringe</p>
           <p className="subtle">Привет, {firstName(user.displayName)} 👋</p>
         </div>
-        <span className={online ? 'sync-state online' : 'sync-state'}>
-          {online ? (outboxCount ? `Синхронизация: ${outboxCount}` : 'Синхронизировано') : 'Офлайн'}
+        <span
+          className={
+            conflicts.length ? 'sync-state conflict' : online ? 'sync-state online' : 'sync-state'
+          }
+        >
+          {conflicts.length
+            ? `Конфликтов: ${conflicts.length}`
+            : online
+              ? outboxCount
+                ? `Синхронизация: ${outboxCount}`
+                : 'Синхронизировано'
+              : `Офлайн · в очереди ${outboxCount}`}
         </span>
       </header>
 
@@ -173,7 +245,8 @@ function AuthenticatedApp({ user, onLogout }: { user: CurrentUser; onLogout: () 
         <WorkoutView
           activeWorkout={activeWorkout}
           exercises={suggested}
-          onAddSet={setSheetExercise}
+          onAddSet={(exercise) => setSheet({ exercise, set: null })}
+          onEditSet={(exercise, set) => setSheet({ exercise, set })}
           onFinish={finishWorkout}
           onStart={startWorkout}
           sets={sets}
@@ -182,7 +255,9 @@ function AuthenticatedApp({ user, onLogout }: { user: CurrentUser; onLogout: () 
       )}
       {view === 'catalog' && <CatalogView exercises={exercises} />}
       {view === 'progress' && <ProgressView sets={sets} workouts={workouts} />}
-      {view === 'settings' && <SettingsView onLogout={onLogout} user={user} />}
+      {view === 'settings' && (
+        <SettingsView conflicts={conflicts} onLogout={onLogout} user={user} />
+      )}
 
       <button className="explain-button" onClick={() => setInputOpen(true)} type="button">
         <span>🎙️✏️</span>
@@ -216,7 +291,12 @@ function AuthenticatedApp({ user, onLogout }: { user: CurrentUser; onLogout: () 
         />
       </nav>
 
-      <SetSheet exercise={sheetExercise} onClose={() => setSheetExercise(null)} onSave={saveSet} />
+      <SetSheet
+        exercise={sheet?.exercise ?? null}
+        initial={sheet?.set ?? null}
+        onClose={() => setSheet(null)}
+        onSave={saveSet}
+      />
       {inputOpen && <ExplainSheet onClose={() => setInputOpen(false)} />}
     </main>
   );
@@ -271,14 +351,16 @@ function WorkoutView({
   workouts,
   onStart,
   onAddSet,
+  onEditSet,
   onFinish,
 }: {
-  activeWorkout: { id: string; startedAt: string } | undefined;
+  activeWorkout: LocalWorkout | undefined;
   exercises: Exercise[];
-  sets: Array<SetInput & { workoutId: string }>;
-  workouts: Array<{ id: string; startedAt: string; endedAt: string | null }>;
+  sets: LocalSet[];
+  workouts: LocalWorkout[];
   onStart: () => void;
   onAddSet: (exercise: Exercise) => void;
+  onEditSet: (exercise: Exercise, set: LocalSet) => void;
   onFinish: () => void;
 }) {
   if (!activeWorkout) {
@@ -351,14 +433,21 @@ function WorkoutView({
                 <Tag tag={exercise.tag} />
               </div>
               {logged.length ? (
-                <p className="sets-line">
-                  {logged
-                    .map(
-                      (set) =>
-                        `${set.weightKg}×${set.reps}${set.rir === null ? '' : ` RIR${set.rir}`}`,
-                    )
-                    .join(' · ')}
-                </p>
+                <div className="sets-line set-chips">
+                  {logged.map((set) => (
+                    <button
+                      className={set.syncState === 'conflict' ? 'set-chip conflict' : 'set-chip'}
+                      key={set.id}
+                      onClick={() => onEditSet(exercise, set)}
+                      type="button"
+                    >
+                      {set.weightKg}×{set.reps}
+                      {set.rir === null ? '' : ` RIR${set.rir}`}
+                      {set.syncState === 'pending' ? ' · ждёт' : ''}
+                      {set.syncState === 'conflict' ? ' · конфликт' : ''}
+                    </button>
+                  ))}
+                </div>
               ) : (
                 <p className="sets-line muted">Ещё нет подходов</p>
               )}
@@ -398,13 +487,7 @@ function CatalogView({ exercises }: { exercises: Exercise[] }) {
   );
 }
 
-function ProgressView({
-  workouts,
-  sets,
-}: {
-  workouts: Array<{ id: string; startedAt: string; endedAt: string | null }>;
-  sets: Array<SetInput & { workoutId: string }>;
-}) {
+function ProgressView({ workouts, sets }: { workouts: LocalWorkout[]; sets: LocalSet[] }) {
   const maxEstimatedOneRep = sets.reduce((maximum, set) => {
     const estimated = set.weightKg * (1 + (set.reps + (set.rir ?? 0)) / 30);
     return Math.max(maximum, estimated);
@@ -434,7 +517,15 @@ function ProgressView({
   );
 }
 
-function SettingsView({ user, onLogout }: { user: CurrentUser; onLogout: () => void }) {
+function SettingsView({
+  user,
+  conflicts,
+  onLogout,
+}: {
+  user: CurrentUser;
+  conflicts: SyncConflict[];
+  onLogout: () => void;
+}) {
   return (
     <section className="screen">
       <p className="eyebrow">Профиль</p>
@@ -447,6 +538,38 @@ function SettingsView({ user, onLogout }: { user: CurrentUser; onLogout: () => v
         </div>
         <span>{user.role === 'admin' ? 'Admin' : 'Athlete'}</span>
       </div>
+      {conflicts.length > 0 && (
+        <section className="conflict-panel" aria-live="polite">
+          <p className="eyebrow">Нужен выбор</p>
+          <h2>Изменения с двух устройств</h2>
+          <p className="intro">
+            Ничего не перезаписано автоматически. Выбери версию для каждой записи.
+          </p>
+          {conflicts.map((conflict) => (
+            <article className="conflict-card" key={conflict.id}>
+              <strong>{conflict.entityType === 'workout' ? 'Тренировка' : 'Подход'}</strong>
+              <small>{conflict.message}</small>
+              <div>
+                <button
+                  className="button ghost small"
+                  onClick={() => void resolveConflict(conflict.id, 'server')}
+                  type="button"
+                >
+                  {conflict.current ? 'Оставить серверную' : 'Удалить локальную'}
+                </button>
+                <button
+                  className="button primary small"
+                  disabled={!canKeepMine(conflict)}
+                  onClick={() => void resolveConflict(conflict.id, 'mine')}
+                  type="button"
+                >
+                  Сохранить мою
+                </button>
+              </div>
+            </article>
+          ))}
+        </section>
+      )}
       <div className="setting">
         <span>Язык</span>
         <strong>Русский</strong>
@@ -550,4 +673,8 @@ function muscleLabel(muscle: Exercise['primaryMuscles'][number] | undefined) {
 
 function firstName(displayName: string) {
   return displayName.trim().split(/\s+/)[0] || 'спортсмен';
+}
+
+function canKeepMine(conflict: SyncConflict) {
+  return conflict.mutation.type === 'workout.update' || conflict.mutation.type === 'set.update';
 }
