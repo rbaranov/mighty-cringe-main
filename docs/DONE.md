@@ -46,3 +46,10 @@
 - Настроен self-hosted GitHub Actions runner на production-сервере как systemd service.
 - Добавлен ручной production workflow: сборка/запуск Compose, миграции и HTTPS health check.
 - Выполнен успешный production-деплой и проверка `https://mightycringe.com/health`.
+
+## 2026-07-21 — управление документацией
+
+- Добавлен корневой `AGENTS.md` с описанием проекта, границами безопасности и правилами работы.
+- Добавлены пользовательский `docs/BACKLOG.md` и журнал `docs/DONE.md`.
+- Зафиксировано правило: доработки ведутся в отдельных ветках, merge в `main` выполняется
+  только после явного разрешения владельца.
