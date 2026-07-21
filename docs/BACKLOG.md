@@ -181,7 +181,8 @@
    повторяет временные ошибки до пяти раз и отключает истёкшие subscriptions после HTTP 404/410.
    Payload не содержит тренировочных или медицинских данных, а приватный VAPID key проверяется
    server-only границей CI. Полные локальные tests, typecheck, format, production build, 47
-   web-тестов, PWA shell, secret-boundary и мобильная browser QA проходят; GitHub CI выполняется.
+   web-тестов, PWA shell, secret-boundary и мобильная browser QA проходят; GitHub CI прошёл,
+   включая миграцию и PostgreSQL 17 integration test.
 
    **Требуется участие владельца перед production:** один раз сгенерировать стабильную VAPID-пару,
    внести `VAPID_SUBJECT`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` в
