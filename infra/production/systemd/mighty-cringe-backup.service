@@ -1,0 +1,14 @@
+[Unit]
+Description=Mighty & Cringe encrypted PostgreSQL backup
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=deploy
+Group=deploy
+EnvironmentFile=/etc/mighty-cringe/backup-runner.env
+ExecStart=/usr/local/lib/mighty-cringe/run-backup.sh backup
+Nice=10
+IOSchedulingClass=idle

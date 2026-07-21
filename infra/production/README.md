@@ -44,10 +44,22 @@ it has no published host port. To start the optional worker later, use
 
 ## Backup policy before admitting real data
 
-1. Archive PostgreSQL WAL continuously to the private object bucket.
-2. Run an encrypted base backup every 24 hours and test a restore every month.
-3. Store raw audio in the object bucket as soon as it reaches the server; only temporary local
-   files may live on the VPS.
-4. Enable server snapshots as an additional recovery mechanism, not as the sole backup.
+Production installs two systemd timers during every deployment:
+
+- `mighty-cringe-backup.timer` creates a client-side encrypted logical PostgreSQL backup daily,
+  retains 14 daily, 8 weekly and 12 monthly snapshots, and validates repository data;
+- `mighty-cringe-restore-check.timer` restores the latest snapshot into an isolated tmpfs-backed
+  PostgreSQL container every month and verifies the core tables.
+
+The timers only become operational after the private Helsinki bucket, S3 credentials and independent
+`RESTIC_PASSWORD` are present in `/etc/mighty-cringe/production.env`. Keep an offline password copy.
+The current RPO is 24 hours and the RTO target is four hours. Server snapshots are an additional
+recovery mechanism, never the sole backup. Raw audio must use the private object bucket when audio
+retention is implemented.
+
+Every production deployment builds the backup image, creates a fresh encrypted snapshot, and proves
+that the latest snapshot restores into an isolated PostgreSQL container before installing the timers.
+For an incident, follow the exact non-overwriting recovery procedure in
+[Hetzner first deployment](../../docs/deployment/hetzner-first-deploy.md#полное-восстановление-после-потери-postgresql).
 
 The application must not begin retaining user audio until steps 1–3 are automated and tested.

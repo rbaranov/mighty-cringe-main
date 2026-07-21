@@ -83,6 +83,17 @@ jobs:
             exit 1
           fi
 
+      - name: Verify backup recovery and install timers
+        if: steps.revision.outputs.deploy == 'true'
+        working-directory: infra/production
+        env:
+          PRODUCTION_ENV_FILE: /etc/mighty-cringe/production.env
+        run: |
+          docker compose --env-file "$PRODUCTION_ENV_FILE" --profile backup build backup
+          PRODUCTION_DIR="$GITHUB_WORKSPACE/infra/production" scripts/run-backup.sh backup
+          PRODUCTION_DIR="$GITHUB_WORKSPACE/infra/production" scripts/run-backup.sh verify
+          sudo scripts/install-backup-timers.sh "$GITHUB_WORKSPACE/infra/production"
+
       - name: Verify public HTTPS healthcheck
         if: steps.revision.outputs.deploy == 'true'
         working-directory: infra/production

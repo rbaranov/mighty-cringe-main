@@ -1,0 +1,8 @@
+FROM postgres:17-alpine
+
+RUN apk add --no-cache ca-certificates restic
+
+COPY infra/production/scripts/backup-entrypoint.sh /usr/local/bin/mighty-cringe-backup
+
+ENTRYPOINT ["/usr/local/bin/mighty-cringe-backup"]
+CMD ["backup"]

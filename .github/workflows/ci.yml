@@ -44,6 +44,9 @@ jobs:
       - name: Test
         run: pnpm --filter @mighty-cringe/api test
 
+      - name: Test encrypted backup and isolated restore
+        run: infra/production/scripts/test-backup-restore.sh
+
   deploy-production:
     name: Deploy the verified main revision
     needs: verify

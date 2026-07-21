@@ -8,9 +8,23 @@
    API-данных к пользователю; отключить демонстрационный доступ. Готово, когда пользователь
    может войти и выйти, видеть только свои данные, а базовые роли `athlete` / `admin` работают.
 
+   **Статус:** реализация прошла CI в
+   [draft PR #5](https://github.com/mighty-cringe/mighty-cringe-main/pull/5). **Требуется участие
+   владельца:** создать Google OAuth Web client с redirect URI
+   `https://mightycringe.com/api/v1/auth/google/callback`; внести `GOOGLE_CLIENT_ID`,
+   `GOOGLE_CLIENT_SECRET` и `ADMIN_EMAILS` в `/etc/mighty-cringe/production.env`; разрешить merge;
+   после деплоя проверить вход, выход и два разных аккаунта. До этого пункт остаётся в бэклоге.
+
 2. **Моя история восстанавливается после любой поломки.** Создать приватный Hetzner Object
    Storage и настроить автоматические зашифрованные бэкапы PostgreSQL с проверенным
    восстановлением, сроком хранения и понятной процедурой recovery.
+
+   **Статус:** автоматизация, retention и recovery runbook готовы в ветке
+   `agent/postgres-encrypted-backups`; локальные проверки кода и конфигурации проходят, Docker
+   backup→restore запускается в CI. **Требуется участие владельца:** создать private Helsinki
+   bucket и отдельные S3 credentials; сохранить вне VPS новый `RESTIC_PASSWORD`; внести значения
+   в `/etc/mighty-cringe/production.env`; разрешить merge. Деплой сам создаст backup и выполнит
+   изолированный restore до установки таймеров. До успешного production-прогона пункт не закрыт.
 
 3. **Запись тренировки не теряется и не меняется незаметно.** Синхронизировать старт,
    подходы, завершение и изменения тренировки; сохранить очередь после перезапуска PWA,
