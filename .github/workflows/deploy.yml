@@ -26,13 +26,9 @@ jobs:
           }
 
       - name: Verify public HTTPS healthcheck
-        env:
-          PRODUCTION_ENV_FILE: /etc/mighty-cringe/production.env
         run: |
           set -eu
-          set -a
-          . "$PRODUCTION_ENV_FILE"
-          set +a
+          DOMAIN=mightycringe.com
 
           for attempt in $(seq 1 12); do
             if curl --fail --silent --show-error --resolve "$DOMAIN:443:127.0.0.1" "https://$DOMAIN/health"; then
