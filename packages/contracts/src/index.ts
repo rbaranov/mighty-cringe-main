@@ -15,7 +15,16 @@ export const muscleGroups = [
 ] as const;
 
 export const exerciseTags = ['mighty', 'normal', 'cringe'] as const;
-export const userRoles = ['athlete', 'trainer', 'superadmin'] as const;
+export const userRoles = ['athlete', 'admin', 'trainer', 'superadmin'] as const;
+
+export const currentUserSchema = z.object({
+  id: z.string().uuid(),
+  email: z.string().email(),
+  displayName: z.string().min(1),
+  avatarUrl: z.string().url().nullable(),
+  role: z.enum(userRoles),
+  locale: z.enum(['ru', 'en']),
+});
 
 export const exerciseSchema = z.object({
   id: z.string().uuid(),
@@ -61,3 +70,5 @@ export type SetInput = z.infer<typeof setInputSchema>;
 export type CreateWorkoutInput = z.infer<typeof createWorkoutSchema>;
 export type CreateSetInput = z.infer<typeof createSetSchema>;
 export type SyncMutation = z.infer<typeof syncMutationSchema>;
+export type CurrentUser = z.infer<typeof currentUserSchema>;
+export type UserRole = CurrentUser['role'];

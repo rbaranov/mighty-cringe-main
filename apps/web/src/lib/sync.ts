@@ -17,9 +17,14 @@ export async function flushOutbox() {
   for (const queued of mutations) {
     const response = await fetch('/api/v1/sync', {
       method: 'POST',
+      credentials: 'same-origin',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(queued.mutation),
     });
+    if (response.status === 401) {
+      window.dispatchEvent(new Event('mighty-cringe:unauthorized'));
+      return;
+    }
     if (!response.ok) return;
     await markSynced(queued);
     await db.outbox.delete(queued.id);

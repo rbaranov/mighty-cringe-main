@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import type { Exercise, SetInput } from '@mighty-cringe/contracts';
+import type { CurrentUser, Exercise, SetInput } from '@mighty-cringe/contracts';
 import { useLiveQuery } from 'dexie-react-hooks';
 
 import { SetSheet } from './components/SetSheet';
-import { db } from './lib/db';
+import { activateLocalUser, clearLocalUserData, db } from './lib/db';
 import { fallbackCatalog } from './lib/fallbackCatalog';
 import { flushOutbox, queueMutation } from './lib/sync';
 
@@ -19,7 +19,52 @@ const suggestedIds = [
   '10000000-0000-4000-8000-000000000006',
 ];
 
+type AuthState =
+  | { status: 'loading' }
+  | { status: 'anonymous'; googleEnabled: boolean }
+  | { status: 'authenticated'; user: CurrentUser };
+
 export default function App() {
+  const [auth, setAuth] = useState<AuthState>({ status: 'loading' });
+
+  const loadSession = useCallback(async () => {
+    try {
+      const response = await fetch('/api/v1/me', { credentials: 'same-origin' });
+      if (response.ok) {
+        const payload = (await response.json()) as { user: CurrentUser };
+        await activateLocalUser(payload.user.id);
+        setAuth({ status: 'authenticated', user: payload.user });
+        return;
+      }
+
+      const configResponse = await fetch('/api/v1/auth/config', { credentials: 'same-origin' });
+      const config = configResponse.ok
+        ? ((await configResponse.json()) as { googleEnabled: boolean })
+        : { googleEnabled: false };
+      setAuth({ status: 'anonymous', googleEnabled: config.googleEnabled });
+    } catch {
+      setAuth({ status: 'anonymous', googleEnabled: false });
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadSession();
+    window.addEventListener('mighty-cringe:unauthorized', loadSession);
+    return () => window.removeEventListener('mighty-cringe:unauthorized', loadSession);
+  }, [loadSession]);
+
+  async function logout() {
+    await fetch('/api/v1/auth/logout', { method: 'POST', credentials: 'same-origin' });
+    await clearLocalUserData();
+    setAuth({ status: 'anonymous', googleEnabled: true });
+  }
+
+  if (auth.status === 'loading') return <AuthLoading />;
+  if (auth.status === 'anonymous') return <LoginScreen googleEnabled={auth.googleEnabled} />;
+  return <AuthenticatedApp onLogout={logout} user={auth.user} />;
+}
+
+function AuthenticatedApp({ user, onLogout }: { user: CurrentUser; onLogout: () => void }) {
   const [view, setView] = useState<View>('workout');
   const [sheetExercise, setSheetExercise] = useState<Exercise | null>(null);
   const [inputOpen, setInputOpen] = useState(false);
@@ -42,7 +87,11 @@ export default function App() {
   useEffect(() => {
     const populateCatalog = async () => {
       try {
-        const response = await fetch('/api/v1/exercises');
+        const response = await fetch('/api/v1/exercises', { credentials: 'same-origin' });
+        if (response.status === 401) {
+          window.dispatchEvent(new Event('mighty-cringe:unauthorized'));
+          return;
+        }
         if (!response.ok) throw new Error('Catalog is unavailable');
         const payload = (await response.json()) as { items: Exercise[] };
         await db.exercises.bulkPut(payload.items);
@@ -113,7 +162,7 @@ export default function App() {
       <header className="topbar">
         <div>
           <p className="brand">Mighty &amp; Cringe</p>
-          <p className="subtle">Привет, R 👋</p>
+          <p className="subtle">Привет, {firstName(user.displayName)} 👋</p>
         </div>
         <span className={online ? 'sync-state online' : 'sync-state'}>
           {online ? (outboxCount ? `Синхронизация: ${outboxCount}` : 'Синхронизировано') : 'Офлайн'}
@@ -133,7 +182,7 @@ export default function App() {
       )}
       {view === 'catalog' && <CatalogView exercises={exercises} />}
       {view === 'progress' && <ProgressView sets={sets} workouts={workouts} />}
-      {view === 'settings' && <SettingsView />}
+      {view === 'settings' && <SettingsView onLogout={onLogout} user={user} />}
 
       <button className="explain-button" onClick={() => setInputOpen(true)} type="button">
         <span>🎙️✏️</span>
@@ -169,6 +218,48 @@ export default function App() {
 
       <SetSheet exercise={sheetExercise} onClose={() => setSheetExercise(null)} onSave={saveSet} />
       {inputOpen && <ExplainSheet onClose={() => setInputOpen(false)} />}
+    </main>
+  );
+}
+
+function AuthLoading() {
+  return (
+    <main className="auth-shell">
+      <p className="brand">Mighty &amp; Cringe</p>
+      <div className="auth-card" aria-live="polite">
+        <p className="eyebrow">Безопасный вход</p>
+        <h1>Проверяем сессию…</h1>
+      </div>
+    </main>
+  );
+}
+
+function LoginScreen({ googleEnabled }: { googleEnabled: boolean }) {
+  const authError = new URLSearchParams(window.location.search).get('authError');
+  return (
+    <main className="auth-shell">
+      <p className="brand">Mighty &amp; Cringe</p>
+      <section className="auth-card">
+        <p className="eyebrow">Личный журнал</p>
+        <h1>Твои тренировки — только твои</h1>
+        <p className="intro">
+          Войди через Google. Приложение получит только подтверждённый email, имя и аватар для
+          профиля.
+        </p>
+        {authError && <p className="auth-error">Вход не завершён. Попробуй ещё раз.</p>}
+        {googleEnabled ? (
+          <a className="button primary action login-button" href="/api/v1/auth/google?returnTo=/">
+            Войти через Google
+          </a>
+        ) : (
+          <button className="button primary action" disabled type="button">
+            Google OAuth ещё не настроен владельцем
+          </button>
+        )}
+        <p className="privacy-note">
+          Сессия хранится в защищённой HttpOnly cookie. Токены Google не сохраняются в браузере.
+        </p>
+      </section>
     </main>
   );
 }
@@ -343,11 +434,19 @@ function ProgressView({
   );
 }
 
-function SettingsView() {
+function SettingsView({ user, onLogout }: { user: CurrentUser; onLogout: () => void }) {
   return (
     <section className="screen">
       <p className="eyebrow">Профиль</p>
       <h1>Настройки</h1>
+      <div className="profile-card">
+        {user.avatarUrl && <img alt="" referrerPolicy="no-referrer" src={user.avatarUrl} />}
+        <div>
+          <strong>{user.displayName}</strong>
+          <small>{user.email}</small>
+        </div>
+        <span>{user.role === 'admin' ? 'Admin' : 'Athlete'}</span>
+      </div>
       <div className="setting">
         <span>Язык</span>
         <strong>Русский</strong>
@@ -368,6 +467,9 @@ function SettingsView() {
         Перед включением голоса приложение покажет, какие данные будут переданы провайдеру
         распознавания.
       </p>
+      <button className="button ghost full" onClick={onLogout} type="button">
+        Выйти и удалить локальные данные
+      </button>
     </section>
   );
 }
@@ -444,4 +546,8 @@ function muscleLabel(muscle: Exercise['primaryMuscles'][number] | undefined) {
     core: 'Кор',
   };
   return labels[muscle ?? ''] ?? 'Упражнение';
+}
+
+function firstName(displayName: string) {
+  return displayName.trim().split(/\s+/)[0] || 'спортсмен';
 }
