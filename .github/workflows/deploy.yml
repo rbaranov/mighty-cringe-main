@@ -24,3 +24,21 @@ jobs:
             docker compose --env-file "$PRODUCTION_ENV_FILE" logs --no-color migrate
             exit 1
           }
+
+      - name: Verify public HTTPS healthcheck
+        env:
+          PRODUCTION_ENV_FILE: /etc/mighty-cringe/production.env
+        run: |
+          set -eu
+          set -a
+          . "$PRODUCTION_ENV_FILE"
+          set +a
+
+          for attempt in $(seq 1 12); do
+            if curl --fail --silent --show-error --resolve "$DOMAIN:443:127.0.0.1" "https://$DOMAIN/health"; then
+              exit 0
+            fi
+            sleep 5
+          done
+
+          exit 1
