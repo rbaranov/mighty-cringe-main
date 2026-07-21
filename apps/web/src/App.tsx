@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 import type { CurrentUser, Exercise, SetInput, WorkoutExercise } from '@mighty-cringe/contracts';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -8,15 +8,27 @@ import type { MeasurementDraft } from './components/BodyMeasurementsSection';
 import { ProgressView } from './components/ProgressView';
 import {
   activateLocalUser,
+  cacheCurrentUser,
   clearLocalUserData,
   db,
+  disableOfflineSession,
+  getCachedCurrentUser,
   type LocalMeasurement,
   type LocalSet,
   type LocalWorkout,
   type SyncConflict,
 } from './lib/db';
 import { fallbackCatalog } from './lib/fallbackCatalog';
-import { flushOutbox, queueMutation, resolveConflict, syncAll } from './lib/sync';
+import { hasPendingRemoteLogout, requestRemoteLogout } from './lib/logout';
+import { resolveSession } from './lib/session';
+import {
+  flushOutbox,
+  getSyncStatus,
+  queueMutation,
+  resolveConflict,
+  subscribeSyncStatus,
+  syncAll,
+} from './lib/sync';
 
 type View = 'workout' | 'progress' | 'catalog' | 'settings';
 
@@ -32,7 +44,7 @@ const suggestedIds = [
 type AuthState =
   | { status: 'loading' }
   | { status: 'anonymous'; googleEnabled: boolean }
-  | { status: 'authenticated'; user: CurrentUser };
+  | { status: 'authenticated'; user: CurrentUser; restoredFromCache: boolean };
 
 type ExercisePickerMode = { mode: 'add' } | { mode: 'replace'; itemId: string };
 
@@ -47,51 +59,78 @@ export default function App() {
   const [auth, setAuth] = useState<AuthState>({ status: 'loading' });
 
   const loadSession = useCallback(async () => {
-    try {
-      const response = await fetch('/api/v1/me', { credentials: 'same-origin' });
-      if (response.ok) {
-        const payload = (await response.json()) as { user: CurrentUser };
-        await activateLocalUser(payload.user.id);
-        setAuth({ status: 'authenticated', user: payload.user });
+    if (hasPendingRemoteLogout()) {
+      const logoutCompleted = await requestRemoteLogout();
+      if (!logoutCompleted) {
+        setAuth({ status: 'anonymous', googleEnabled: true });
         return;
       }
-
-      const configResponse = await fetch('/api/v1/auth/config', { credentials: 'same-origin' });
-      const config = configResponse.ok
-        ? ((await configResponse.json()) as { googleEnabled: boolean })
-        : { googleEnabled: false };
-      setAuth({ status: 'anonymous', googleEnabled: config.googleEnabled });
-    } catch {
-      setAuth({ status: 'anonymous', googleEnabled: false });
     }
+    const session = await resolveSession({ request: fetch, getCachedUser: getCachedCurrentUser });
+    if (session.status === 'authenticated') {
+      if (session.source === 'server') {
+        await activateLocalUser(session.user.id);
+        await cacheCurrentUser(session.user);
+      }
+      setAuth({
+        status: 'authenticated',
+        user: session.user,
+        restoredFromCache: session.source === 'cache',
+      });
+      return;
+    }
+    if (session.serverRejected) await disableOfflineSession();
+    setAuth({ status: 'anonymous', googleEnabled: session.googleEnabled });
   }, []);
 
   useEffect(() => {
     void loadSession();
     window.addEventListener('mighty-cringe:unauthorized', loadSession);
-    return () => window.removeEventListener('mighty-cringe:unauthorized', loadSession);
+    window.addEventListener('online', loadSession);
+    return () => {
+      window.removeEventListener('mighty-cringe:unauthorized', loadSession);
+      window.removeEventListener('online', loadSession);
+    };
   }, [loadSession]);
 
   async function logout() {
-    await fetch('/api/v1/auth/logout', { method: 'POST', credentials: 'same-origin' });
+    await requestRemoteLogout();
     await clearLocalUserData();
     setAuth({ status: 'anonymous', googleEnabled: true });
   }
 
   if (auth.status === 'loading') return <AuthLoading />;
   if (auth.status === 'anonymous') return <LoginScreen googleEnabled={auth.googleEnabled} />;
-  return <AuthenticatedApp onLogout={logout} user={auth.user} />;
+  return (
+    <AuthenticatedApp
+      onLogout={logout}
+      restoredFromCache={auth.restoredFromCache}
+      user={auth.user}
+    />
+  );
 }
 
-function AuthenticatedApp({ user, onLogout }: { user: CurrentUser; onLogout: () => void }) {
+function AuthenticatedApp({
+  user,
+  restoredFromCache,
+  onLogout,
+}: {
+  user: CurrentUser;
+  restoredFromCache: boolean;
+  onLogout: () => void;
+}) {
   const [view, setView] = useState<View>('workout');
   const [sheet, setSheet] = useState<{ exercise: Exercise; set: LocalSet | null } | null>(null);
   const [exercisePicker, setExercisePicker] = useState<ExercisePickerMode | null>(null);
   const [confirmation, setConfirmation] = useState<PendingConfirmation | null>(null);
   const [inputOpen, setInputOpen] = useState(false);
-  const [online, setOnline] = useState(navigator.onLine);
+  const syncStatus = useSyncExternalStore(subscribeSyncStatus, getSyncStatus, getSyncStatus);
 
-  const workouts = useLiveQuery(() => db.workouts.orderBy('startedAt').reverse().toArray(), [], []);
+  const storedWorkouts = useLiveQuery(
+    () => db.workouts.orderBy('startedAt').reverse().toArray(),
+    [],
+  );
+  const workouts = storedWorkouts ?? [];
   const sets = useLiveQuery(() => db.sets.toArray(), [], []);
   const exercises = useLiveQuery(() => db.exercises.toArray(), [], []);
   const measurements = useLiveQuery(
@@ -100,11 +139,24 @@ function AuthenticatedApp({ user, onLogout }: { user: CurrentUser; onLogout: () 
     [],
   );
   const outboxCount = useLiveQuery(() => db.outbox.count(), [], 0);
+  const lastSuccessfulSyncAt = useLiveQuery(
+    async () => (await db.meta.get('lastSuccessfulSyncAt'))?.value ?? null,
+    [],
+    null,
+  );
   const conflicts = useLiveQuery(
     () => db.conflicts.orderBy('createdAt').reverse().toArray(),
     [],
     [],
   );
+  const hydrationChecked = useRef(false);
+  const [recoveredWorkoutId, setRecoveredWorkoutId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (hydrationChecked.current || storedWorkouts === undefined) return;
+    hydrationChecked.current = true;
+    setRecoveredWorkoutId(storedWorkouts.find((workout) => workout.endedAt === null)?.id ?? null);
+  }, [storedWorkouts]);
 
   const activeWorkout = workouts.find((workout) => workout.endedAt === null);
   const suggested = useMemo(
@@ -135,7 +187,6 @@ function AuthenticatedApp({ user, onLogout }: { user: CurrentUser; onLogout: () 
 
   useEffect(() => {
     const sync = () => {
-      setOnline(navigator.onLine);
       void syncAll();
     };
     window.addEventListener('online', sync);
@@ -516,20 +567,32 @@ function AuthenticatedApp({ user, onLogout }: { user: CurrentUser; onLogout: () 
           <p className="brand">Mighty &amp; Cringe</p>
           <p className="subtle">Привет, {firstName(user.displayName)} 👋</p>
         </div>
-        <span
-          className={
-            conflicts.length ? 'sync-state conflict' : online ? 'sync-state online' : 'sync-state'
-          }
+        <button
+          aria-live="polite"
+          className={conflicts.length ? 'sync-state conflict' : `sync-state ${syncStatus.phase}`}
+          disabled={syncStatus.phase === 'syncing'}
+          onClick={() => void syncAll()}
+          title={lastSyncTitle(lastSuccessfulSyncAt)}
+          type="button"
         >
-          {conflicts.length
-            ? `Конфликтов: ${conflicts.length}`
-            : online
-              ? outboxCount
-                ? `Синхронизация: ${outboxCount}`
-                : 'Синхронизировано'
-              : `Офлайн · в очереди ${outboxCount}`}
-        </span>
+          {syncStatusLabel(syncStatus.phase, outboxCount, conflicts.length)}
+        </button>
       </header>
+
+      {restoredFromCache ? (
+        <p className="connectivity-notice" role="status">
+          Открыта сохранённая копия. Можно продолжать тренировку — изменения останутся на этом
+          устройстве и уйдут на сервер после восстановления связи.
+        </p>
+      ) : syncStatus.phase === 'offline' ? (
+        <p className="connectivity-notice" role="status">
+          Нет сети. Все действия сохраняются на этом устройстве и синхронизируются позже.
+        </p>
+      ) : syncStatus.phase === 'error' ? (
+        <p className="connectivity-notice error" role="status">
+          {syncStatus.message} Нажми статус справа вверху, чтобы повторить сейчас.
+        </p>
+      ) : null}
 
       {view === 'workout' && (
         <WorkoutView
@@ -547,6 +610,8 @@ function AuthenticatedApp({ user, onLogout }: { user: CurrentUser; onLogout: () 
           onReplaceExercise={(itemId) => setExercisePicker({ mode: 'replace', itemId })}
           onStart={startWorkout}
           onToggleSuperset={toggleSuperset}
+          onDismissRecovery={() => setRecoveredWorkoutId(null)}
+          recovered={activeWorkout?.id === recoveredWorkoutId}
           sets={sets}
           workouts={workouts}
         />
@@ -681,6 +746,8 @@ function WorkoutView({
   onRemoveExercise,
   onReplaceExercise,
   onToggleSuperset,
+  recovered,
+  onDismissRecovery,
 }: {
   activeWorkout: LocalWorkout | undefined;
   catalog: Exercise[];
@@ -698,6 +765,8 @@ function WorkoutView({
   onRemoveExercise: (itemId: string, hasLoggedSets: boolean) => void;
   onReplaceExercise: (itemId: string) => void;
   onToggleSuperset: (itemId: string) => void;
+  recovered: boolean;
+  onDismissRecovery: () => void;
 }) {
   if (!activeWorkout) {
     return (
@@ -768,6 +837,17 @@ function WorkoutView({
       <p className="intro">
         План можно менять в любой момент. Удаление упражнения не стирает уже записанные подходы.
       </p>
+      {recovered && (
+        <div className="recovery-notice" role="status">
+          <div>
+            <strong>Незавершённая тренировка восстановлена</strong>
+            <span>План и все записанные подходы загружены с этого устройства.</span>
+          </div>
+          <button aria-label="Скрыть уведомление" onClick={onDismissRecovery} type="button">
+            ×
+          </button>
+        </div>
+      )}
       <div className="exercise-list">
         {plan.map(({ item, exercise }, index) => {
           const logged = visibleSets
@@ -1258,6 +1338,26 @@ function canKeepMine(conflict: SyncConflict) {
     (conflict.mutation.type === 'set.delete' && conflict.current !== null) ||
     (conflict.mutation.type === 'measurement.delete' && conflict.current !== null)
   );
+}
+
+function syncStatusLabel(
+  phase: ReturnType<typeof getSyncStatus>['phase'],
+  pending: number,
+  conflicts: number,
+) {
+  if (conflicts) return `Конфликтов: ${conflicts}`;
+  if (phase === 'offline') return `Офлайн · ждёт ${pending}`;
+  if (phase === 'error') return pending ? `Не отправлено: ${pending}` : 'Сервер недоступен';
+  if (phase === 'syncing') return pending ? `Отправляю: ${pending}` : 'Проверяю сервер…';
+  return pending ? `Ожидает отправки: ${pending}` : 'Синхронизировано';
+}
+
+function lastSyncTitle(value: string | null) {
+  if (!value) return 'Успешной синхронизации на этом устройстве ещё не было';
+  return `Последняя успешная синхронизация: ${new Intl.DateTimeFormat('ru-RU', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(new Date(value))}`;
 }
 
 function normalizePlan(plan: WorkoutExercise[]) {

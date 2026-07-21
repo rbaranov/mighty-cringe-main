@@ -62,6 +62,7 @@ jobs:
           pnpm --filter @mighty-cringe/db db:migrate
           pnpm --filter @mighty-cringe/api test
           pnpm --filter @mighty-cringe/web test
+          pnpm --filter @mighty-cringe/web test:pwa
 
   deploy-production:
     name: Deploy the verified main revision
