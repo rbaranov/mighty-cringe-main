@@ -217,20 +217,22 @@ ADMIN_EMAILS=<OWNER_GOOGLE_EMAIL>
 TRAINER_EMAILS=
 SESSION_TTL_DAYS=30
 
-OPENROUTER_API_KEY=<SPEND_LIMITED_SERVER_KEY>
-OPENROUTER_STT_MODEL=openai/whisper-large-v3
+# Оставьте весь voice-блок пустым, пока не готовы одновременно S3 и OpenRouter.
+OPENROUTER_API_KEY=
+OPENROUTER_STT_MODEL=
 
-VOICE_S3_ENDPOINT=https://hel1.your-objectstorage.com
-VOICE_S3_REGION=hel1
-VOICE_S3_BUCKET=<UNIQUE_PRIVATE_VOICE_BUCKET>
-VOICE_S3_ACCESS_KEY_ID=<VOICE_ACCESS_KEY>
-VOICE_S3_SECRET_ACCESS_KEY=<VOICE_SECRET_KEY>
+VOICE_S3_ENDPOINT=
+VOICE_S3_REGION=
+VOICE_S3_BUCKET=
+VOICE_S3_ACCESS_KEY_ID=
+VOICE_S3_SECRET_ACCESS_KEY=
 VOICE_S3_FORCE_PATH_STYLE=false
-VOICE_S3_ENCRYPTION_KEY=<BASE64_32_BYTE_SSE_C_KEY>
+VOICE_S3_ENCRYPTION_KEY=
 
-VAPID_SUBJECT=mailto:<MONITORED_PRODUCT_EMAIL>
-VAPID_PUBLIC_KEY=<URL_SAFE_PUBLIC_KEY>
-VAPID_PRIVATE_KEY=<SERVER_ONLY_PRIVATE_KEY>
+# Оставьте все три VAPID-поля пустыми до генерации стабильной пары.
+VAPID_SUBJECT=
+VAPID_PUBLIC_KEY=
+VAPID_PRIVATE_KEY=
 WORKER_INTERVAL_MS=15000
 ```
 
@@ -246,6 +248,9 @@ https://mightycringe.com/api/v1/auth/google/callback
 список email через запятую; совпавшие подтверждённые Google-аккаунты получают роль `admin` при
 входе. `TRAINER_EMAILS` таким же образом включает тренерский кабинет только для заранее
 разрешённых аккаунтов. Права на `/etc/mighty-cringe/production.env` уже заданы предыдущей командой.
+Preflight требует основные DB/OAuth-поля, но разрешает полностью пустые voice и VAPID-группы: эти
+возможности останутся выключенными. Частично заполненная группа останавливает deploy до изменения
+контейнеров; значения секретов в диагностике не печатаются.
 
 ### Приватный голос: Hetzner Object Storage
 
