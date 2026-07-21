@@ -2,33 +2,38 @@
 
 ## Chosen platform
 
-Create a Hetzner Cloud **CX33** (x86 cost-optimized) in Helsinki with Ubuntu 24.04 LTS.
+Create a Hetzner Cloud **CPX12** (x86 regular performance) in Helsinki with Ubuntu 24.04 LTS.
 It is intentionally independent from `emirtest.kz`. Pair it with a private Hetzner Object Storage
-bucket in Helsinki. The current plan has ample headroom for the initial PWA, API, worker, and
-PostgreSQL; it can later be resized without changing the application architecture.
+bucket in Helsinki. The current plan is intentionally lean for the initial PWA, API, and
+PostgreSQL. The optional worker is disabled by default; the server can later be resized without
+changing the application architecture.
+
+For the full setup procedure, see
+[Hetzner first deployment](../../docs/deployment/hetzner-first-deploy.md).
 
 ## One-time provider setup
 
-1. Create a Hetzner project, a Helsinki server, firewall and a private Object Storage bucket.
+1. Create a Hetzner project, a Helsinki CPX12 server and firewall. Create the private Object Storage
+   bucket before the application begins retaining real audio or user data.
 2. At Prokbun, point `mightycringe.com` and `www.mightycringe.com` to the server's IPv4 address;
    add IPv6 too when the server has a primary IPv6 address.
 3. Open inbound TCP 80/443 to the world and TCP 22 only from your administrative IP or VPN.
 4. Add a non-root deploy user with an SSH key. Disable password SSH login and root login.
-5. Clone this private repository to `/srv/mighty-cringe`, create `.env` from `.env.example`, and
-   generate a unique database password.
+5. Register a self-hosted GitHub Actions runner under that user. It checks out private code using
+   GitHub's short-lived workflow token, so no GitHub deploy key or personal access token is stored
+   on the server.
+6. Create `/etc/mighty-cringe/production.env` with a unique database password; never commit it.
 
 ## First deployment
 
-```bash
-cd /srv/mighty-cringe/infra/production
-cp .env.example .env
-# Fill every value in .env; never commit it.
-docker compose up -d --build
-```
+Start the **Deploy production** workflow manually after the self-hosted runner is online.
+The workflow checks out `main` and runs Docker Compose with the private environment file at
+`/etc/mighty-cringe/production.env`.
 
 Caddy obtains and renews TLS certificates after the domain records resolve to the server. The
-`migrate` applies the committed Drizzle migrations before the API and worker start. PostgreSQL is
-private: it has no published host port.
+`migrate` applies the committed Drizzle migrations before the API starts. PostgreSQL is private:
+it has no published host port. To start the optional worker later, use
+`docker compose --profile worker up -d`.
 
 ## Backup policy before admitting real data
 
