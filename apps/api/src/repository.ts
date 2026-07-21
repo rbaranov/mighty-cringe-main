@@ -11,6 +11,9 @@ import type {
   MeasurementRecord,
   MeasurementValues,
   SetRecord,
+  TrainerAthleteSummary,
+  TrainerInviteRecord,
+  TrainerSummary,
   UpdateMeasurementInput,
   UpdateSetInput,
   UpdateWorkoutInput,
@@ -34,6 +37,8 @@ import {
   measurementEntries,
   sessions,
   sets,
+  trainerAthleteLinks,
+  trainerInvites,
   users,
   voiceEntries,
   workoutExercises,
@@ -66,6 +71,14 @@ export type VoiceEntryCreateInput = {
   audioFormat: AudioFormat;
   sizeBytes: number;
   consentVersion: string;
+};
+
+export type TrainerInviteCreateInput = {
+  id: string;
+  trainerId: string;
+  email: string | null;
+  tokenHash: string;
+  expiresAt: Date;
 };
 
 export type WorkoutMutationResult = {
@@ -110,6 +123,15 @@ export class RepositoryNotFoundError extends Error {
   }
 }
 
+export class RepositoryInviteError extends Error {
+  constructor(
+    readonly code: 'invite_expired' | 'invite_used' | 'invite_email_mismatch' | 'self_link',
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
 export interface WorkoutRepository {
   listExercises(): Promise<Exercise[]>;
   listWorkouts(userId: string): Promise<WorkoutRecord[]>;
@@ -147,6 +169,21 @@ export interface WorkoutRepository {
   getSessionUser(tokenHash: string, now: Date): Promise<CurrentUser | null>;
   revokeSession(tokenHash: string, now: Date): Promise<void>;
   listUsers(): Promise<CurrentUser[]>;
+  createTrainerInvite(input: TrainerInviteCreateInput, now: Date): Promise<TrainerInviteRecord>;
+  listTrainerInvites(trainerId: string, now: Date): Promise<TrainerInviteRecord[]>;
+  acceptTrainerInvite(
+    tokenHash: string,
+    athleteId: string,
+    athleteEmail: string,
+    now: Date,
+  ): Promise<TrainerSummary>;
+  getAthleteTrainer(athleteId: string): Promise<TrainerSummary | null>;
+  listTrainerAthletes(trainerId: string): Promise<TrainerAthleteSummary[]>;
+  listSharedWorkouts(trainerId: string, athleteId: string): Promise<WorkoutRecord[]>;
+  listSharedMeasurements(trainerId: string, athleteId: string): Promise<MeasurementRecord[]>;
+  revokeAthleteTrainer(athleteId: string, now: Date): Promise<boolean>;
+  revokeTrainerAthlete(trainerId: string, athleteId: string, now: Date): Promise<boolean>;
+  revokeTrainerInvite(trainerId: string, inviteId: string, now: Date): Promise<boolean>;
   close(): Promise<void>;
 }
 
@@ -158,6 +195,26 @@ type MemoryVoiceEntry = VoiceEntryRecord &
     userId: string;
   };
 type MemorySession = { tokenHash: string; userId: string; expiresAt: Date; revokedAt: Date | null };
+type MemoryTrainerInvite = {
+  id: string;
+  trainerId: string;
+  email: string | null;
+  tokenHash: string;
+  expiresAt: Date;
+  acceptedByUserId: string | null;
+  acceptedAt: Date | null;
+  revokedAt: Date | null;
+  createdAt: Date;
+};
+type MemoryTrainerLink = {
+  id: string;
+  trainerId: string;
+  athleteId: string;
+  active: boolean;
+  revokedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
 
 export class MemoryRepository implements WorkoutRepository {
   private readonly workouts = new Map<string, MemoryWorkout>();
@@ -168,6 +225,8 @@ export class MemoryRepository implements WorkoutRepository {
   private readonly authAttempts = new Map<string, AuthAttempt>();
   private readonly users = new Map<string, CurrentUser & { googleSubject: string }>();
   private readonly sessions = new Map<string, MemorySession>();
+  private readonly trainerInvites = new Map<string, MemoryTrainerInvite>();
+  private readonly trainerLinks = new Map<string, MemoryTrainerLink>();
 
   async listExercises() {
     return catalog;
@@ -540,7 +599,146 @@ export class MemoryRepository implements WorkoutRepository {
       .sort((left, right) => left.email.localeCompare(right.email));
   }
 
+  async createTrainerInvite(input: TrainerInviteCreateInput, now: Date) {
+    const trainer = this.users.get(input.trainerId);
+    if (!trainer || !canUseTrainerConsole(trainer.role)) throw new RepositoryNotFoundError();
+    const invite: MemoryTrainerInvite = {
+      ...input,
+      acceptedByUserId: null,
+      acceptedAt: null,
+      revokedAt: null,
+      createdAt: now,
+    };
+    this.trainerInvites.set(invite.id, invite);
+    return toTrainerInviteRecord(invite, now);
+  }
+
+  async listTrainerInvites(trainerId: string, now: Date) {
+    return [...this.trainerInvites.values()]
+      .filter((invite) => invite.trainerId === trainerId)
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
+      .map((invite) => toTrainerInviteRecord(invite, now));
+  }
+
+  async acceptTrainerInvite(tokenHash: string, athleteId: string, athleteEmail: string, now: Date) {
+    const invite = [...this.trainerInvites.values()].find((item) => item.tokenHash === tokenHash);
+    if (!invite || invite.revokedAt) throw new RepositoryNotFoundError();
+    if (invite.acceptedAt)
+      throw new RepositoryInviteError('invite_used', 'Invite was already used');
+    if (invite.expiresAt <= now) {
+      throw new RepositoryInviteError('invite_expired', 'Invite has expired');
+    }
+    if (invite.email && invite.email !== athleteEmail.trim().toLowerCase()) {
+      throw new RepositoryInviteError(
+        'invite_email_mismatch',
+        'Invite belongs to another Google account',
+      );
+    }
+    if (invite.trainerId === athleteId) {
+      throw new RepositoryInviteError('self_link', 'A user cannot coach their own account');
+    }
+    const trainer = this.users.get(invite.trainerId);
+    const athlete = this.users.get(athleteId);
+    if (!trainer || !athlete || !canUseTrainerConsole(trainer.role)) {
+      throw new RepositoryNotFoundError();
+    }
+
+    for (const link of this.trainerLinks.values()) {
+      if (link.athleteId === athleteId && link.active) {
+        link.active = false;
+        link.revokedAt = now;
+        link.updatedAt = now;
+      }
+    }
+    const link: MemoryTrainerLink = {
+      id: randomUUID(),
+      trainerId: trainer.id,
+      athleteId,
+      active: true,
+      revokedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.trainerLinks.set(link.id, link);
+    invite.acceptedByUserId = athleteId;
+    invite.acceptedAt = now;
+    return toTrainerSummary(trainer);
+  }
+
+  async getAthleteTrainer(athleteId: string) {
+    const link = [...this.trainerLinks.values()].find(
+      (item) => item.athleteId === athleteId && item.active,
+    );
+    const trainer = link ? this.users.get(link.trainerId) : null;
+    return trainer ? toTrainerSummary(trainer) : null;
+  }
+
+  async listTrainerAthletes(trainerId: string) {
+    return [...this.trainerLinks.values()]
+      .filter((link) => link.trainerId === trainerId && link.active)
+      .flatMap((link) => {
+        const athlete = this.users.get(link.athleteId);
+        return athlete
+          ? [
+              {
+                id: athlete.id,
+                displayName: athlete.displayName,
+                avatarUrl: athlete.avatarUrl,
+                linkedAt: link.createdAt.toISOString(),
+              },
+            ]
+          : [];
+      })
+      .sort((left, right) => left.displayName.localeCompare(right.displayName));
+  }
+
+  async listSharedWorkouts(trainerId: string, athleteId: string) {
+    this.assertTrainerLink(trainerId, athleteId);
+    return this.listWorkouts(athleteId);
+  }
+
+  async listSharedMeasurements(trainerId: string, athleteId: string) {
+    this.assertTrainerLink(trainerId, athleteId);
+    return this.listMeasurements(athleteId);
+  }
+
+  async revokeAthleteTrainer(athleteId: string, now: Date) {
+    return this.revokeTrainerLink((link) => link.athleteId === athleteId, now);
+  }
+
+  async revokeTrainerAthlete(trainerId: string, athleteId: string, now: Date) {
+    return this.revokeTrainerLink(
+      (link) => link.trainerId === trainerId && link.athleteId === athleteId,
+      now,
+    );
+  }
+
+  async revokeTrainerInvite(trainerId: string, inviteId: string, now: Date) {
+    const invite = this.trainerInvites.get(inviteId);
+    if (!invite || invite.trainerId !== trainerId || invite.acceptedAt || invite.revokedAt) {
+      return false;
+    }
+    invite.revokedAt = now;
+    return true;
+  }
+
   async close() {}
+
+  private assertTrainerLink(trainerId: string, athleteId: string) {
+    const linked = [...this.trainerLinks.values()].some(
+      (link) => link.trainerId === trainerId && link.athleteId === athleteId && link.active,
+    );
+    if (!linked) throw new RepositoryNotFoundError();
+  }
+
+  private revokeTrainerLink(predicate: (link: MemoryTrainerLink) => boolean, now: Date) {
+    const link = [...this.trainerLinks.values()].find((item) => item.active && predicate(item));
+    if (!link) return false;
+    link.active = false;
+    link.revokedAt = now;
+    link.updatedAt = now;
+    return true;
+  }
 
   private mutationKey(userId: string, mutationId: string) {
     return `${userId}:${mutationId}`;
@@ -1169,7 +1367,7 @@ export class PostgresRepository implements WorkoutRepository {
         email: normalizedEmail,
         displayName: identity.displayName,
         avatarUrl: identity.avatarUrl,
-        role: requestedRole === 'admin' ? 'admin' : 'athlete',
+        role: requestedRole === 'admin' || requestedRole === 'trainer' ? requestedRole : 'athlete',
       })
       .returning();
     return toCurrentUser(created[0]);
@@ -1223,6 +1421,218 @@ export class PostgresRepository implements WorkoutRepository {
       .from(users)
       .orderBy(asc(users.email));
     return records.map(toCurrentUser);
+  }
+
+  async createTrainerInvite(input: TrainerInviteCreateInput, now: Date) {
+    const trainerRows = await this.db
+      .select({ role: users.role })
+      .from(users)
+      .where(eq(users.id, input.trainerId))
+      .limit(1);
+    if (!trainerRows[0] || !canUseTrainerConsole(trainerRows[0].role)) {
+      throw new RepositoryNotFoundError();
+    }
+    const created = await this.db
+      .insert(trainerInvites)
+      .values({
+        id: input.id,
+        trainerId: input.trainerId,
+        email: input.email,
+        tokenHash: input.tokenHash,
+        expiresAt: input.expiresAt,
+        createdAt: now,
+      })
+      .returning();
+    return toTrainerInviteRecord(created[0], now);
+  }
+
+  async listTrainerInvites(trainerId: string, now: Date) {
+    const records = await this.db
+      .select()
+      .from(trainerInvites)
+      .where(eq(trainerInvites.trainerId, trainerId))
+      .orderBy(desc(trainerInvites.createdAt));
+    return records.map((invite) => toTrainerInviteRecord(invite, now));
+  }
+
+  async acceptTrainerInvite(tokenHash: string, athleteId: string, athleteEmail: string, now: Date) {
+    return this.db.transaction(async (transaction) => {
+      const inviteRows = await transaction
+        .select()
+        .from(trainerInvites)
+        .where(eq(trainerInvites.tokenHash, tokenHash))
+        .limit(1);
+      const invite = inviteRows[0];
+      if (!invite || invite.revokedAt) throw new RepositoryNotFoundError();
+      if (invite.acceptedAt) {
+        throw new RepositoryInviteError('invite_used', 'Invite was already used');
+      }
+      if (invite.expiresAt <= now) {
+        throw new RepositoryInviteError('invite_expired', 'Invite has expired');
+      }
+      if (invite.email && invite.email !== athleteEmail.trim().toLowerCase()) {
+        throw new RepositoryInviteError(
+          'invite_email_mismatch',
+          'Invite belongs to another Google account',
+        );
+      }
+      if (invite.trainerId === athleteId) {
+        throw new RepositoryInviteError('self_link', 'A user cannot coach their own account');
+      }
+
+      const trainerRows = await transaction
+        .select({
+          id: users.id,
+          displayName: users.displayName,
+          avatarUrl: users.avatarUrl,
+          role: users.role,
+        })
+        .from(users)
+        .where(eq(users.id, invite.trainerId))
+        .limit(1);
+      const trainer = trainerRows[0];
+      if (!trainer || !canUseTrainerConsole(trainer.role)) throw new RepositoryNotFoundError();
+
+      const claimed = await transaction
+        .update(trainerInvites)
+        .set({ acceptedByUserId: athleteId, acceptedAt: now })
+        .where(
+          and(
+            eq(trainerInvites.id, invite.id),
+            isNull(trainerInvites.acceptedAt),
+            isNull(trainerInvites.revokedAt),
+          ),
+        )
+        .returning({ id: trainerInvites.id });
+      if (!claimed.length) {
+        throw new RepositoryInviteError('invite_used', 'Invite was already used');
+      }
+
+      await transaction
+        .update(trainerAthleteLinks)
+        .set({ active: false, revokedAt: now, updatedAt: now })
+        .where(
+          and(eq(trainerAthleteLinks.athleteId, athleteId), eq(trainerAthleteLinks.active, true)),
+        );
+      const linked = await transaction
+        .insert(trainerAthleteLinks)
+        .values({
+          id: randomUUID(),
+          trainerId: trainer.id,
+          athleteId,
+          active: true,
+          revokedAt: null,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoNothing()
+        .returning({ id: trainerAthleteLinks.id });
+      if (!linked.length) {
+        throw new RepositoryInviteError('invite_used', 'Athlete already has an active trainer');
+      }
+      return toTrainerSummary(trainer);
+    });
+  }
+
+  async getAthleteTrainer(athleteId: string) {
+    const records = await this.db
+      .select({ id: users.id, displayName: users.displayName, avatarUrl: users.avatarUrl })
+      .from(trainerAthleteLinks)
+      .innerJoin(users, eq(trainerAthleteLinks.trainerId, users.id))
+      .where(
+        and(eq(trainerAthleteLinks.athleteId, athleteId), eq(trainerAthleteLinks.active, true)),
+      )
+      .limit(1);
+    return records[0] ? toTrainerSummary(records[0]) : null;
+  }
+
+  async listTrainerAthletes(trainerId: string) {
+    const records = await this.db
+      .select({
+        id: users.id,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+        linkedAt: trainerAthleteLinks.createdAt,
+      })
+      .from(trainerAthleteLinks)
+      .innerJoin(users, eq(trainerAthleteLinks.athleteId, users.id))
+      .where(
+        and(eq(trainerAthleteLinks.trainerId, trainerId), eq(trainerAthleteLinks.active, true)),
+      )
+      .orderBy(asc(users.displayName));
+    return records.map((record) => ({
+      id: record.id,
+      displayName: record.displayName,
+      avatarUrl: record.avatarUrl,
+      linkedAt: record.linkedAt.toISOString(),
+    }));
+  }
+
+  async listSharedWorkouts(trainerId: string, athleteId: string) {
+    await this.assertTrainerLink(trainerId, athleteId);
+    return this.listWorkouts(athleteId);
+  }
+
+  async listSharedMeasurements(trainerId: string, athleteId: string) {
+    await this.assertTrainerLink(trainerId, athleteId);
+    return this.listMeasurements(athleteId);
+  }
+
+  async revokeAthleteTrainer(athleteId: string, now: Date) {
+    const revoked = await this.db
+      .update(trainerAthleteLinks)
+      .set({ active: false, revokedAt: now, updatedAt: now })
+      .where(
+        and(eq(trainerAthleteLinks.athleteId, athleteId), eq(trainerAthleteLinks.active, true)),
+      )
+      .returning({ id: trainerAthleteLinks.id });
+    return revoked.length > 0;
+  }
+
+  async revokeTrainerAthlete(trainerId: string, athleteId: string, now: Date) {
+    const revoked = await this.db
+      .update(trainerAthleteLinks)
+      .set({ active: false, revokedAt: now, updatedAt: now })
+      .where(
+        and(
+          eq(trainerAthleteLinks.trainerId, trainerId),
+          eq(trainerAthleteLinks.athleteId, athleteId),
+          eq(trainerAthleteLinks.active, true),
+        ),
+      )
+      .returning({ id: trainerAthleteLinks.id });
+    return revoked.length > 0;
+  }
+
+  async revokeTrainerInvite(trainerId: string, inviteId: string, now: Date) {
+    const revoked = await this.db
+      .update(trainerInvites)
+      .set({ revokedAt: now })
+      .where(
+        and(
+          eq(trainerInvites.id, inviteId),
+          eq(trainerInvites.trainerId, trainerId),
+          isNull(trainerInvites.acceptedAt),
+          isNull(trainerInvites.revokedAt),
+        ),
+      )
+      .returning({ id: trainerInvites.id });
+    return revoked.length > 0;
+  }
+
+  private async assertTrainerLink(trainerId: string, athleteId: string) {
+    const links = await this.db
+      .select({ id: trainerAthleteLinks.id })
+      .from(trainerAthleteLinks)
+      .where(
+        and(
+          eq(trainerAthleteLinks.trainerId, trainerId),
+          eq(trainerAthleteLinks.athleteId, athleteId),
+          eq(trainerAthleteLinks.active, true),
+        ),
+      )
+      .limit(1);
+    if (!links.length) throw new RepositoryNotFoundError();
   }
 
   async close() {
@@ -1520,7 +1930,40 @@ function toCurrentUser(user: {
   };
 }
 
+function toTrainerSummary(user: {
+  id: string;
+  displayName: string;
+  avatarUrl: string | null;
+}): TrainerSummary {
+  return { id: user.id, displayName: user.displayName, avatarUrl: user.avatarUrl };
+}
+
+function toTrainerInviteRecord(
+  invite: MemoryTrainerInvite | typeof trainerInvites.$inferSelect,
+  now: Date,
+): TrainerInviteRecord {
+  const status = invite.acceptedAt
+    ? 'accepted'
+    : invite.revokedAt
+      ? 'revoked'
+      : invite.expiresAt <= now
+        ? 'expired'
+        : 'pending';
+  return {
+    id: invite.id,
+    email: invite.email,
+    status,
+    expiresAt: invite.expiresAt.toISOString(),
+    createdAt: invite.createdAt.toISOString(),
+  };
+}
+
+function canUseTrainerConsole(role: UserRole) {
+  return role === 'trainer' || role === 'admin' || role === 'superadmin';
+}
+
 function resolvedRole(existingRole: UserRole | undefined, requestedRole: UserRole): UserRole {
-  if (existingRole === 'trainer' || existingRole === 'superadmin') return existingRole;
-  return requestedRole === 'admin' ? 'admin' : 'athlete';
+  if (existingRole === 'superadmin') return existingRole;
+  if (requestedRole === 'admin' || requestedRole === 'trainer') return requestedRole;
+  return existingRole === 'trainer' ? 'trainer' : 'athlete';
 }

@@ -50,9 +50,16 @@ test('OAuth sessions isolate athlete data, support logout, and enforce admin rol
     displayName: 'Admin',
     avatarUrl: null,
   });
+  provider.identities.set('trainer', {
+    subject: 'google-trainer',
+    email: 'trainer@example.com',
+    displayName: 'Coach',
+    avatarUrl: null,
+  });
   const auth: AuthOptions = {
     provider,
     adminEmails: new Set(['admin@example.com']),
+    trainerEmails: new Set(['trainer@example.com']),
     secureCookies: false,
     sessionTtlMs: 30 * 24 * 60 * 60 * 1_000,
   };
@@ -65,6 +72,7 @@ test('OAuth sessions isolate athlete data, support logout, and enforce admin rol
   const athleteOneCookie = await logIn(app, 'athlete-one');
   const athleteTwoCookie = await logIn(app, 'athlete-two');
   const adminCookie = await logIn(app, 'admin');
+  const trainerCookie = await logIn(app, 'trainer');
 
   const athleteOneProfile = await app.inject({
     method: 'GET',
@@ -80,6 +88,12 @@ test('OAuth sessions isolate athlete data, support logout, and enforce admin rol
     headers: { cookie: adminCookie },
   });
   assert.equal(adminProfile.json().user.role, 'admin');
+  const trainerProfile = await app.inject({
+    method: 'GET',
+    url: '/api/v1/me',
+    headers: { cookie: trainerCookie },
+  });
+  assert.equal(trainerProfile.json().user.role, 'trainer');
 
   const workoutId = '20000000-0000-4000-8000-000000000001';
   const workout = {
@@ -413,6 +427,121 @@ test('OAuth sessions isolate athlete data, support logout, and enforce admin rol
   });
   assert.deepEqual(athleteTwoMeasurements.json().items, []);
 
+  const athleteCannotInvite = await app.inject({
+    method: 'POST',
+    url: '/api/v1/trainer/invites',
+    headers: { cookie: athleteOneCookie },
+    payload: {},
+  });
+  assert.equal(athleteCannotInvite.statusCode, 403);
+
+  const createdInvite = await app.inject({
+    method: 'POST',
+    url: '/api/v1/trainer/invites',
+    headers: { cookie: trainerCookie },
+    payload: { email: 'ONE@example.com' },
+  });
+  assert.equal(createdInvite.statusCode, 201);
+  assert.equal(createdInvite.json().invite.email, 'one@example.com');
+  assert.ok(createdInvite.json().token);
+  const trainerInvites = await app.inject({
+    method: 'GET',
+    url: '/api/v1/trainer/invites',
+    headers: { cookie: trainerCookie },
+  });
+  assert.equal(trainerInvites.statusCode, 200);
+  assert.equal(trainerInvites.json().items[0].status, 'pending');
+  assert.equal('token' in trainerInvites.json().items[0], false);
+
+  const wrongInviteAccount = await app.inject({
+    method: 'POST',
+    url: '/api/v1/trainer/invites/accept',
+    headers: { cookie: athleteTwoCookie },
+    payload: { token: createdInvite.json().token },
+  });
+  assert.equal(wrongInviteAccount.statusCode, 403);
+  const acceptedInvite = await app.inject({
+    method: 'POST',
+    url: '/api/v1/trainer/invites/accept',
+    headers: { cookie: athleteOneCookie },
+    payload: { token: createdInvite.json().token },
+  });
+  assert.equal(acceptedInvite.statusCode, 200);
+  assert.equal(acceptedInvite.json().trainer.displayName, 'Coach');
+  const repeatedInvite = await app.inject({
+    method: 'POST',
+    url: '/api/v1/trainer/invites/accept',
+    headers: { cookie: athleteOneCookie },
+    payload: { token: createdInvite.json().token },
+  });
+  assert.equal(repeatedInvite.statusCode, 409);
+
+  const trainerRoster = await app.inject({
+    method: 'GET',
+    url: '/api/v1/trainer/athletes',
+    headers: { cookie: trainerCookie },
+  });
+  assert.equal(trainerRoster.statusCode, 200);
+  assert.equal(trainerRoster.json().items[0].displayName, 'Athlete One');
+  const sharedWorkouts = await app.inject({
+    method: 'GET',
+    url: `/api/v1/trainer/athletes/${athleteOneProfile.json().user.id}/workouts`,
+    headers: { cookie: trainerCookie },
+  });
+  assert.equal(sharedWorkouts.statusCode, 200);
+  assert.equal(sharedWorkouts.json().items[0].id, workoutId);
+  const sharedMeasurements = await app.inject({
+    method: 'GET',
+    url: `/api/v1/trainer/athletes/${athleteOneProfile.json().user.id}/measurements`,
+    headers: { cookie: trainerCookie },
+  });
+  assert.equal(sharedMeasurements.statusCode, 200);
+  assert.equal(sharedMeasurements.json().items.length, 1);
+  const trainerCannotMutateAthleteSet = await app.inject({
+    method: 'PATCH',
+    url: `/api/v1/sets/${set.set.id}`,
+    headers: { cookie: trainerCookie },
+    payload: {
+      clientMutationId: '40000000-0000-4000-8000-000000000098',
+      workoutId,
+      baseRevision: 2,
+      changes: { weightKg: 999 },
+    },
+  });
+  assert.equal(trainerCannotMutateAthleteSet.statusCode, 404);
+
+  const relationship = await app.inject({
+    method: 'GET',
+    url: '/api/v1/trainer/relationship',
+    headers: { cookie: athleteOneCookie },
+  });
+  assert.equal(relationship.json().trainer.displayName, 'Coach');
+  const revokedRelationship = await app.inject({
+    method: 'DELETE',
+    url: '/api/v1/trainer/relationship',
+    headers: { cookie: athleteOneCookie },
+  });
+  assert.equal(revokedRelationship.statusCode, 204);
+  const revokedSharedAccess = await app.inject({
+    method: 'GET',
+    url: `/api/v1/trainer/athletes/${athleteOneProfile.json().user.id}/workouts`,
+    headers: { cookie: trainerCookie },
+  });
+  assert.equal(revokedSharedAccess.statusCode, 404);
+
+  const cancellableInvite = await app.inject({
+    method: 'POST',
+    url: '/api/v1/trainer/invites',
+    headers: { cookie: trainerCookie },
+    payload: {},
+  });
+  const cancelledInvite = await app.inject({
+    method: 'DELETE',
+    url: `/api/v1/trainer/invites/${cancellableInvite.json().invite.id}`,
+    headers: { cookie: trainerCookie },
+  });
+  assert.equal(cancelledInvite.statusCode, 204);
+
   const removedMeasurementId = '60000000-0000-4000-8000-000000000002';
   await app.inject({
     method: 'POST',
@@ -473,7 +602,7 @@ test('OAuth sessions isolate athlete data, support logout, and enforce admin rol
     headers: { cookie: adminCookie },
   });
   assert.equal(adminUsers.statusCode, 200);
-  assert.equal(adminUsers.json().items.length, 3);
+  assert.equal(adminUsers.json().items.length, 4);
 
   const logout = await app.inject({
     method: 'POST',
@@ -503,6 +632,7 @@ test('OAuth state is bound to its cookie and can only be consumed once', async (
   const auth: AuthOptions = {
     provider,
     adminEmails: new Set(),
+    trainerEmails: new Set(),
     secureCookies: false,
     sessionTtlMs: 30 * 24 * 60 * 60 * 1_000,
   };

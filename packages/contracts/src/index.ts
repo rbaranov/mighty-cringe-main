@@ -147,6 +147,48 @@ export const voiceEntryRecordSchema = z.object({
 });
 export const voiceEntryIdSchema = z.string().uuid();
 
+export const trainerInviteCreateSchema = z.object({
+  email: z
+    .string()
+    .trim()
+    .email()
+    .transform((email) => email.toLowerCase())
+    .nullable()
+    .default(null),
+});
+
+export const trainerInviteAcceptSchema = z.object({
+  token: z
+    .string()
+    .min(32)
+    .max(256)
+    .regex(/^[A-Za-z0-9_-]+$/),
+});
+
+export const trainerInviteIdSchema = z.string().uuid();
+export const trainerAthleteIdSchema = z.string().uuid();
+
+export const trainerSummarySchema = z.object({
+  id: z.string().uuid(),
+  displayName: z.string().min(1),
+  avatarUrl: z.string().url().nullable(),
+});
+
+export const trainerInviteRecordSchema = z.object({
+  id: z.string().uuid(),
+  email: z.string().email().nullable(),
+  status: z.enum(['pending', 'accepted', 'expired', 'revoked']),
+  expiresAt: z.string().datetime(),
+  createdAt: z.string().datetime(),
+});
+
+export const trainerAthleteSummarySchema = z.object({
+  id: z.string().uuid(),
+  displayName: z.string().min(1),
+  avatarUrl: z.string().url().nullable(),
+  linkedAt: z.string().datetime(),
+});
+
 export const createMeasurementSchema = z.object({
   id: z.string().uuid(),
   clientMutationId: z.string().uuid(),
@@ -270,6 +312,9 @@ export type DeleteSetInput = z.infer<typeof deleteSetSchema>;
 export type MeasurementValues = z.infer<typeof measurementValuesSchema>;
 export type MeasurementRecord = z.infer<typeof measurementRecordSchema>;
 export type VoiceEntryRecord = z.infer<typeof voiceEntryRecordSchema>;
+export type TrainerSummary = z.infer<typeof trainerSummarySchema>;
+export type TrainerInviteRecord = z.infer<typeof trainerInviteRecordSchema>;
+export type TrainerAthleteSummary = z.infer<typeof trainerAthleteSummarySchema>;
 export type CreateMeasurementInput = z.infer<typeof createMeasurementSchema>;
 export type UpdateMeasurementInput = z.infer<typeof updateMeasurementSchema>;
 export type DeleteMeasurementInput = z.infer<typeof deleteMeasurementSchema>;

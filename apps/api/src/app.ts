@@ -9,6 +9,10 @@ import {
   deleteMeasurementSchema,
   deleteSetSchema,
   syncMutationSchema,
+  trainerAthleteIdSchema,
+  trainerInviteAcceptSchema,
+  trainerInviteCreateSchema,
+  trainerInviteIdSchema,
   updateMeasurementSchema,
   updateSetSchema,
   updateWorkoutSchema,
@@ -26,6 +30,7 @@ import Fastify, { type FastifyBaseLogger, type FastifyReply, type FastifyRequest
 import { codeChallenge, hashToken, randomToken, type AuthOptions } from './auth.js';
 import {
   RepositoryConflictError,
+  RepositoryInviteError,
   RepositoryNotFoundError,
   type WorkoutRepository,
 } from './repository.js';
@@ -34,6 +39,7 @@ const sessionCookieName = 'mc_session';
 const oauthStateCookieName = 'mc_oauth_state';
 const oauthCallbackPath = '/api/v1/auth/google/callback';
 const oauthAttemptTtlMs = 10 * 60 * 1_000;
+const trainerInviteTtlMs = 7 * 24 * 60 * 60 * 1_000;
 
 type AppOptions = {
   logger?: FastifyBaseLogger;
@@ -136,9 +142,12 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
         codeVerifier: attempt.codeVerifier,
         expectedNonce: attempt.nonce,
       });
-      const requestedRole = options.auth.adminEmails.has(identity.email.toLowerCase())
+      const normalizedEmail = identity.email.toLowerCase();
+      const requestedRole = options.auth.adminEmails.has(normalizedEmail)
         ? 'admin'
-        : 'athlete';
+        : options.auth.trainerEmails.has(normalizedEmail)
+          ? 'trainer'
+          : 'athlete';
       const user = await repository.upsertGoogleUser(identity, requestedRole);
       const sessionToken = randomToken();
       const expiresAt = new Date(now().getTime() + options.auth.sessionTtlMs);
@@ -180,6 +189,146 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
       sameSite: 'lax',
     });
     return reply.status(204).send();
+  });
+
+  app.post('/api/v1/trainer/invites', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    if (!canUseTrainerConsole(user.role)) {
+      return reply.status(403).send({ error: 'Trainer role required' });
+    }
+    const parsed = trainerInviteCreateSchema.safeParse(request.body ?? {});
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() });
+    const token = randomToken();
+    const currentTime = now();
+    const invite = await repository.createTrainerInvite(
+      {
+        id: randomUUID(),
+        trainerId: user.id,
+        email: parsed.data.email,
+        tokenHash: hashToken(token),
+        expiresAt: new Date(currentTime.getTime() + trainerInviteTtlMs),
+      },
+      currentTime,
+    );
+    return reply.status(201).send({ invite, token });
+  });
+
+  app.get('/api/v1/trainer/invites', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    if (!canUseTrainerConsole(user.role)) {
+      return reply.status(403).send({ error: 'Trainer role required' });
+    }
+    return { items: await repository.listTrainerInvites(user.id, now()) };
+  });
+
+  app.delete('/api/v1/trainer/invites/:inviteId', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    if (!canUseTrainerConsole(user.role)) {
+      return reply.status(403).send({ error: 'Trainer role required' });
+    }
+    const inviteId = trainerInviteIdSchema.safeParse(
+      (request.params as { inviteId?: unknown }).inviteId,
+    );
+    if (!inviteId.success) return reply.status(400).send({ error: 'Invalid invite id' });
+    const revoked = await repository.revokeTrainerInvite(user.id, inviteId.data, now());
+    return revoked
+      ? reply.status(204).send()
+      : reply.status(404).send({ error: 'Pending invite not found' });
+  });
+
+  app.post('/api/v1/trainer/invites/accept', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    const parsed = trainerInviteAcceptSchema.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() });
+    try {
+      const trainer = await repository.acceptTrainerInvite(
+        hashToken(parsed.data.token),
+        user.id,
+        user.email,
+        now(),
+      );
+      return { trainer };
+    } catch (error) {
+      return sendRepositoryError(reply, error);
+    }
+  });
+
+  app.get('/api/v1/trainer/relationship', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    return { trainer: await repository.getAthleteTrainer(user.id) };
+  });
+
+  app.delete('/api/v1/trainer/relationship', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    const revoked = await repository.revokeAthleteTrainer(user.id, now());
+    return revoked
+      ? reply.status(204).send()
+      : reply.status(404).send({ error: 'Active trainer not found' });
+  });
+
+  app.get('/api/v1/trainer/athletes', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    if (!canUseTrainerConsole(user.role)) {
+      return reply.status(403).send({ error: 'Trainer role required' });
+    }
+    return { items: await repository.listTrainerAthletes(user.id) };
+  });
+
+  app.delete('/api/v1/trainer/athletes/:athleteId', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    if (!canUseTrainerConsole(user.role)) {
+      return reply.status(403).send({ error: 'Trainer role required' });
+    }
+    const athleteId = trainerAthleteIdSchema.safeParse(
+      (request.params as { athleteId?: unknown }).athleteId,
+    );
+    if (!athleteId.success) return reply.status(400).send({ error: 'Invalid athlete id' });
+    const revoked = await repository.revokeTrainerAthlete(user.id, athleteId.data, now());
+    return revoked
+      ? reply.status(204).send()
+      : reply.status(404).send({ error: 'Linked athlete not found' });
+  });
+
+  app.get('/api/v1/trainer/athletes/:athleteId/workouts', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    if (!canUseTrainerConsole(user.role)) {
+      return reply.status(403).send({ error: 'Trainer role required' });
+    }
+    const athleteId = trainerAthleteIdSchema.safeParse(
+      (request.params as { athleteId?: unknown }).athleteId,
+    );
+    if (!athleteId.success) return reply.status(400).send({ error: 'Invalid athlete id' });
+    try {
+      return { items: await repository.listSharedWorkouts(user.id, athleteId.data) };
+    } catch (error) {
+      return sendRepositoryError(reply, error);
+    }
+  });
+
+  app.get('/api/v1/trainer/athletes/:athleteId/measurements', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    if (!canUseTrainerConsole(user.role)) {
+      return reply.status(403).send({ error: 'Trainer role required' });
+    }
+    const athleteId = trainerAthleteIdSchema.safeParse(
+      (request.params as { athleteId?: unknown }).athleteId,
+    );
+    if (!athleteId.success) return reply.status(400).send({ error: 'Invalid athlete id' });
+    try {
+      return { items: await repository.listSharedMeasurements(user.id, athleteId.data) };
+    } catch (error) {
+      return sendRepositoryError(reply, error);
+    }
   });
 
   app.get('/api/v1/exercises', async (request, reply) => {
@@ -498,6 +647,11 @@ function safeReturnTo(value: unknown) {
 }
 
 function sendRepositoryError(reply: FastifyReply, error: unknown) {
+  if (error instanceof RepositoryInviteError) {
+    const statusCode =
+      error.code === 'invite_expired' ? 410 : error.code === 'invite_email_mismatch' ? 403 : 409;
+    return reply.status(statusCode).send({ code: error.code, error: error.message });
+  }
   if (error instanceof RepositoryConflictError) {
     return reply.status(409).send({
       code: 'revision_conflict',
@@ -509,4 +663,8 @@ function sendRepositoryError(reply: FastifyReply, error: unknown) {
     return reply.status(404).send({ code: 'not_found', error: error.message });
   }
   throw error;
+}
+
+function canUseTrainerConsole(role: string) {
+  return role === 'trainer' || role === 'admin' || role === 'superadmin';
 }
