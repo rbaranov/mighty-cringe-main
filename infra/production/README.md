@@ -24,11 +24,18 @@ For the full setup procedure, see
    on the server.
 6. Create `/etc/mighty-cringe/production.env` with a unique database password; never commit it.
 
-## First deployment
+## Deployment
 
-Start the **Deploy production** workflow manually after the self-hosted runner is online.
-The workflow checks out `main` and runs Docker Compose with the private environment file at
-`/etc/mighty-cringe/production.env`.
+After the self-hosted runner is online, merge changes into `main`. CI verifies formatting,
+types, the application build, and tests on a GitHub-hosted runner. Only a successful CI run for
+the current head of `main` calls **Deploy production**. The production runner checks out that
+exact revision, validates the private environment file at `/etc/mighty-cringe/production.env`,
+applies migrations through Docker Compose, starts the services, and verifies the public HTTPS
+health endpoint. Deployments are serialized and a stale revision is skipped.
+
+The **Deploy production** workflow can also be started manually on `main` to repeat a controlled
+deployment of its current revision. A failed Compose operation or health check keeps the Actions
+run red and includes service status and bounded logs for diagnosis.
 
 Caddy obtains and renews TLS certificates after the domain records resolve to the server. The
 `migrate` applies the committed Drizzle migrations before the API starts. PostgreSQL is private:

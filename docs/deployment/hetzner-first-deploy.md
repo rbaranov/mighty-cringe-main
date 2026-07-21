@@ -218,7 +218,9 @@ DATABASE_URL=postgresql://mightycringe:<DB_PASSWORD>@postgres:5432/mightycringe
 
 ## 6. Первый запуск и проверка
 
-Запустите **Actions → Deploy production → Run workflow**. Runner выполнит первый запуск.
+Запустите **Actions → Deploy production → Run workflow** на ветке `main`. Runner выполнит
+первый контролируемый запуск. После него обычные production-релизы запускаются автоматически
+только для текущего коммита `main`, успешно прошедшего CI.
 Затем на сервере можно проверить:
 
 ```bash
@@ -244,12 +246,16 @@ curl -fsS https://mightycringe.com/health
 ## 7. Автоматический deploy через server-side runner
 
 В GitHub создайте environment `production` через **Settings → Environments**, ограничьте
-деплой веткой `main` и при необходимости добавьте manual approval. Затем:
-**Actions → Deploy production → Run workflow → main**.
+деплой веткой `main`. Если добавить обязательный manual approval, workflow будет ждать
+подтверждения и перестанет быть полностью автоматическим.
 
-Workflow запускается на server-side runner, получает актуальный `main` через
-`actions/checkout` и выполняет `docker compose up -d --build`. GitHub SSH secrets,
-Deploy Keys и personal access tokens для этого подхода не нужны.
+При каждом push/merge в `main` workflow `CI` проверяет форматирование, типы, сборку и тесты на
+GitHub-hosted runner. Только после успеха он вызывает `Deploy production` и передаёт точный SHA.
+Server-side runner убеждается, что SHA всё ещё является вершиной `main`, сериализует релизы,
+проверяет production-конфигурацию, выполняет `docker compose up -d --build`, ждёт успешных
+миграций и проверяет публичный HTTPS health endpoint. При ошибке Actions остаётся красным и
+показывает статус сервисов и ограниченный фрагмент логов. GitHub SSH secrets, Deploy Keys и
+personal access tokens для этого подхода не нужны.
 
 ## 8. Object Storage и бэкапы перед реальными пользователями
 

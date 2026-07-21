@@ -1,6 +1,12 @@
 name: Deploy production
 
 on:
+  workflow_call:
+    inputs:
+      revision:
+        description: Exact commit SHA that passed CI on main
+        required: true
+        type: string
   workflow_dispatch:
 
 permissions:
@@ -8,33 +14,101 @@ permissions:
 
 jobs:
   deploy:
+    if: github.ref == 'refs/heads/main'
     environment: production
     runs-on: [self-hosted, linux, x64, mighty-cringe-production]
+    timeout-minutes: 30
+    concurrency:
+      group: mighty-cringe-production
+      cancel-in-progress: false
     steps:
-      - name: Check out the approved main revision
+      - name: Check out the verified main revision
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.revision || github.sha }}
+          fetch-depth: 1
 
-      - name: Deploy the approved main revision
+      - name: Reject a stale or unexpected revision
+        id: revision
+        env:
+          DEPLOY_REVISION: ${{ inputs.revision || github.sha }}
+        run: |
+          set -euo pipefail
+
+          checked_out_revision="$(git rev-parse HEAD)"
+          if [[ "$checked_out_revision" != "$DEPLOY_REVISION" ]]; then
+            echo "::error title=Unexpected checkout::Expected $DEPLOY_REVISION but checked out $checked_out_revision"
+            exit 1
+          fi
+
+          git fetch --no-tags --depth=1 origin main
+          current_main_revision="$(git rev-parse FETCH_HEAD)"
+          if [[ "$current_main_revision" != "$DEPLOY_REVISION" ]]; then
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Stale deployment skipped::$DEPLOY_REVISION is no longer the head of main ($current_main_revision)"
+            exit 0
+          fi
+
+          echo "deploy=true" >> "$GITHUB_OUTPUT"
+          echo "Deploying verified main revision $DEPLOY_REVISION"
+
+      - name: Validate production configuration
+        if: steps.revision.outputs.deploy == 'true'
         working-directory: infra/production
         env:
           PRODUCTION_ENV_FILE: /etc/mighty-cringe/production.env
         run: |
-          set -eu
-          docker compose --env-file "$PRODUCTION_ENV_FILE" up -d --build --remove-orphans || {
-            docker compose --env-file "$PRODUCTION_ENV_FILE" logs --no-color migrate
+          set -euo pipefail
+
+          if [[ ! -r "$PRODUCTION_ENV_FILE" ]]; then
+            echo "::error title=Production configuration unavailable::$PRODUCTION_ENV_FILE is missing or unreadable"
             exit 1
-          }
+          fi
+
+          docker compose --env-file "$PRODUCTION_ENV_FILE" config --quiet
+
+      - name: Build, migrate and start production
+        if: steps.revision.outputs.deploy == 'true'
+        working-directory: infra/production
+        env:
+          PRODUCTION_ENV_FILE: /etc/mighty-cringe/production.env
+          DEPLOY_REVISION: ${{ inputs.revision || github.sha }}
+        run: |
+          set -euo pipefail
+
+          if ! docker compose --env-file "$PRODUCTION_ENV_FILE" up -d --build --remove-orphans; then
+            echo "::error title=Production deployment failed::Compose could not deploy $DEPLOY_REVISION"
+            docker compose --env-file "$PRODUCTION_ENV_FILE" ps || true
+            docker compose --env-file "$PRODUCTION_ENV_FILE" logs --no-color --tail=200 migrate api web caddy || true
+            exit 1
+          fi
 
       - name: Verify public HTTPS healthcheck
+        if: steps.revision.outputs.deploy == 'true'
+        working-directory: infra/production
+        env:
+          PRODUCTION_ENV_FILE: /etc/mighty-cringe/production.env
+          DEPLOY_REVISION: ${{ inputs.revision || github.sha }}
         run: |
-          set -eu
+          set -euo pipefail
           DOMAIN=mightycringe.com
 
           for attempt in $(seq 1 12); do
-            if curl --fail --silent --show-error --resolve "$DOMAIN:443:127.0.0.1" "https://$DOMAIN/health"; then
+            if curl --fail --silent --show-error --max-time 10 --resolve "$DOMAIN:443:127.0.0.1" "https://$DOMAIN/health"; then
+              {
+                echo "### Production deployment succeeded"
+                echo
+                echo "- Revision: \`$DEPLOY_REVISION\`"
+                echo "- Health: https://$DOMAIN/health"
+              } >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
+
+            echo "Health check attempt $attempt/12 failed; retrying in 5 seconds"
             sleep 5
           done
 
+          echo "::error title=Production health check failed::$DEPLOY_REVISION did not become healthy after 12 attempts"
+          docker compose --env-file "$PRODUCTION_ENV_FILE" ps || true
+          docker compose --env-file "$PRODUCTION_ENV_FILE" logs --no-color --tail=200 api web caddy || true
           exit 1
