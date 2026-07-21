@@ -38,6 +38,8 @@ See [ADR 0001](docs/adr/0001-production-platform.md) for the decision and
 
 The current vertical slice covers a local-first athlete flow, Google OIDC login, opaque server-side
 sessions, per-user API isolation, the `athlete` / `admin` role boundary, idempotent sync API and
-PostgreSQL migrations. Voice transcription, trainer consoles, push, media uploads and measurements
-are subsequent slices. Do not admit real users to a public deployment until Google credentials and
-backup automation are configured and verified in production.
+PostgreSQL migrations. Workout start, completion, new and corrected sets use a durable ordered
+outbox; the server returns complete history and incompatible multi-device edits require an explicit
+choice. Voice transcription, trainer consoles, push, media uploads and measurements are subsequent
+slices. Do not admit real users to a public deployment until Google credentials and backup
+automation are configured and verified in production.

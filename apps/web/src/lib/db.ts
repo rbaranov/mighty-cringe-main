@@ -1,23 +1,32 @@
 import Dexie, { type EntityTable } from 'dexie';
 
-import type { Exercise, SetInput, SyncMutation } from '@mighty-cringe/contracts';
+import type { Exercise, SetRecord, SyncMutation, WorkoutRecord } from '@mighty-cringe/contracts';
 
-export type LocalWorkout = {
-  id: string;
-  startedAt: string;
-  endedAt: string | null;
-  syncState: 'pending' | 'synced';
+export type SyncState = 'pending' | 'synced' | 'conflict';
+
+export type LocalWorkout = Omit<WorkoutRecord, 'sets'> & {
+  syncState: SyncState;
 };
 
-export type LocalSet = SetInput & {
-  workoutId: string;
-  syncState: 'pending' | 'synced';
+export type LocalSet = SetRecord & {
+  syncState: SyncState;
 };
 
 export type OutboxMutation = {
   id: string;
+  sequence: number;
   createdAt: string;
   mutation: SyncMutation;
+};
+
+export type SyncConflict = {
+  id: string;
+  entityType: 'workout' | 'set';
+  entityId: string;
+  createdAt: string;
+  message: string;
+  mutation: SyncMutation;
+  current: WorkoutRecord | SetRecord | null;
 };
 
 type LocalMeta = {
@@ -30,6 +39,7 @@ export class MightyCringeDatabase extends Dexie {
   sets!: EntityTable<LocalSet, 'id'>;
   exercises!: EntityTable<Exercise, 'id'>;
   outbox!: EntityTable<OutboxMutation, 'id'>;
+  conflicts!: EntityTable<SyncConflict, 'id'>;
   meta!: EntityTable<LocalMeta, 'key'>;
 
   constructor() {
@@ -47,6 +57,40 @@ export class MightyCringeDatabase extends Dexie {
       outbox: 'id, createdAt',
       meta: 'key',
     });
+    this.version(3)
+      .stores({
+        workouts: 'id, startedAt, syncState',
+        sets: 'id, workoutId, exerciseId, performedAt, syncState',
+        exercises: 'id, *primaryMuscles',
+        outbox: 'id, sequence, createdAt',
+        conflicts: 'id, entityType, entityId, createdAt',
+        meta: 'key',
+      })
+      .upgrade(async (transaction) => {
+        let sequence = Date.now() * 1_000;
+        await transaction
+          .table('outbox')
+          .orderBy('createdAt')
+          .modify((queued) => {
+            queued.sequence = sequence++;
+          });
+        await transaction
+          .table('workouts')
+          .toCollection()
+          .modify((workout) => {
+            workout.notes ??= null;
+            workout.locale ??= 'ru';
+            workout.revision ??= workout.syncState === 'synced' ? 1 : 0;
+            workout.updatedAt ??= workout.startedAt;
+          });
+        await transaction
+          .table('sets')
+          .toCollection()
+          .modify((set) => {
+            set.revision ??= set.syncState === 'synced' ? 1 : 0;
+            set.updatedAt ??= set.performedAt;
+          });
+      });
   }
 }
 
@@ -56,15 +100,25 @@ export async function activateLocalUser(userId: string) {
   const activeUser = await db.meta.get('activeUserId');
   if (activeUser?.value === userId) return;
 
-  await db.transaction('rw', db.workouts, db.sets, db.outbox, db.meta, async () => {
-    await Promise.all([db.workouts.clear(), db.sets.clear(), db.outbox.clear()]);
+  await db.transaction('rw', db.workouts, db.sets, db.outbox, db.conflicts, db.meta, async () => {
+    await Promise.all([
+      db.workouts.clear(),
+      db.sets.clear(),
+      db.outbox.clear(),
+      db.conflicts.clear(),
+    ]);
     await db.meta.put({ key: 'activeUserId', value: userId });
   });
 }
 
 export async function clearLocalUserData() {
-  await db.transaction('rw', db.workouts, db.sets, db.outbox, db.meta, async () => {
-    await Promise.all([db.workouts.clear(), db.sets.clear(), db.outbox.clear()]);
+  await db.transaction('rw', db.workouts, db.sets, db.outbox, db.conflicts, db.meta, async () => {
+    await Promise.all([
+      db.workouts.clear(),
+      db.sets.clear(),
+      db.outbox.clear(),
+      db.conflicts.clear(),
+    ]);
     await db.meta.delete('activeUserId');
   });
 }

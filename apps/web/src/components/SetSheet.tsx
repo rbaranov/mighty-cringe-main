@@ -1,9 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import type { Exercise } from '@mighty-cringe/contracts';
 
+import type { LocalSet } from '../lib/db';
+
 type Props = {
   exercise: Exercise | null;
+  initial: LocalSet | null;
   onClose: () => void;
   onSave: (input: {
     weightKg: number;
@@ -13,11 +16,18 @@ type Props = {
   }) => void;
 };
 
-export function SetSheet({ exercise, onClose, onSave }: Props) {
+export function SetSheet({ exercise, initial, onClose, onSave }: Props) {
   const [weightKg, setWeightKg] = useState('');
   const [reps, setReps] = useState('');
   const [rir, setRir] = useState('');
   const [comment, setComment] = useState('');
+
+  useEffect(() => {
+    setWeightKg(initial ? String(initial.weightKg) : '');
+    setReps(initial ? String(initial.reps) : '');
+    setRir(initial?.rir === null || initial?.rir === undefined ? '' : String(initial.rir));
+    setComment(initial?.comment ?? '');
+  }, [exercise?.id, initial?.id, initial?.updatedAt]);
 
   if (!exercise) return null;
 
@@ -26,12 +36,12 @@ export function SetSheet({ exercise, onClose, onSave }: Props) {
       <section
         className="sheet"
         aria-modal="true"
-        aria-label={`Новый подход: ${exercise.nameRu}`}
+        aria-label={`${initial ? 'Изменить' : 'Новый'} подход: ${exercise.nameRu}`}
         role="dialog"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="sheet-handle" />
-        <p className="eyebrow">Новый подход</p>
+        <p className="eyebrow">{initial ? 'Изменить подход' : 'Новый подход'}</p>
         <h2>{exercise.nameRu}</h2>
         <div className="form-grid">
           <label>
@@ -91,7 +101,7 @@ export function SetSheet({ exercise, onClose, onSave }: Props) {
           }
           type="button"
         >
-          Сохранить подход
+          {initial ? 'Сохранить изменения' : 'Сохранить подход'}
         </button>
         <button className="button ghost full" onClick={onClose} type="button">
           Отмена

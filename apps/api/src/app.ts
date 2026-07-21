@@ -2,11 +2,21 @@ import { randomUUID } from 'node:crypto';
 
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
-import { createSetSchema, createWorkoutSchema, syncMutationSchema } from '@mighty-cringe/contracts';
-import Fastify, { type FastifyBaseLogger, type FastifyRequest } from 'fastify';
+import {
+  createSetSchema,
+  createWorkoutSchema,
+  syncMutationSchema,
+  updateSetSchema,
+  updateWorkoutSchema,
+} from '@mighty-cringe/contracts';
+import Fastify, { type FastifyBaseLogger, type FastifyReply, type FastifyRequest } from 'fastify';
 
 import { codeChallenge, hashToken, randomToken, type AuthOptions } from './auth.js';
-import type { WorkoutRepository } from './repository.js';
+import {
+  RepositoryConflictError,
+  RepositoryNotFoundError,
+  type WorkoutRepository,
+} from './repository.js';
 
 const sessionCookieName = 'mc_session';
 const oauthStateCookieName = 'mc_oauth_state';
@@ -175,6 +185,24 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
     return reply.status(result.duplicate ? 200 : 201).send(result);
   });
 
+  app.patch('/api/v1/workouts/:workoutId', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+
+    const workoutId = (request.params as { workoutId?: unknown }).workoutId;
+    const parsed = updateWorkoutSchema.safeParse({
+      ...(request.body as object),
+      workoutId,
+    });
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() });
+
+    try {
+      return await repository.updateWorkout(user.id, parsed.data);
+    } catch (error) {
+      return sendRepositoryError(reply, error);
+    }
+  });
+
   app.post('/api/v1/sets', async (request, reply) => {
     const user = await getCurrentUser(request, repository, now());
     if (!user) return reply.status(401).send({ error: 'Authentication required' });
@@ -186,9 +214,22 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
       const result = await repository.createSet(user.id, parsed.data);
       return reply.status(result.duplicate ? 200 : 201).send(result);
     } catch (error) {
-      return reply
-        .status(404)
-        .send({ error: error instanceof Error ? error.message : 'Not found' });
+      return sendRepositoryError(reply, error);
+    }
+  });
+
+  app.patch('/api/v1/sets/:setId', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+
+    const setId = (request.params as { setId?: unknown }).setId;
+    const parsed = updateSetSchema.safeParse({ ...(request.body as object), setId });
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() });
+
+    try {
+      return await repository.updateSet(user.id, parsed.data);
+    } catch (error) {
+      return sendRepositoryError(reply, error);
     }
   });
 
@@ -200,15 +241,27 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
     if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() });
 
     try {
-      const result =
-        parsed.data.type === 'workout.create'
-          ? await repository.createWorkout(user.id, parsed.data.payload)
-          : await repository.createSet(user.id, parsed.data.payload);
-      return reply.status(result.duplicate ? 200 : 201).send({ ...result, type: parsed.data.type });
-    } catch (error) {
+      let result;
+      switch (parsed.data.type) {
+        case 'workout.create':
+          result = await repository.createWorkout(user.id, parsed.data.payload);
+          break;
+        case 'workout.update':
+          result = await repository.updateWorkout(user.id, parsed.data.payload);
+          break;
+        case 'set.create':
+          result = await repository.createSet(user.id, parsed.data.payload);
+          break;
+        case 'set.update':
+          result = await repository.updateSet(user.id, parsed.data.payload);
+          break;
+      }
+      const created = parsed.data.type === 'workout.create' || parsed.data.type === 'set.create';
       return reply
-        .status(409)
-        .send({ error: error instanceof Error ? error.message : 'Sync failed' });
+        .status(!result.duplicate && created ? 201 : 200)
+        .send({ ...result, type: parsed.data.type });
+    } catch (error) {
+      return sendRepositoryError(reply, error);
     }
   });
 
@@ -233,4 +286,18 @@ async function getCurrentUser(request: FastifyRequest, repository: WorkoutReposi
 function safeReturnTo(value: unknown) {
   if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//')) return '/';
   return value;
+}
+
+function sendRepositoryError(reply: FastifyReply, error: unknown) {
+  if (error instanceof RepositoryConflictError) {
+    return reply.status(409).send({
+      code: 'revision_conflict',
+      error: error.message,
+      current: error.current,
+    });
+  }
+  if (error instanceof RepositoryNotFoundError) {
+    return reply.status(404).send({ code: 'not_found', error: error.message });
+  }
+  throw error;
 }

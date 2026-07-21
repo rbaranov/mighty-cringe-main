@@ -47,10 +47,18 @@ export const setInputSchema = z.object({
   performedAt: z.string().datetime(),
 });
 
+export const setRecordSchema = setInputSchema.extend({
+  workoutId: z.string().uuid(),
+  revision: z.number().int().positive(),
+  updatedAt: z.string().datetime(),
+});
+
 export const createWorkoutSchema = z.object({
   id: z.string().uuid(),
   clientMutationId: z.string().uuid(),
   startedAt: z.string().datetime(),
+  endedAt: z.string().datetime().nullable().default(null),
+  notes: z.string().max(10_000).nullable().default(null),
   locale: z.enum(['ru', 'en']).default('ru'),
 });
 
@@ -60,15 +68,60 @@ export const createSetSchema = z.object({
   set: setInputSchema,
 });
 
+const workoutChangesSchema = z
+  .object({
+    startedAt: z.string().datetime().optional(),
+    endedAt: z.string().datetime().nullable().optional(),
+    notes: z.string().max(10_000).nullable().optional(),
+  })
+  .refine((changes) => Object.keys(changes).length > 0, 'At least one change is required');
+
+export const updateWorkoutSchema = z.object({
+  clientMutationId: z.string().uuid(),
+  workoutId: z.string().uuid(),
+  baseRevision: z.number().int().nonnegative(),
+  changes: workoutChangesSchema,
+});
+
+const setChangesSchema = setInputSchema
+  .omit({ id: true, exerciseId: true })
+  .partial()
+  .refine((changes) => Object.keys(changes).length > 0, 'At least one change is required');
+
+export const updateSetSchema = z.object({
+  clientMutationId: z.string().uuid(),
+  workoutId: z.string().uuid(),
+  setId: z.string().uuid(),
+  baseRevision: z.number().int().nonnegative(),
+  changes: setChangesSchema,
+});
+
 export const syncMutationSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('workout.create'), payload: createWorkoutSchema }),
+  z.object({ type: z.literal('workout.update'), payload: updateWorkoutSchema }),
   z.object({ type: z.literal('set.create'), payload: createSetSchema }),
+  z.object({ type: z.literal('set.update'), payload: updateSetSchema }),
 ]);
+
+export const workoutRecordSchema = z.object({
+  id: z.string().uuid(),
+  startedAt: z.string().datetime(),
+  endedAt: z.string().datetime().nullable(),
+  notes: z.string().nullable(),
+  locale: z.enum(['ru', 'en']),
+  revision: z.number().int().positive(),
+  updatedAt: z.string().datetime(),
+  sets: z.array(setRecordSchema),
+});
 
 export type Exercise = z.infer<typeof exerciseSchema>;
 export type SetInput = z.infer<typeof setInputSchema>;
 export type CreateWorkoutInput = z.infer<typeof createWorkoutSchema>;
 export type CreateSetInput = z.infer<typeof createSetSchema>;
+export type UpdateWorkoutInput = z.infer<typeof updateWorkoutSchema>;
+export type UpdateSetInput = z.infer<typeof updateSetSchema>;
 export type SyncMutation = z.infer<typeof syncMutationSchema>;
+export type SetRecord = z.infer<typeof setRecordSchema>;
+export type WorkoutRecord = z.infer<typeof workoutRecordSchema>;
 export type CurrentUser = z.infer<typeof currentUserSchema>;
 export type UserRole = CurrentUser['role'];
