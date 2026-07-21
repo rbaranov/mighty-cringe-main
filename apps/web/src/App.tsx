@@ -20,6 +20,7 @@ import {
 } from './lib/db';
 import { fallbackCatalog } from './lib/fallbackCatalog';
 import { hasPendingRemoteLogout, requestRemoteLogout } from './lib/logout';
+import { parseNaturalSet, type NaturalSetDraft, type NaturalSetResult } from './lib/naturalSet';
 import { resolveSession } from './lib/session';
 import {
   flushOutbox,
@@ -123,7 +124,7 @@ function AuthenticatedApp({
   const [sheet, setSheet] = useState<{ exercise: Exercise; set: LocalSet | null } | null>(null);
   const [exercisePicker, setExercisePicker] = useState<ExercisePickerMode | null>(null);
   const [confirmation, setConfirmation] = useState<PendingConfirmation | null>(null);
-  const [inputOpen, setInputOpen] = useState(false);
+  const [explainContext, setExplainContext] = useState<{ exercise: Exercise | null } | null>(null);
   const syncStatus = useSyncExternalStore(subscribeSyncStatus, getSyncStatus, getSyncStatus);
 
   const storedWorkouts = useLiveQuery(
@@ -258,9 +259,15 @@ function AuthenticatedApp({
       return;
     }
 
+    await createSet(sheet.exercise, input);
+    setSheet(null);
+  }
+
+  async function createSet(exercise: Exercise, input: NaturalSetDraft) {
+    if (!activeWorkout) return;
     const set: SetInput = {
       id: crypto.randomUUID(),
-      exerciseId: sheet.exercise.id,
+      exerciseId: exercise.id,
       ...input,
       performedAt: new Date().toISOString(),
       position:
@@ -270,7 +277,7 @@ function AuthenticatedApp({
             .filter(
               (item) =>
                 item.workoutId === activeWorkout.id &&
-                item.exerciseId === sheet.exercise.id &&
+                item.exerciseId === exercise.id &&
                 !item.deleted,
             )
             .map((item) => item.position),
@@ -289,8 +296,12 @@ function AuthenticatedApp({
       type: 'set.create',
       payload: { clientMutationId, workoutId: activeWorkout.id, set },
     });
-    setSheet(null);
     await flushOutbox();
+  }
+
+  async function saveNaturalSet(exercise: Exercise, input: NaturalSetDraft) {
+    await createSet(exercise, input);
+    setExplainContext(null);
   }
 
   async function finishWorkout() {
@@ -632,7 +643,11 @@ function AuthenticatedApp({
         <SettingsView conflicts={conflicts} onLogout={onLogout} user={user} />
       )}
 
-      <button className="explain-button" onClick={() => setInputOpen(true)} type="button">
+      <button
+        className="explain-button"
+        onClick={() => setExplainContext({ exercise: null })}
+        type="button"
+      >
         <span>🎙️✏️</span>
         Пояснить
       </button>
@@ -668,6 +683,11 @@ function AuthenticatedApp({
         exercise={sheet?.exercise ?? null}
         initial={sheet?.set ?? null}
         onClose={() => setSheet(null)}
+        onExplain={() => {
+          if (!sheet) return;
+          setExplainContext({ exercise: sheet.exercise });
+          setSheet(null);
+        }}
         onSave={saveSet}
       />
       <ExercisePickerSheet
@@ -682,7 +702,16 @@ function AuthenticatedApp({
         onClose={() => setConfirmation(null)}
         onConfirm={confirmPendingAction}
       />
-      {inputOpen && <ExplainSheet onClose={() => setInputOpen(false)} />}
+      {explainContext && (
+        <ExplainSheet
+          activeWorkout={activeWorkout}
+          catalog={exercises}
+          onClose={() => setExplainContext(null)}
+          onSave={saveNaturalSet}
+          scopedExercise={explainContext.exercise}
+          sets={sets}
+        />
+      )}
     </main>
   );
 }
@@ -1252,28 +1281,224 @@ function ConfirmationSheet({
   );
 }
 
-function ExplainSheet({ onClose }: { onClose: () => void }) {
+function ExplainSheet({
+  activeWorkout,
+  catalog,
+  scopedExercise,
+  sets,
+  onClose,
+  onSave,
+}: {
+  activeWorkout: LocalWorkout | undefined;
+  catalog: Exercise[];
+  scopedExercise: Exercise | null;
+  sets: LocalSet[];
+  onClose: () => void;
+  onSave: (exercise: Exercise, input: NaturalSetDraft) => Promise<void>;
+}) {
+  const [mode, setMode] = useState<'text' | 'voice'>(() => loadInputMode());
+  const [text, setText] = useState('');
+  const [result, setResult] = useState<NaturalSetResult | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  function chooseMode(next: 'text' | 'voice') {
+    setMode(next);
+    saveInputMode(next);
+    setResult(null);
+  }
+
+  function interpret(exerciseOverride: Exercise | null = null) {
+    setResult(parseNaturalSet({ text, catalog, scopedExercise, exerciseOverride }));
+  }
+
+  async function confirmParsed(exercise: Exercise, draft: NaturalSetDraft) {
+    if (saving) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await onSave(exercise, draft);
+    } catch {
+      setSaveError('Не удалось записать подход. Фраза сохранена в форме — попробуй ещё раз.');
+      setSaving(false);
+    }
+  }
+
+  const previousSet =
+    result?.status === 'ready'
+      ? sets
+          .filter((set) => set.exerciseId === result.exercise.id && !set.deleted)
+          .sort((left, right) => right.performedAt.localeCompare(left.performedAt))[0]
+      : null;
+
   return (
     <div className="sheet-backdrop" role="presentation" onMouseDown={onClose}>
       <section
-        className="sheet"
+        className="sheet explain-sheet"
         role="dialog"
         aria-modal="true"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="sheet-handle" />
         <p className="eyebrow">Пояснить</p>
-        <h2>Голос и текст</h2>
-        <p className="intro">
-          Текстовое и голосовое понимание будет подключено после настройки безопасного AI-ключа.
-          Ручной подход уже работает офлайн.
+        <h2>{scopedExercise ? scopedExercise.nameRu : 'Записать подход'}</h2>
+        <p className="explain-context">
+          {activeWorkout
+            ? scopedExercise
+              ? `Контекст: ${scopedExercise.nameRu}`
+              : 'Контекст: текущая тренировка'
+            : 'Сначала начни тренировку — подход привязывается к активной сессии.'}
         </p>
-        <button className="button primary full" onClick={onClose} type="button">
-          Понятно
+        <div aria-label="Способ ввода" className="input-modes" role="tablist">
+          <button
+            aria-selected={mode === 'text'}
+            className={mode === 'text' ? 'active' : ''}
+            onClick={() => chooseMode('text')}
+            role="tab"
+            type="button"
+          >
+            ⌨️ Текст
+          </button>
+          <button
+            aria-selected={mode === 'voice'}
+            className={mode === 'voice' ? 'active' : ''}
+            onClick={() => chooseMode('voice')}
+            role="tab"
+            type="button"
+          >
+            🎙️ Голос
+          </button>
+        </div>
+
+        {mode === 'voice' ? (
+          <div className="voice-boundary" role="status">
+            <strong>Голос пока не записывается</strong>
+            <p>
+              Сначала добавим явное согласие, приватное хранение и серверный ключ провайдера. Текст
+              уже разбирается офлайн и никуда не отправляется.
+            </p>
+            <button
+              className="button primary full"
+              onClick={() => chooseMode('text')}
+              type="button"
+            >
+              Перейти к тексту
+            </button>
+          </div>
+        ) : result?.status === 'ready' ? (
+          <div className="parsed-set" aria-live="polite">
+            <strong>Понял так — верно?</strong>
+            <dl>
+              <div>
+                <dt>Упражнение</dt>
+                <dd>{result.exercise.nameRu}</dd>
+              </div>
+              <div>
+                <dt>Подход</dt>
+                <dd>
+                  {result.draft.weightKg} кг × {result.draft.reps}
+                </dd>
+              </div>
+              <div>
+                <dt>RIR</dt>
+                <dd>{result.draft.rir ?? 'не указан'}</dd>
+              </div>
+              <div>
+                <dt>Комментарий</dt>
+                <dd>{result.draft.comment ?? '—'}</dd>
+              </div>
+            </dl>
+            {previousSet && (
+              <p className="previous-result">
+                Прошлый результат: {previousSet.weightKg} кг × {previousSet.reps}
+                {previousSet.rir === null ? '' : `, RIR ${previousSet.rir}`}
+              </p>
+            )}
+            {saveError && (
+              <p className="clarification compact" role="alert">
+                {saveError}
+              </p>
+            )}
+            <div className="parsed-actions">
+              <button className="button ghost" onClick={() => setResult(null)} type="button">
+                Исправить фразу
+              </button>
+              <button
+                className="button primary"
+                disabled={saving}
+                onClick={() => void confirmParsed(result.exercise, result.draft)}
+                type="button"
+              >
+                {saving ? 'Записываю…' : 'Подтвердить'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="natural-input">
+            <label htmlFor="natural-set-input">Опиши подход свободной фразой</label>
+            <textarea
+              autoFocus
+              id="natural-set-input"
+              maxLength={1_500}
+              onChange={(event) => {
+                setText(event.target.value);
+                setResult(null);
+              }}
+              placeholder={
+                scopedExercise
+                  ? 'Например: сорок на двенадцать, один в запасе, техника чистая'
+                  : 'Например: румынка 80 на 8, RIR 2, техника чистая'
+              }
+              rows={4}
+              value={text}
+            />
+            {result?.status === 'needs_clarification' && (
+              <div className="clarification" role="alert">
+                <strong>Нужно уточнение</strong>
+                <p>{result.question}</p>
+                {result.candidates.length > 0 && (
+                  <div className="candidate-list">
+                    {result.candidates.map((exercise) => (
+                      <button onClick={() => interpret(exercise)} key={exercise.id} type="button">
+                        {exercise.nameRu}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            <button
+              className="button primary full"
+              disabled={!activeWorkout || !text.trim()}
+              onClick={() => interpret()}
+              type="button"
+            >
+              Разобрать фразу
+            </button>
+          </div>
+        )}
+        <button className="button ghost full" onClick={onClose} type="button">
+          Закрыть
         </button>
       </section>
     </div>
   );
+}
+
+function loadInputMode(): 'text' | 'voice' {
+  try {
+    return localStorage.getItem('mighty-cringe:last-input-mode') === 'voice' ? 'voice' : 'text';
+  } catch {
+    return 'text';
+  }
+}
+
+function saveInputMode(mode: 'text' | 'voice') {
+  try {
+    localStorage.setItem('mighty-cringe:last-input-mode', mode);
+  } catch {
+    // Remembering the presentation mode is optional.
+  }
 }
 
 function Tab({

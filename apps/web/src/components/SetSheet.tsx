@@ -8,6 +8,7 @@ type Props = {
   exercise: Exercise | null;
   initial: LocalSet | null;
   onClose: () => void;
+  onExplain: () => void;
   onSave: (input: {
     weightKg: number;
     reps: number;
@@ -16,7 +17,7 @@ type Props = {
   }) => void;
 };
 
-export function SetSheet({ exercise, initial, onClose, onSave }: Props) {
+export function SetSheet({ exercise, initial, onClose, onExplain, onSave }: Props) {
   const [weightKg, setWeightKg] = useState('');
   const [reps, setReps] = useState('');
   const [rir, setRir] = useState('');
@@ -43,6 +44,14 @@ export function SetSheet({ exercise, initial, onClose, onSave }: Props) {
         <div className="sheet-handle" />
         <p className="eyebrow">{initial ? 'Изменить подход' : 'Новый подход'}</p>
         <h2>{exercise.nameRu}</h2>
+        {!initial && (
+          <>
+            <button className="button explain-entry full" onClick={onExplain} type="button">
+              🎙️✏️ Сказать или написать
+            </button>
+            <p className="form-divider">или ввести вручную</p>
+          </>
+        )}
         <div className="form-grid">
           <label>
             Вес, кг
