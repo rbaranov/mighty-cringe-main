@@ -118,6 +118,7 @@ function set(
     reps,
     rir: null,
     comment: null,
+    entrySource: 'manual',
     performedAt: '2026-07-20T18:30:00.000Z',
     position: 0,
     revision: 1,

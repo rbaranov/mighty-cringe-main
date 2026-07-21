@@ -43,6 +43,13 @@
       "when": 1784670767708,
       "tag": "0005_groovy_cassandra_nova",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784672636030,
+      "tag": "0006_moaning_speed_demon",
+      "breakpoints": true
     }
   ]
 }

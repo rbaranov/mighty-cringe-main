@@ -17,6 +17,7 @@ export const muscleGroups = [
 export const exerciseTags = ['mighty', 'normal', 'cringe'] as const;
 export const userRoles = ['athlete', 'admin', 'trainer', 'superadmin'] as const;
 export const voiceStatuses = ['pending', 'processing', 'confirmed', 'failed'] as const;
+export const setEntrySources = ['manual', 'natural_text', 'voice_ai'] as const;
 
 export const currentUserSchema = z.object({
   id: z.string().uuid(),
@@ -96,6 +97,7 @@ export const setInputSchema = z.object({
   reps: z.number().int().min(1).max(100),
   rir: z.number().int().min(0).max(20).nullable(),
   comment: z.string().max(1_000).nullable(),
+  entrySource: z.enum(setEntrySources).default('manual'),
   performedAt: z.string().datetime(),
   position: z.number().int().nonnegative().default(0),
 });
@@ -206,9 +208,16 @@ export const updateWorkoutSchema = z.object({
   changes: workoutChangesSchema,
 });
 
-const setChangesSchema = setInputSchema
-  .omit({ id: true, exerciseId: true })
-  .partial()
+const setChangesSchema = z
+  .object({
+    weightKg: z.number().nonnegative().max(1000).optional(),
+    reps: z.number().int().min(1).max(100).optional(),
+    rir: z.number().int().min(0).max(20).nullable().optional(),
+    comment: z.string().max(1_000).nullable().optional(),
+    performedAt: z.string().datetime().optional(),
+    position: z.number().int().nonnegative().optional(),
+  })
+  .strict()
   .refine((changes) => Object.keys(changes).length > 0, 'At least one change is required');
 
 export const updateSetSchema = z.object({
@@ -252,6 +261,7 @@ export const workoutRecordSchema = z.object({
 export type Exercise = z.infer<typeof exerciseSchema>;
 export type WorkoutExercise = z.infer<typeof workoutExerciseSchema>;
 export type SetInput = z.infer<typeof setInputSchema>;
+export type SetEntrySource = SetInput['entrySource'];
 export type CreateWorkoutInput = z.infer<typeof createWorkoutSchema>;
 export type CreateSetInput = z.infer<typeof createSetSchema>;
 export type UpdateWorkoutInput = z.infer<typeof updateWorkoutSchema>;

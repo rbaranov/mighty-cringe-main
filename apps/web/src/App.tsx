@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
-import type { CurrentUser, Exercise, SetInput, WorkoutExercise } from '@mighty-cringe/contracts';
+import type {
+  CurrentUser,
+  Exercise,
+  SetEntrySource,
+  SetInput,
+  WorkoutExercise,
+} from '@mighty-cringe/contracts';
 import { useLiveQuery } from 'dexie-react-hooks';
 
 import { SetSheet } from './components/SetSheet';
@@ -22,6 +28,7 @@ import {
 import { fallbackCatalog } from './lib/fallbackCatalog';
 import { hasPendingRemoteLogout, requestRemoteLogout } from './lib/logout';
 import { parseNaturalSet, type NaturalSetDraft, type NaturalSetResult } from './lib/naturalSet';
+import { setEntrySourceSuffix } from './lib/setEntrySource';
 import { resolveSession } from './lib/session';
 import {
   flushOutbox,
@@ -264,12 +271,17 @@ function AuthenticatedApp({
     setSheet(null);
   }
 
-  async function createSet(exercise: Exercise, input: NaturalSetDraft) {
+  async function createSet(
+    exercise: Exercise,
+    input: NaturalSetDraft,
+    entrySource: SetEntrySource = 'manual',
+  ) {
     if (!activeWorkout) return;
     const set: SetInput = {
       id: crypto.randomUUID(),
       exerciseId: exercise.id,
       ...input,
+      entrySource,
       performedAt: new Date().toISOString(),
       position:
         Math.max(
@@ -300,8 +312,12 @@ function AuthenticatedApp({
     await flushOutbox();
   }
 
-  async function saveNaturalSet(exercise: Exercise, input: NaturalSetDraft) {
-    await createSet(exercise, input);
+  async function saveNaturalSet(
+    exercise: Exercise,
+    input: NaturalSetDraft,
+    entrySource: Extract<SetEntrySource, 'natural_text' | 'voice_ai'>,
+  ) {
+    await createSet(exercise, input, entrySource);
     setExplainContext(null);
   }
 
@@ -948,6 +964,7 @@ function WorkoutView({
                       >
                         {setIndex + 1}. {set.weightKg}×{set.reps}
                         {set.rir === null ? '' : ` RIR${set.rir}`}
+                        {setEntrySourceSuffix(set.entrySource)}
                         {set.syncState === 'pending' ? ' · ждёт' : ''}
                         {set.syncState === 'conflict' ? ' · конфликт' : ''}
                       </button>
@@ -1018,6 +1035,7 @@ function WorkoutView({
                         type="button"
                       >
                         {index + 1}. {set.weightKg}×{set.reps}
+                        {setEntrySourceSuffix(set.entrySource)}
                       </button>
                       <div className="set-controls">
                         <button
@@ -1295,13 +1313,19 @@ function ExplainSheet({
   scopedExercise: Exercise | null;
   sets: LocalSet[];
   onClose: () => void;
-  onSave: (exercise: Exercise, input: NaturalSetDraft) => Promise<void>;
+  onSave: (
+    exercise: Exercise,
+    input: NaturalSetDraft,
+    entrySource: Extract<SetEntrySource, 'natural_text' | 'voice_ai'>,
+  ) => Promise<void>;
 }) {
   const [mode, setMode] = useState<'text' | 'voice'>(() => loadInputMode());
   const [text, setText] = useState('');
   const [result, setResult] = useState<NaturalSetResult | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [entrySource, setEntrySource] =
+    useState<Extract<SetEntrySource, 'natural_text' | 'voice_ai'>>('natural_text');
 
   function chooseMode(next: 'text' | 'voice') {
     setMode(next);
@@ -1318,7 +1342,7 @@ function ExplainSheet({
     setSaving(true);
     setSaveError(null);
     try {
-      await onSave(exercise, draft);
+      await onSave(exercise, draft, entrySource);
     } catch {
       setSaveError('Не удалось записать подход. Фраза сохранена в форме — попробуй ещё раз.');
       setSaving(false);
@@ -1370,12 +1394,14 @@ function ExplainSheet({
             🎙️ Голос
           </button>
         </div>
+        <p className="manual-entry-note">Ручной «＋ Подход» всегда доступен в тренировке.</p>
 
         {mode === 'voice' ? (
           <VoicePanel
             activeWorkoutId={activeWorkout?.id ?? null}
             onTranscript={(transcript) => {
               setText(transcript);
+              setEntrySource('voice_ai');
               setMode('text');
               saveInputMode('text');
               setResult(parseNaturalSet({ text: transcript, catalog, scopedExercise }));
@@ -1438,6 +1464,7 @@ function ExplainSheet({
               maxLength={1_500}
               onChange={(event) => {
                 setText(event.target.value);
+                if (!event.target.value.trim()) setEntrySource('natural_text');
                 setResult(null);
               }}
               placeholder={

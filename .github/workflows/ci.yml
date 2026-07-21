@@ -57,6 +57,9 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      - name: Verify the PWA secret boundary
+        run: pnpm test:client-boundary
+
       - name: Test
         run: |
           pnpm --filter @mighty-cringe/db db:migrate

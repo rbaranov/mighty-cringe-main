@@ -18,6 +18,11 @@ import { sql } from 'drizzle-orm';
 export const roleEnum = pgEnum('role', ['athlete', 'admin', 'trainer', 'superadmin']);
 export const exerciseScopeEnum = pgEnum('exercise_scope', ['global', 'user']);
 export const exerciseTagEnum = pgEnum('exercise_tag', ['mighty', 'normal', 'cringe']);
+export const setEntrySourceEnum = pgEnum('set_entry_source', [
+  'manual',
+  'natural_text',
+  'voice_ai',
+]);
 export const voiceStatusEnum = pgEnum('voice_status', [
   'pending',
   'processing',
@@ -165,6 +170,7 @@ export const sets = pgTable(
     reps: integer('reps').notNull(),
     rir: integer('rir'),
     comment: text('comment'),
+    entrySource: setEntrySourceEnum('entry_source').notNull().default('manual'),
     performedAt: timestamp('performed_at', { withTimezone: true }).notNull(),
     position: integer('position').notNull().default(0),
     revision: integer('revision').notNull().default(1),

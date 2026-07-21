@@ -771,6 +771,7 @@ export class PostgresRepository implements WorkoutRepository {
         reps: input.set.reps,
         rir: input.set.rir,
         comment: input.set.comment,
+        entrySource: input.set.entrySource,
         performedAt: new Date(input.set.performedAt),
         position: input.set.position,
       });
@@ -1332,6 +1333,7 @@ function toSetRecord(set: typeof sets.$inferSelect): SetRecord {
     reps: set.reps,
     rir: set.rir,
     comment: set.comment,
+    entrySource: set.entrySource,
     performedAt: set.performedAt.toISOString(),
     position: set.position,
     revision: set.revision,
@@ -1408,6 +1410,7 @@ function sameSetCreate(set: MemorySet | typeof sets.$inferSelect, input: CreateS
     set.reps === input.set.reps &&
     set.rir === input.set.rir &&
     set.comment === input.set.comment &&
+    set.entrySource === input.set.entrySource &&
     asIso(set.performedAt) === input.set.performedAt &&
     set.position === input.set.position
   );
