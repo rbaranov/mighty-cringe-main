@@ -200,6 +200,6 @@
     остаются канонически в kg/cm, а ручной ввод, natural-text parser, CSV, история и read-only
     представления конвертируют lb/in только на границе ввода и отображения. Push payload выбирает
     язык профиля. Локальные format, typecheck, build, API/worker tests, 51 web-тест, PWA shell,
-    secret-boundary и mobile browser QA проходят. **Требуется участие владельца:** после зелёного CI
-    разрешить последовательный merge, затем в production проверить переключение RU ↔ EN и kg/cm ↔
-    lb/in, повторный вход и второе устройство.
+    secret-boundary и mobile browser QA проходят; GitHub CI прошёл, включая PostgreSQL 17 migration
+    path. **Требуется участие владельца:** разрешить последовательный merge, затем в production
+    проверить переключение RU ↔ EN и kg/cm ↔ lb/in, повторный вход и второе устройство.
