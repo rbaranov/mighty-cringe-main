@@ -25,6 +25,8 @@ test(
       'athlete',
     );
     const workoutId = randomUUID();
+    const firstPlanItemId = randomUUID();
+    const secondPlanItemId = randomUUID();
     const createWorkout = {
       id: workoutId,
       clientMutationId: randomUUID(),
@@ -32,6 +34,20 @@ test(
       endedAt: null,
       notes: null,
       locale: 'ru' as const,
+      exercises: [
+        {
+          id: firstPlanItemId,
+          exerciseId: '10000000-0000-4000-8000-000000000001',
+          position: 0,
+          supersetGroup: 1,
+        },
+        {
+          id: secondPlanItemId,
+          exerciseId: '10000000-0000-4000-8000-000000000002',
+          position: 1,
+          supersetGroup: 1,
+        },
+      ],
     };
 
     const concurrentCreates = await Promise.all([
@@ -40,6 +56,20 @@ test(
     ]);
     assert.equal(concurrentCreates.filter((result) => result.duplicate).length, 1);
     assert.equal(concurrentCreates.filter((result) => !result.duplicate).length, 1);
+
+    const reorderedPlan = await repository.updateWorkout(user.id, {
+      clientMutationId: randomUUID(),
+      workoutId,
+      baseRevision: 1,
+      changes: {
+        exercises: [
+          { ...createWorkout.exercises[1], position: 0 },
+          { ...createWorkout.exercises[0], position: 1 },
+        ],
+      },
+    });
+    assert.equal(reorderedPlan.entity.revision, 2);
+    assert.equal(reorderedPlan.entity.exercises[0].id, secondPlanItemId);
 
     const setId = randomUUID();
     const createdSet = await repository.createSet(user.id, {
@@ -53,6 +83,7 @@ test(
         rir: 1,
         comment: null,
         performedAt: '2026-07-21T10:10:00.000Z',
+        position: 0,
       },
     });
     assert.equal(createdSet.entity.revision, 1);
@@ -115,5 +146,34 @@ test(
     assert.equal(history[0].sets.length, 1);
     assert.ok([83, 84].includes(history[0].sets[0].weightKg));
     assert.equal(history[0].sets[0].revision, 3);
+    assert.equal(history[0].revision, 2);
+    assert.equal(history[0].exercises[0].id, secondPlanItemId);
+
+    await assert.rejects(
+      repository.deleteSet(user.id, {
+        clientMutationId: randomUUID(),
+        workoutId,
+        setId,
+        baseRevision: 2,
+      }),
+      RepositoryConflictError,
+    );
+    const deleteMutationId = randomUUID();
+    const deleted = await repository.deleteSet(user.id, {
+      clientMutationId: deleteMutationId,
+      workoutId,
+      setId,
+      baseRevision: 3,
+    });
+    assert.equal(deleted.entity, null);
+    assert.equal(deleted.duplicate, false);
+    const repeatedDelete = await repository.deleteSet(user.id, {
+      clientMutationId: deleteMutationId,
+      workoutId,
+      setId,
+      baseRevision: 3,
+    });
+    assert.equal(repeatedDelete.duplicate, true);
+    assert.equal((await repository.listWorkouts(user.id))[0].sets.length, 0);
   },
 );

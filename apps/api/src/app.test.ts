@@ -87,6 +87,20 @@ test('OAuth sessions isolate athlete data, support logout, and enforce admin rol
     clientMutationId: '30000000-0000-4000-8000-000000000001',
     startedAt: '2026-07-20T08:00:00.000Z',
     locale: 'ru',
+    exercises: [
+      {
+        id: '21000000-0000-4000-8000-000000000001',
+        exerciseId: '10000000-0000-4000-8000-000000000001',
+        position: 0,
+        supersetGroup: 1,
+      },
+      {
+        id: '21000000-0000-4000-8000-000000000002',
+        exerciseId: '10000000-0000-4000-8000-000000000002',
+        position: 1,
+        supersetGroup: 1,
+      },
+    ],
   };
   const firstWorkout = await app.inject({
     method: 'POST',
@@ -104,6 +118,7 @@ test('OAuth sessions isolate athlete data, support logout, and enforce admin rol
   assert.equal(repeatedWorkout.statusCode, 200);
   assert.equal(repeatedWorkout.json().duplicate, true);
   assert.equal(repeatedWorkout.json().entity.revision, 1);
+  assert.equal(repeatedWorkout.json().entity.exercises.length, 2);
 
   const set = {
     clientMutationId: '40000000-0000-4000-8000-000000000001',
@@ -116,6 +131,7 @@ test('OAuth sessions isolate athlete data, support logout, and enforce admin rol
       rir: 2,
       comment: 'Чисто',
       performedAt: '2026-07-20T08:12:00.000Z',
+      position: 0,
     },
   };
   const firstSet = await app.inject({
@@ -143,6 +159,29 @@ test('OAuth sessions isolate athlete data, support logout, and enforce admin rol
   assert.equal(finishWorkout.statusCode, 200);
   assert.equal(finishWorkout.json().entity.revision, 2);
   assert.equal(finishWorkout.json().entity.endedAt, '2026-07-20T09:00:00.000Z');
+
+  const reorderPlan = await app.inject({
+    method: 'POST',
+    url: '/api/v1/sync',
+    headers: { cookie: athleteOneCookie },
+    payload: {
+      type: 'workout.update',
+      payload: {
+        clientMutationId: '30000000-0000-4000-8000-000000000003',
+        workoutId,
+        baseRevision: 2,
+        changes: {
+          exercises: [
+            { ...workout.exercises[1], position: 0 },
+            { ...workout.exercises[0], position: 1 },
+          ],
+        },
+      },
+    },
+  });
+  assert.equal(reorderPlan.statusCode, 200);
+  assert.equal(reorderPlan.json().entity.revision, 3);
+  assert.equal(reorderPlan.json().entity.exercises[0].id, workout.exercises[1].id);
 
   const updateSet = await app.inject({
     method: 'POST',
@@ -201,12 +240,61 @@ test('OAuth sessions isolate athlete data, support logout, and enforce admin rol
   assert.equal(staleSetUpdate.json().code, 'revision_conflict');
   assert.equal(staleSetUpdate.json().current.weightKg, 62.5);
 
+  const deletedSet = {
+    ...set,
+    clientMutationId: '40000000-0000-4000-8000-000000000004',
+    set: {
+      ...set.set,
+      id: '50000000-0000-4000-8000-000000000002',
+      performedAt: '2026-07-20T08:15:00.000Z',
+      position: 1,
+    },
+  };
+  assert.equal(
+    (
+      await app.inject({
+        method: 'POST',
+        url: '/api/v1/sets',
+        headers: { cookie: athleteOneCookie },
+        payload: deletedSet,
+      })
+    ).statusCode,
+    201,
+  );
+  const deleteMutation = {
+    type: 'set.delete',
+    payload: {
+      clientMutationId: '40000000-0000-4000-8000-000000000005',
+      workoutId,
+      setId: deletedSet.set.id,
+      baseRevision: 1,
+    },
+  };
+  const firstDelete = await app.inject({
+    method: 'POST',
+    url: '/api/v1/sync',
+    headers: { cookie: athleteOneCookie },
+    payload: deleteMutation,
+  });
+  assert.equal(firstDelete.statusCode, 200);
+  assert.equal(firstDelete.json().entity, null);
+  assert.equal(firstDelete.json().duplicate, false);
+  const repeatedDelete = await app.inject({
+    method: 'POST',
+    url: '/api/v1/sync',
+    headers: { cookie: athleteOneCookie },
+    payload: deleteMutation,
+  });
+  assert.equal(repeatedDelete.statusCode, 200);
+  assert.equal(repeatedDelete.json().duplicate, true);
+
   const athleteOneHistory = await app.inject({
     method: 'GET',
     url: '/api/v1/workouts',
     headers: { cookie: athleteOneCookie },
   });
-  assert.equal(athleteOneHistory.json().items[0].revision, 2);
+  assert.equal(athleteOneHistory.json().items[0].revision, 3);
+  assert.equal(athleteOneHistory.json().items[0].exercises[0].id, workout.exercises[1].id);
   assert.equal(athleteOneHistory.json().items[0].sets.length, 1);
   assert.equal(athleteOneHistory.json().items[0].sets[0].weightKg, 62.5);
 

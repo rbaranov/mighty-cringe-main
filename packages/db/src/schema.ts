@@ -161,6 +161,7 @@ export const sets = pgTable(
     rir: integer('rir'),
     comment: text('comment'),
     performedAt: timestamp('performed_at', { withTimezone: true }).notNull(),
+    position: integer('position').notNull().default(0),
     revision: integer('revision').notNull().default(1),
     ...timestamps,
   },

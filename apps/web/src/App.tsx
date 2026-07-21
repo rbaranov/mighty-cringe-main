@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import type { CurrentUser, Exercise, SetInput } from '@mighty-cringe/contracts';
+import type { CurrentUser, Exercise, SetInput, WorkoutExercise } from '@mighty-cringe/contracts';
 import { useLiveQuery } from 'dexie-react-hooks';
 
 import { SetSheet } from './components/SetSheet';
@@ -30,6 +30,15 @@ type AuthState =
   | { status: 'loading' }
   | { status: 'anonymous'; googleEnabled: boolean }
   | { status: 'authenticated'; user: CurrentUser };
+
+type ExercisePickerMode = { mode: 'add' } | { mode: 'replace'; itemId: string };
+
+type PendingConfirmation = {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  action: () => Promise<void>;
+};
 
 export default function App() {
   const [auth, setAuth] = useState<AuthState>({ status: 'loading' });
@@ -74,6 +83,8 @@ export default function App() {
 function AuthenticatedApp({ user, onLogout }: { user: CurrentUser; onLogout: () => void }) {
   const [view, setView] = useState<View>('workout');
   const [sheet, setSheet] = useState<{ exercise: Exercise; set: LocalSet | null } | null>(null);
+  const [exercisePicker, setExercisePicker] = useState<ExercisePickerMode | null>(null);
+  const [confirmation, setConfirmation] = useState<PendingConfirmation | null>(null);
   const [inputOpen, setInputOpen] = useState(false);
   const [online, setOnline] = useState(navigator.onLine);
 
@@ -108,8 +119,7 @@ function AuthenticatedApp({ user, onLogout }: { user: CurrentUser; onLogout: () 
         const payload = (await response.json()) as { items: Exercise[] };
         await db.exercises.bulkPut(payload.items);
       } catch {
-        const current = await db.exercises.count();
-        if (current === 0) await db.exercises.bulkPut(fallbackCatalog);
+        await db.exercises.bulkPut(fallbackCatalog);
       }
     };
     void populateCatalog();
@@ -133,12 +143,19 @@ function AuthenticatedApp({ user, onLogout }: { user: CurrentUser; onLogout: () 
     const id = crypto.randomUUID();
     const clientMutationId = crypto.randomUUID();
     const startedAt = new Date().toISOString();
+    const workoutExercises = suggested.map((exercise, position) => ({
+      id: crypto.randomUUID(),
+      exerciseId: exercise.id,
+      position,
+      supersetGroup: null,
+    }));
     await db.workouts.put({
       id,
       startedAt,
       endedAt: null,
       notes: null,
       locale: 'ru',
+      exercises: workoutExercises,
       revision: 0,
       updatedAt: startedAt,
       syncState: 'pending',
@@ -152,6 +169,7 @@ function AuthenticatedApp({ user, onLogout }: { user: CurrentUser; onLogout: () 
         endedAt: null,
         notes: null,
         locale: 'ru',
+        exercises: workoutExercises,
       },
     });
     await flushOutbox();
@@ -186,6 +204,18 @@ function AuthenticatedApp({ user, onLogout }: { user: CurrentUser; onLogout: () 
       exerciseId: sheet.exercise.id,
       ...input,
       performedAt: new Date().toISOString(),
+      position:
+        Math.max(
+          -1,
+          ...sets
+            .filter(
+              (item) =>
+                item.workoutId === activeWorkout.id &&
+                item.exerciseId === sheet.exercise.id &&
+                !item.deleted,
+            )
+            .map((item) => item.position),
+        ) + 1,
     };
     const clientMutationId = crypto.randomUUID();
     await db.sets.put({
@@ -194,6 +224,7 @@ function AuthenticatedApp({ user, onLogout }: { user: CurrentUser; onLogout: () 
       revision: 0,
       updatedAt: set.performedAt,
       syncState: 'pending',
+      deleted: false,
     });
     await queueMutation({
       type: 'set.create',
@@ -216,6 +247,184 @@ function AuthenticatedApp({ user, onLogout }: { user: CurrentUser; onLogout: () 
         changes: { endedAt },
       },
     });
+    await flushOutbox();
+  }
+
+  async function updateWorkoutPlan(nextPlan: WorkoutExercise[]) {
+    if (!activeWorkout) return;
+    const exercises = normalizePlan(nextPlan);
+    await db.workouts.update(activeWorkout.id, { exercises, syncState: 'pending' });
+    await queueMutation({
+      type: 'workout.update',
+      payload: {
+        clientMutationId: crypto.randomUUID(),
+        workoutId: activeWorkout.id,
+        baseRevision: activeWorkout.revision,
+        changes: { exercises },
+      },
+    });
+    await flushOutbox();
+  }
+
+  async function chooseExercise(exercise: Exercise) {
+    if (!activeWorkout || !exercisePicker) return;
+    if (exercisePicker.mode === 'add') {
+      await updateWorkoutPlan([
+        ...activeWorkout.exercises,
+        {
+          id: crypto.randomUUID(),
+          exerciseId: exercise.id,
+          position: activeWorkout.exercises.length,
+          supersetGroup: null,
+        },
+      ]);
+    } else {
+      await updateWorkoutPlan(
+        activeWorkout.exercises.map((item) =>
+          item.id === exercisePicker.itemId ? { ...item, exerciseId: exercise.id } : item,
+        ),
+      );
+    }
+    setExercisePicker(null);
+  }
+
+  async function removeExercise(itemId: string) {
+    if (!activeWorkout) return;
+    const removed = activeWorkout.exercises.find((item) => item.id === itemId);
+    let nextPlan = activeWorkout.exercises.filter((item) => item.id !== itemId);
+    if (removed?.supersetGroup !== null && removed?.supersetGroup !== undefined) {
+      nextPlan = nextPlan.map((item) =>
+        item.supersetGroup === removed.supersetGroup ? { ...item, supersetGroup: null } : item,
+      );
+    }
+    await updateWorkoutPlan(nextPlan);
+  }
+
+  async function moveExercise(itemId: string, direction: -1 | 1) {
+    if (!activeWorkout) return;
+    const nextPlan = activeWorkout.exercises
+      .map((item) => ({ ...item }))
+      .sort((left, right) => left.position - right.position);
+    const index = nextPlan.findIndex((item) => item.id === itemId);
+    const destination = index + direction;
+    if (index < 0 || destination < 0 || destination >= nextPlan.length) return;
+    const group = nextPlan[index].supersetGroup;
+    if (group !== null) {
+      for (const item of nextPlan) {
+        if (item.supersetGroup === group) item.supersetGroup = null;
+      }
+    }
+    [nextPlan[index], nextPlan[destination]] = [nextPlan[destination], nextPlan[index]];
+    await updateWorkoutPlan(nextPlan);
+  }
+
+  async function toggleSuperset(itemId: string) {
+    if (!activeWorkout) return;
+    const nextPlan = activeWorkout.exercises
+      .map((item) => ({ ...item }))
+      .sort((left, right) => left.position - right.position);
+    const index = nextPlan.findIndex((item) => item.id === itemId);
+    const current = nextPlan[index];
+    const following = nextPlan[index + 1];
+    if (!current || !following) return;
+
+    if (current.supersetGroup !== null && current.supersetGroup === following.supersetGroup) {
+      const group = current.supersetGroup;
+      for (const item of nextPlan) {
+        if (item.supersetGroup === group) item.supersetGroup = null;
+      }
+    } else {
+      const detachedGroups = new Set(
+        [current.supersetGroup, following.supersetGroup].filter(
+          (group): group is number => group !== null,
+        ),
+      );
+      for (const item of nextPlan) {
+        if (item.supersetGroup !== null && detachedGroups.has(item.supersetGroup)) {
+          item.supersetGroup = null;
+        }
+      }
+      const group = Math.max(0, ...nextPlan.map((item) => item.supersetGroup ?? 0)) + 1;
+      current.supersetGroup = group;
+      following.supersetGroup = group;
+    }
+    await updateWorkoutPlan(nextPlan);
+  }
+
+  async function deleteSet(set: LocalSet) {
+    await db.sets.update(set.id, { deleted: true, syncState: 'pending' });
+    await queueMutation({
+      type: 'set.delete',
+      payload: {
+        clientMutationId: crypto.randomUUID(),
+        workoutId: set.workoutId,
+        setId: set.id,
+        baseRevision: set.revision,
+      },
+    });
+    setSheet(null);
+    await flushOutbox();
+  }
+
+  function requestDeleteSet(set: LocalSet) {
+    setConfirmation({
+      title: 'Удалить подход?',
+      message: `${set.weightKg} кг × ${set.reps}. Подход исчезнет из истории после синхронизации.`,
+      confirmLabel: 'Удалить подход',
+      action: () => deleteSet(set),
+    });
+  }
+
+  function requestRemoveExercise(itemId: string, hasLoggedSets: boolean) {
+    if (!hasLoggedSets) {
+      void removeExercise(itemId);
+      return;
+    }
+    setConfirmation({
+      title: 'Убрать упражнение из плана?',
+      message: 'Уже записанные подходы сохранятся в тренировке вне текущего плана.',
+      confirmLabel: 'Убрать из плана',
+      action: () => removeExercise(itemId),
+    });
+  }
+
+  function confirmPendingAction() {
+    const action = confirmation?.action;
+    setConfirmation(null);
+    if (action) void action();
+  }
+
+  async function moveSet(set: LocalSet, direction: -1 | 1) {
+    const ordered = sets
+      .filter(
+        (item) =>
+          item.workoutId === set.workoutId && item.exerciseId === set.exerciseId && !item.deleted,
+      )
+      .sort((left, right) => left.position - right.position);
+    const index = ordered.findIndex((item) => item.id === set.id);
+    const other = ordered[index + direction];
+    if (index < 0 || !other) return;
+
+    const firstPosition = set.position;
+    await db.transaction('rw', db.sets, async () => {
+      await db.sets.update(set.id, { position: other.position, syncState: 'pending' });
+      await db.sets.update(other.id, { position: firstPosition, syncState: 'pending' });
+    });
+    for (const [item, position] of [
+      [set, other.position],
+      [other, firstPosition],
+    ] as const) {
+      await queueMutation({
+        type: 'set.update',
+        payload: {
+          clientMutationId: crypto.randomUUID(),
+          workoutId: item.workoutId,
+          setId: item.id,
+          baseRevision: item.revision,
+          changes: { position },
+        },
+      });
+    }
     await flushOutbox();
   }
 
@@ -244,17 +453,27 @@ function AuthenticatedApp({ user, onLogout }: { user: CurrentUser; onLogout: () 
       {view === 'workout' && (
         <WorkoutView
           activeWorkout={activeWorkout}
+          catalog={exercises}
           exercises={suggested}
           onAddSet={(exercise) => setSheet({ exercise, set: null })}
+          onAddExercise={() => setExercisePicker({ mode: 'add' })}
+          onDeleteSet={requestDeleteSet}
           onEditSet={(exercise, set) => setSheet({ exercise, set })}
           onFinish={finishWorkout}
+          onMoveExercise={moveExercise}
+          onMoveSet={moveSet}
+          onRemoveExercise={requestRemoveExercise}
+          onReplaceExercise={(itemId) => setExercisePicker({ mode: 'replace', itemId })}
           onStart={startWorkout}
+          onToggleSuperset={toggleSuperset}
           sets={sets}
           workouts={workouts}
         />
       )}
       {view === 'catalog' && <CatalogView exercises={exercises} />}
-      {view === 'progress' && <ProgressView sets={sets} workouts={workouts} />}
+      {view === 'progress' && (
+        <ProgressView sets={sets.filter((set) => !set.deleted)} workouts={workouts} />
+      )}
       {view === 'settings' && (
         <SettingsView conflicts={conflicts} onLogout={onLogout} user={user} />
       )}
@@ -296,6 +515,18 @@ function AuthenticatedApp({ user, onLogout }: { user: CurrentUser; onLogout: () 
         initial={sheet?.set ?? null}
         onClose={() => setSheet(null)}
         onSave={saveSet}
+      />
+      <ExercisePickerSheet
+        catalog={exercises}
+        currentPlan={activeWorkout?.exercises ?? []}
+        mode={exercisePicker}
+        onChoose={chooseExercise}
+        onClose={() => setExercisePicker(null)}
+      />
+      <ConfirmationSheet
+        confirmation={confirmation}
+        onClose={() => setConfirmation(null)}
+        onConfirm={confirmPendingAction}
       />
       {inputOpen && <ExplainSheet onClose={() => setInputOpen(false)} />}
     </main>
@@ -346,22 +577,38 @@ function LoginScreen({ googleEnabled }: { googleEnabled: boolean }) {
 
 function WorkoutView({
   activeWorkout,
+  catalog,
   exercises,
   sets,
   workouts,
   onStart,
+  onAddExercise,
   onAddSet,
+  onDeleteSet,
   onEditSet,
   onFinish,
+  onMoveExercise,
+  onMoveSet,
+  onRemoveExercise,
+  onReplaceExercise,
+  onToggleSuperset,
 }: {
   activeWorkout: LocalWorkout | undefined;
+  catalog: Exercise[];
   exercises: Exercise[];
   sets: LocalSet[];
   workouts: LocalWorkout[];
   onStart: () => void;
+  onAddExercise: () => void;
   onAddSet: (exercise: Exercise) => void;
+  onDeleteSet: (set: LocalSet) => void;
   onEditSet: (exercise: Exercise, set: LocalSet) => void;
   onFinish: () => void;
+  onMoveExercise: (itemId: string, direction: -1 | 1) => void;
+  onMoveSet: (set: LocalSet, direction: -1 | 1) => void;
+  onRemoveExercise: (itemId: string, hasLoggedSets: boolean) => void;
+  onReplaceExercise: (itemId: string) => void;
+  onToggleSuperset: (itemId: string) => void;
 }) {
   if (!activeWorkout) {
     return (
@@ -402,6 +649,18 @@ function WorkoutView({
     );
   }
 
+  const plan = [...activeWorkout.exercises]
+    .sort((left, right) => left.position - right.position)
+    .flatMap((item) => {
+      const exercise = catalog.find((candidate) => candidate.id === item.exerciseId);
+      return exercise ? [{ item, exercise }] : [];
+    });
+  const visibleSets = sets.filter((set) => set.workoutId === activeWorkout.id && !set.deleted);
+  const planExerciseIds = new Set(plan.map(({ item }) => item.exerciseId));
+  const removedExerciseIds = [...new Set(visibleSets.map((set) => set.exerciseId))].filter(
+    (exerciseId) => !planExerciseIds.has(exerciseId),
+  );
+
   return (
     <section className="screen workout-live">
       <div className="section-head live-head">
@@ -417,14 +676,25 @@ function WorkoutView({
           Завершить
         </button>
       </div>
-      <p className="intro">Сегодня: спина + плечи · грудь + бицепс · ноги + трицепс</p>
+      <p className="intro">
+        План можно менять в любой момент. Удаление упражнения не стирает уже записанные подходы.
+      </p>
       <div className="exercise-list">
-        {exercises.map((exercise) => {
-          const logged = sets.filter(
-            (set) => set.workoutId === activeWorkout.id && set.exerciseId === exercise.id,
-          );
+        {plan.map(({ item, exercise }, index) => {
+          const logged = visibleSets
+            .filter((set) => set.exerciseId === exercise.id)
+            .sort(
+              (left, right) =>
+                left.position - right.position || left.performedAt.localeCompare(right.performedAt),
+            );
+          const linkedWithNext =
+            item.supersetGroup !== null &&
+            item.supersetGroup === plan[index + 1]?.item.supersetGroup;
           return (
-            <article className="exercise-card" key={exercise.id}>
+            <article
+              className={item.supersetGroup === null ? 'exercise-card' : 'exercise-card superset'}
+              key={item.id}
+            >
               <div className="exercise-card-head">
                 <div>
                   <strong>{exercise.nameRu}</strong>
@@ -432,20 +702,83 @@ function WorkoutView({
                 </div>
                 <Tag tag={exercise.tag} />
               </div>
+              {item.supersetGroup !== null && (
+                <span className="superset-label">Суперсет {item.supersetGroup}</span>
+              )}
+              <div className="plan-controls" aria-label={`План: ${exercise.nameRu}`}>
+                <button
+                  aria-label="Поднять упражнение"
+                  disabled={index === 0}
+                  onClick={() => onMoveExercise(item.id, -1)}
+                  type="button"
+                >
+                  ↑
+                </button>
+                <button
+                  aria-label="Опустить упражнение"
+                  disabled={index === plan.length - 1}
+                  onClick={() => onMoveExercise(item.id, 1)}
+                  type="button"
+                >
+                  ↓
+                </button>
+                <button onClick={() => onReplaceExercise(item.id)} type="button">
+                  Заменить
+                </button>
+                {index < plan.length - 1 && (
+                  <button onClick={() => onToggleSuperset(item.id)} type="button">
+                    {linkedWithNext ? 'Разъединить' : 'Суперсет ↓'}
+                  </button>
+                )}
+                <button
+                  className="danger-text"
+                  onClick={() => onRemoveExercise(item.id, logged.length > 0)}
+                  type="button"
+                >
+                  Убрать
+                </button>
+              </div>
               {logged.length ? (
-                <div className="sets-line set-chips">
-                  {logged.map((set) => (
-                    <button
-                      className={set.syncState === 'conflict' ? 'set-chip conflict' : 'set-chip'}
-                      key={set.id}
-                      onClick={() => onEditSet(exercise, set)}
-                      type="button"
-                    >
-                      {set.weightKg}×{set.reps}
-                      {set.rir === null ? '' : ` RIR${set.rir}`}
-                      {set.syncState === 'pending' ? ' · ждёт' : ''}
-                      {set.syncState === 'conflict' ? ' · конфликт' : ''}
-                    </button>
+                <div className="sets-line set-list">
+                  {logged.map((set, setIndex) => (
+                    <div className="set-row" key={set.id}>
+                      <button
+                        className={set.syncState === 'conflict' ? 'set-chip conflict' : 'set-chip'}
+                        onClick={() => onEditSet(exercise, set)}
+                        type="button"
+                      >
+                        {setIndex + 1}. {set.weightKg}×{set.reps}
+                        {set.rir === null ? '' : ` RIR${set.rir}`}
+                        {set.syncState === 'pending' ? ' · ждёт' : ''}
+                        {set.syncState === 'conflict' ? ' · конфликт' : ''}
+                      </button>
+                      <div className="set-controls">
+                        <button
+                          aria-label="Переместить подход влево"
+                          disabled={setIndex === 0}
+                          onClick={() => onMoveSet(set, -1)}
+                          type="button"
+                        >
+                          ←
+                        </button>
+                        <button
+                          aria-label="Переместить подход вправо"
+                          disabled={setIndex === logged.length - 1}
+                          onClick={() => onMoveSet(set, 1)}
+                          type="button"
+                        >
+                          →
+                        </button>
+                        <button
+                          aria-label="Удалить подход"
+                          className="danger-text"
+                          onClick={() => onDeleteSet(set)}
+                          type="button"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    </div>
                   ))}
                 </div>
               ) : (
@@ -457,6 +790,69 @@ function WorkoutView({
             </article>
           );
         })}
+        {!plan.length && (
+          <div className="empty-plan">
+            <strong>План пока пуст</strong>
+            <span>Добавь первое упражнение — подходы сохраняются и офлайн.</span>
+          </div>
+        )}
+        <button className="button ghost full add-exercise" onClick={onAddExercise} type="button">
+          ＋ Добавить упражнение
+        </button>
+        {removedExerciseIds.length > 0 && (
+          <div className="removed-sets">
+            <p className="eyebrow">Выполнено вне текущего плана</p>
+            {removedExerciseIds.map((exerciseId) => {
+              const exercise = catalog.find((candidate) => candidate.id === exerciseId);
+              const logged = visibleSets
+                .filter((set) => set.exerciseId === exerciseId)
+                .sort((left, right) => left.position - right.position);
+              if (!exercise) return null;
+              return (
+                <div className="removed-set-summary" key={exerciseId}>
+                  <strong>{exercise.nameRu}</strong>
+                  {logged.map((set, index) => (
+                    <div className="set-row" key={set.id}>
+                      <button
+                        className="set-chip"
+                        onClick={() => onEditSet(exercise, set)}
+                        type="button"
+                      >
+                        {index + 1}. {set.weightKg}×{set.reps}
+                      </button>
+                      <div className="set-controls">
+                        <button
+                          aria-label="Переместить подход влево"
+                          disabled={index === 0}
+                          onClick={() => onMoveSet(set, -1)}
+                          type="button"
+                        >
+                          ←
+                        </button>
+                        <button
+                          aria-label="Переместить подход вправо"
+                          disabled={index === logged.length - 1}
+                          onClick={() => onMoveSet(set, 1)}
+                          type="button"
+                        >
+                          →
+                        </button>
+                        <button
+                          aria-label="Удалить подход"
+                          className="danger-text"
+                          onClick={() => onDeleteSet(set)}
+                          type="button"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </section>
   );
@@ -597,6 +993,120 @@ function SettingsView({
   );
 }
 
+function ExercisePickerSheet({
+  catalog,
+  currentPlan,
+  mode,
+  onChoose,
+  onClose,
+}: {
+  catalog: Exercise[];
+  currentPlan: WorkoutExercise[];
+  mode: ExercisePickerMode | null;
+  onChoose: (exercise: Exercise) => void;
+  onClose: () => void;
+}) {
+  const [query, setQuery] = useState('');
+
+  useEffect(() => setQuery(''), [mode]);
+  if (!mode) return null;
+
+  const replacedItemId = mode.mode === 'replace' ? mode.itemId : null;
+  const unavailableIds = new Set(
+    currentPlan.filter((item) => item.id !== replacedItemId).map((item) => item.exerciseId),
+  );
+  const normalizedQuery = query.trim().toLocaleLowerCase('ru-RU');
+  const options = catalog.filter(
+    (exercise) =>
+      !unavailableIds.has(exercise.id) &&
+      (!normalizedQuery ||
+        [exercise.nameRu, exercise.nameEn, ...exercise.aliases].some((name) =>
+          name.toLocaleLowerCase('ru-RU').includes(normalizedQuery),
+        )),
+  );
+
+  return (
+    <div className="sheet-backdrop" role="presentation" onMouseDown={onClose}>
+      <section
+        aria-label={mode.mode === 'add' ? 'Добавить упражнение' : 'Заменить упражнение'}
+        aria-modal="true"
+        className="sheet exercise-picker"
+        onMouseDown={(event) => event.stopPropagation()}
+        role="dialog"
+      >
+        <div className="sheet-handle" />
+        <p className="eyebrow">Каталог</p>
+        <h2>{mode.mode === 'add' ? 'Добавить упражнение' : 'Чем заменить?'}</h2>
+        <input
+          autoFocus
+          className="exercise-search"
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Название или синоним"
+          type="search"
+          value={query}
+        />
+        <div className="picker-list">
+          {options.map((exercise) => (
+            <button
+              className="picker-option"
+              key={exercise.id}
+              onClick={() => onChoose(exercise)}
+              type="button"
+            >
+              <span>
+                <strong>{exercise.nameRu}</strong>
+                <small>
+                  {exercise.nameEn} · {muscleLabel(exercise.primaryMuscles[0])}
+                </small>
+              </span>
+              <Tag tag={exercise.tag} />
+            </button>
+          ))}
+          {!options.length && <p className="sets-line muted">Ничего не найдено</p>}
+        </div>
+        <button className="button ghost full" onClick={onClose} type="button">
+          Отмена
+        </button>
+      </section>
+    </div>
+  );
+}
+
+function ConfirmationSheet({
+  confirmation,
+  onClose,
+  onConfirm,
+}: {
+  confirmation: PendingConfirmation | null;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  if (!confirmation) return null;
+
+  return (
+    <div className="sheet-backdrop" role="presentation" onMouseDown={onClose}>
+      <section
+        aria-label={confirmation.title}
+        aria-modal="true"
+        className="sheet confirmation-sheet"
+        onMouseDown={(event) => event.stopPropagation()}
+        role="dialog"
+      >
+        <div className="sheet-handle" />
+        <p className="eyebrow">Подтверждение</p>
+        <h2>{confirmation.title}</h2>
+        <p className="confirmation-message">{confirmation.message}</p>
+        <button className="button danger full" onClick={onConfirm} type="button">
+          {confirmation.confirmLabel}
+        </button>
+        <button className="button ghost full" onClick={onClose} type="button">
+          Отмена
+        </button>
+      </section>
+    </div>
+  );
+}
+
 function ExplainSheet({ onClose }: { onClose: () => void }) {
   return (
     <div className="sheet-backdrop" role="presentation" onMouseDown={onClose}>
@@ -676,5 +1186,33 @@ function firstName(displayName: string) {
 }
 
 function canKeepMine(conflict: SyncConflict) {
-  return conflict.mutation.type === 'workout.update' || conflict.mutation.type === 'set.update';
+  return (
+    conflict.mutation.type === 'workout.update' ||
+    conflict.mutation.type === 'set.update' ||
+    (conflict.mutation.type === 'set.delete' && conflict.current !== null)
+  );
+}
+
+function normalizePlan(plan: WorkoutExercise[]) {
+  const ordered = plan.map((item, position) => ({ ...item, position }));
+  const groupPositions = new Map<number, number[]>();
+  for (const item of ordered) {
+    if (item.supersetGroup === null) continue;
+    const positions = groupPositions.get(item.supersetGroup) ?? [];
+    positions.push(item.position);
+    groupPositions.set(item.supersetGroup, positions);
+  }
+  const groupNumbers = new Map<number, number>();
+  let nextGroup = 1;
+  for (const [group, positions] of groupPositions) {
+    const consecutive = positions.every(
+      (position, index) => index === 0 || position === positions[index - 1] + 1,
+    );
+    if (positions.length >= 2 && consecutive) groupNumbers.set(group, nextGroup++);
+  }
+  return ordered.map((item) => ({
+    ...item,
+    supersetGroup:
+      item.supersetGroup === null ? null : (groupNumbers.get(item.supersetGroup) ?? null),
+  }));
 }

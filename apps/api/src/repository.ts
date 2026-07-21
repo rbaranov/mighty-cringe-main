@@ -4,11 +4,13 @@ import type {
   CreateSetInput,
   CreateWorkoutInput,
   CurrentUser,
+  DeleteSetInput,
   Exercise,
   SetRecord,
   UpdateSetInput,
   UpdateWorkoutInput,
   UserRole,
+  WorkoutExercise,
   WorkoutRecord,
 } from '@mighty-cringe/contracts';
 import {
@@ -26,6 +28,7 @@ import {
   sessions,
   sets,
   users,
+  workoutExercises,
   workouts,
 } from '@mighty-cringe/db';
 
@@ -46,9 +49,28 @@ export type AuthAttempt = {
   expiresAt: Date;
 };
 
-export type MutationResult =
-  | { entityType: 'workout'; entity: WorkoutRecord; duplicate: boolean }
-  | { entityType: 'set'; entity: SetRecord; duplicate: boolean };
+export type WorkoutMutationResult = {
+  entityType: 'workout';
+  entity: WorkoutRecord;
+  duplicate: boolean;
+};
+
+export type SetMutationResult = {
+  entityType: 'set';
+  entity: SetRecord;
+  duplicate: boolean;
+};
+
+export type EntityMutationResult = WorkoutMutationResult | SetMutationResult;
+
+export type DeleteMutationResult = {
+  entityType: 'set';
+  entity: null;
+  entityId: string;
+  duplicate: boolean;
+};
+
+export type MutationResult = EntityMutationResult | DeleteMutationResult;
 
 export class RepositoryConflictError extends Error {
   constructor(readonly current: WorkoutRecord | SetRecord | null) {
@@ -65,10 +87,11 @@ export class RepositoryNotFoundError extends Error {
 export interface WorkoutRepository {
   listExercises(): Promise<Exercise[]>;
   listWorkouts(userId: string): Promise<WorkoutRecord[]>;
-  createWorkout(userId: string, input: CreateWorkoutInput): Promise<MutationResult>;
-  updateWorkout(userId: string, input: UpdateWorkoutInput): Promise<MutationResult>;
-  createSet(userId: string, input: CreateSetInput): Promise<MutationResult>;
-  updateSet(userId: string, input: UpdateSetInput): Promise<MutationResult>;
+  createWorkout(userId: string, input: CreateWorkoutInput): Promise<WorkoutMutationResult>;
+  updateWorkout(userId: string, input: UpdateWorkoutInput): Promise<WorkoutMutationResult>;
+  createSet(userId: string, input: CreateSetInput): Promise<SetMutationResult>;
+  updateSet(userId: string, input: UpdateSetInput): Promise<SetMutationResult>;
+  deleteSet(userId: string, input: DeleteSetInput): Promise<DeleteMutationResult>;
   createAuthAttempt(attempt: AuthAttempt): Promise<void>;
   consumeAuthAttempt(stateHash: string, now: Date): Promise<AuthAttempt | null>;
   upsertGoogleUser(identity: GoogleIdentity, requestedRole: UserRole): Promise<CurrentUser>;
@@ -107,7 +130,7 @@ export class MemoryRepository implements WorkoutRepository {
       .map((workout) => this.workoutRecord(workout));
   }
 
-  async createWorkout(userId: string, input: CreateWorkoutInput): Promise<MutationResult> {
+  async createWorkout(userId: string, input: CreateWorkoutInput): Promise<WorkoutMutationResult> {
     const mutationKey = this.mutationKey(userId, input.clientMutationId);
     const existing = this.workouts.get(input.id);
     if (this.mutations.has(mutationKey)) {
@@ -131,6 +154,7 @@ export class MemoryRepository implements WorkoutRepository {
       endedAt: input.endedAt,
       notes: input.notes,
       locale: input.locale,
+      exercises: orderedPlan(input.exercises),
       revision: 1,
       updatedAt: now,
     };
@@ -139,7 +163,7 @@ export class MemoryRepository implements WorkoutRepository {
     return { entityType: 'workout', entity: this.workoutRecord(workout), duplicate: false };
   }
 
-  async updateWorkout(userId: string, input: UpdateWorkoutInput): Promise<MutationResult> {
+  async updateWorkout(userId: string, input: UpdateWorkoutInput): Promise<WorkoutMutationResult> {
     const mutationKey = this.mutationKey(userId, input.clientMutationId);
     const workout = this.workouts.get(input.workoutId);
     if (!workout || workout.userId !== userId) throw new RepositoryNotFoundError();
@@ -157,13 +181,16 @@ export class MemoryRepository implements WorkoutRepository {
     if (input.changes.startedAt !== undefined) workout.startedAt = input.changes.startedAt;
     if ('endedAt' in input.changes) workout.endedAt = input.changes.endedAt ?? null;
     if ('notes' in input.changes) workout.notes = input.changes.notes ?? null;
+    if (input.changes.exercises !== undefined) {
+      workout.exercises = orderedPlan(input.changes.exercises);
+    }
     workout.revision += 1;
     workout.updatedAt = new Date().toISOString();
     this.mutations.add(mutationKey);
     return { entityType: 'workout', entity: this.workoutRecord(workout), duplicate: false };
   }
 
-  async createSet(userId: string, input: CreateSetInput): Promise<MutationResult> {
+  async createSet(userId: string, input: CreateSetInput): Promise<SetMutationResult> {
     const mutationKey = this.mutationKey(userId, input.clientMutationId);
     const existing = this.sets.get(input.set.id);
     if (this.mutations.has(mutationKey)) {
@@ -193,7 +220,7 @@ export class MemoryRepository implements WorkoutRepository {
     return { entityType: 'set', entity: toPublicSet(set), duplicate: false };
   }
 
-  async updateSet(userId: string, input: UpdateSetInput): Promise<MutationResult> {
+  async updateSet(userId: string, input: UpdateSetInput): Promise<SetMutationResult> {
     const mutationKey = this.mutationKey(userId, input.clientMutationId);
     const set = this.sets.get(input.setId);
     if (!set || set.userId !== userId || set.workoutId !== input.workoutId) {
@@ -215,10 +242,31 @@ export class MemoryRepository implements WorkoutRepository {
     if ('rir' in input.changes) set.rir = input.changes.rir ?? null;
     if ('comment' in input.changes) set.comment = input.changes.comment ?? null;
     if (input.changes.performedAt !== undefined) set.performedAt = input.changes.performedAt;
+    if (input.changes.position !== undefined) set.position = input.changes.position;
     set.revision += 1;
     set.updatedAt = new Date().toISOString();
     this.mutations.add(mutationKey);
     return { entityType: 'set', entity: toPublicSet(set), duplicate: false };
+  }
+
+  async deleteSet(userId: string, input: DeleteSetInput): Promise<DeleteMutationResult> {
+    const mutationKey = this.mutationKey(userId, input.clientMutationId);
+    if (this.mutations.has(mutationKey)) {
+      return { entityType: 'set', entity: null, entityId: input.setId, duplicate: true };
+    }
+
+    const set = this.sets.get(input.setId);
+    if (!set || set.userId !== userId || set.workoutId !== input.workoutId) {
+      this.mutations.add(mutationKey);
+      return { entityType: 'set', entity: null, entityId: input.setId, duplicate: true };
+    }
+    if (set.revision !== input.baseRevision) {
+      throw new RepositoryConflictError(toPublicSet(set));
+    }
+
+    this.sets.delete(set.id);
+    this.mutations.add(mutationKey);
+    return { entityType: 'set', entity: null, entityId: input.setId, duplicate: false };
   }
 
   async createAuthAttempt(attempt: AuthAttempt) {
@@ -289,11 +337,15 @@ export class MemoryRepository implements WorkoutRepository {
       endedAt: workout.endedAt,
       notes: workout.notes,
       locale: workout.locale,
+      exercises: orderedPlan(workout.exercises),
       revision: workout.revision,
       updatedAt: workout.updatedAt,
       sets: [...this.sets.values()]
         .filter((set) => set.userId === workout.userId && set.workoutId === workout.id)
-        .sort((left, right) => left.performedAt.localeCompare(right.performedAt))
+        .sort(
+          (left, right) =>
+            left.position - right.position || left.performedAt.localeCompare(right.performedAt),
+        )
         .map(toPublicSet),
     };
   }
@@ -341,16 +393,25 @@ export class PostgresRepository implements WorkoutRepository {
       .from(workouts)
       .where(and(eq(workouts.userId, userId), isNull(workouts.deletedAt)))
       .orderBy(desc(workouts.startedAt));
+    const planRows = await this.db
+      .select({ item: workoutExercises })
+      .from(workoutExercises)
+      .innerJoin(workouts, eq(workoutExercises.workoutId, workouts.id))
+      .where(and(eq(workouts.userId, userId), isNull(workouts.deletedAt)))
+      .orderBy(asc(workoutExercises.position));
     const setRows = await this.db
       .select({ set: sets })
       .from(sets)
       .innerJoin(workouts, eq(sets.workoutId, workouts.id))
       .where(and(eq(workouts.userId, userId), isNull(workouts.deletedAt)))
-      .orderBy(asc(sets.performedAt));
+      .orderBy(asc(sets.position), asc(sets.performedAt));
 
     return workoutRows.map((workout) =>
       toWorkoutRecord(
         workout,
+        planRows
+          .filter((row) => row.item.workoutId === workout.id)
+          .map((row) => toWorkoutExercise(row.item)),
         setRows
           .filter((row) => row.set.workoutId === workout.id)
           .map((row) => toSetRecord(row.set)),
@@ -358,7 +419,7 @@ export class PostgresRepository implements WorkoutRepository {
     );
   }
 
-  async createWorkout(userId: string, input: CreateWorkoutInput): Promise<MutationResult> {
+  async createWorkout(userId: string, input: CreateWorkoutInput): Promise<WorkoutMutationResult> {
     const duplicate = await this.db.transaction(async (transaction) => {
       const alreadyApplied = await recordMutation(transaction, userId, input.clientMutationId);
       if (alreadyApplied) return true;
@@ -371,8 +432,9 @@ export class PostgresRepository implements WorkoutRepository {
       const existing = existingRows[0];
       if (existing) {
         if (existing.userId !== userId) throw new RepositoryConflictError(null);
-        if (!sameWorkoutCreate(existing, input)) {
-          throw new RepositoryConflictError(toWorkoutRecord(existing, []));
+        const existingPlan = await selectWorkoutPlan(transaction, existing.id);
+        if (!sameWorkoutCreate(existing, input, existingPlan)) {
+          throw new RepositoryConflictError(toWorkoutRecord(existing, existingPlan, []));
         }
         return true;
       }
@@ -385,6 +447,7 @@ export class PostgresRepository implements WorkoutRepository {
         notes: input.notes,
         locale: input.locale,
       });
+      await replaceWorkoutPlan(transaction, input.id, input.exercises);
       return false;
     });
     const entity = await this.getWorkout(userId, input.id);
@@ -392,7 +455,7 @@ export class PostgresRepository implements WorkoutRepository {
     return { entityType: 'workout', entity, duplicate };
   }
 
-  async updateWorkout(userId: string, input: UpdateWorkoutInput): Promise<MutationResult> {
+  async updateWorkout(userId: string, input: UpdateWorkoutInput): Promise<WorkoutMutationResult> {
     const duplicate = await this.db.transaction(async (transaction) => {
       const alreadyApplied = await recordMutation(transaction, userId, input.clientMutationId);
       if (alreadyApplied) return true;
@@ -404,9 +467,10 @@ export class PostgresRepository implements WorkoutRepository {
         .limit(1);
       const existing = existingRows[0];
       if (!existing) throw new RepositoryNotFoundError();
-      if (workoutChangesMatch(existing, input.changes)) return true;
+      const existingPlan = await selectWorkoutPlan(transaction, existing.id);
+      if (workoutChangesMatch(existing, input.changes, existingPlan)) return true;
       if (existing.revision !== input.baseRevision) {
-        throw new RepositoryConflictError(toWorkoutRecord(existing, []));
+        throw new RepositoryConflictError(toWorkoutRecord(existing, existingPlan, []));
       }
 
       const updated = await transaction
@@ -442,8 +506,12 @@ export class PostgresRepository implements WorkoutRepository {
           .limit(1);
         const current = currentRows[0];
         if (!current) throw new RepositoryNotFoundError();
-        if (workoutChangesMatch(current, input.changes)) return true;
-        throw new RepositoryConflictError(toWorkoutRecord(current, []));
+        const currentPlan = await selectWorkoutPlan(transaction, current.id);
+        if (workoutChangesMatch(current, input.changes, currentPlan)) return true;
+        throw new RepositoryConflictError(toWorkoutRecord(current, currentPlan, []));
+      }
+      if (input.changes.exercises !== undefined) {
+        await replaceWorkoutPlan(transaction, input.workoutId, input.changes.exercises);
       }
       return false;
     });
@@ -452,7 +520,7 @@ export class PostgresRepository implements WorkoutRepository {
     return { entityType: 'workout', entity, duplicate };
   }
 
-  async createSet(userId: string, input: CreateSetInput): Promise<MutationResult> {
+  async createSet(userId: string, input: CreateSetInput): Promise<SetMutationResult> {
     const duplicate = await this.db.transaction(async (transaction) => {
       const alreadyApplied = await recordMutation(transaction, userId, input.clientMutationId);
       if (alreadyApplied) return true;
@@ -488,6 +556,7 @@ export class PostgresRepository implements WorkoutRepository {
         rir: input.set.rir,
         comment: input.set.comment,
         performedAt: new Date(input.set.performedAt),
+        position: input.set.position,
       });
       return false;
     });
@@ -496,7 +565,7 @@ export class PostgresRepository implements WorkoutRepository {
     return { entityType: 'set', entity, duplicate };
   }
 
-  async updateSet(userId: string, input: UpdateSetInput): Promise<MutationResult> {
+  async updateSet(userId: string, input: UpdateSetInput): Promise<SetMutationResult> {
     const duplicate = await this.db.transaction(async (transaction) => {
       const alreadyApplied = await recordMutation(transaction, userId, input.clientMutationId);
       if (alreadyApplied) return true;
@@ -534,6 +603,7 @@ export class PostgresRepository implements WorkoutRepository {
             input.changes.performedAt === undefined
               ? existing.performedAt
               : new Date(input.changes.performedAt),
+          position: input.changes.position ?? existing.position,
           revision: existing.revision + 1,
           updatedAt: new Date(),
         })
@@ -556,6 +626,48 @@ export class PostgresRepository implements WorkoutRepository {
     const entity = await this.getSet(userId, input.setId);
     if (!entity) throw new RepositoryNotFoundError();
     return { entityType: 'set', entity, duplicate };
+  }
+
+  async deleteSet(userId: string, input: DeleteSetInput): Promise<DeleteMutationResult> {
+    const duplicate = await this.db.transaction(async (transaction) => {
+      const alreadyApplied = await recordMutation(transaction, userId, input.clientMutationId);
+      if (alreadyApplied) return true;
+
+      const existingRows = await transaction
+        .select({ set: sets })
+        .from(sets)
+        .innerJoin(workouts, eq(sets.workoutId, workouts.id))
+        .where(
+          and(
+            eq(sets.id, input.setId),
+            eq(sets.workoutId, input.workoutId),
+            eq(workouts.userId, userId),
+          ),
+        )
+        .limit(1);
+      const existing = existingRows[0]?.set;
+      if (!existing) return true;
+      if (existing.revision !== input.baseRevision) {
+        throw new RepositoryConflictError(toSetRecord(existing));
+      }
+
+      const removed = await transaction
+        .delete(sets)
+        .where(and(eq(sets.id, existing.id), eq(sets.revision, input.baseRevision)))
+        .returning({ id: sets.id });
+      if (removed.length) return false;
+
+      const currentRows = await transaction
+        .select({ set: sets })
+        .from(sets)
+        .innerJoin(workouts, eq(sets.workoutId, workouts.id))
+        .where(and(eq(sets.id, input.setId), eq(workouts.userId, userId)))
+        .limit(1);
+      const current = currentRows[0]?.set;
+      if (!current) return true;
+      throw new RepositoryConflictError(toSetRecord(current));
+    });
+    return { entityType: 'set', entity: null, entityId: input.setId, duplicate };
   }
 
   async createAuthAttempt(attempt: AuthAttempt) {
@@ -696,6 +808,33 @@ export class PostgresRepository implements WorkoutRepository {
 type Database = ReturnType<typeof createDatabase>;
 type MutationTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
+async function selectWorkoutPlan(
+  transaction: MutationTransaction,
+  workoutId: string,
+): Promise<WorkoutExercise[]> {
+  const rows = await transaction
+    .select()
+    .from(workoutExercises)
+    .where(eq(workoutExercises.workoutId, workoutId))
+    .orderBy(asc(workoutExercises.position));
+  return rows.map(toWorkoutExercise);
+}
+
+async function replaceWorkoutPlan(
+  transaction: MutationTransaction,
+  workoutId: string,
+  plan: WorkoutExercise[],
+) {
+  await transaction.delete(workoutExercises).where(eq(workoutExercises.workoutId, workoutId));
+  if (!plan.length) return;
+  await transaction.insert(workoutExercises).values(
+    orderedPlan(plan).map((item) => ({
+      ...item,
+      workoutId,
+    })),
+  );
+}
+
 async function recordMutation(
   transaction: MutationTransaction,
   userId: string,
@@ -711,6 +850,7 @@ async function recordMutation(
 
 function toWorkoutRecord(
   workout: typeof workouts.$inferSelect,
+  plan: WorkoutExercise[],
   workoutSets: SetRecord[],
 ): WorkoutRecord {
   return {
@@ -721,7 +861,17 @@ function toWorkoutRecord(
     locale: workout.locale === 'en' ? 'en' : 'ru',
     revision: workout.revision,
     updatedAt: workout.updatedAt.toISOString(),
+    exercises: orderedPlan(plan),
     sets: workoutSets,
+  };
+}
+
+function toWorkoutExercise(item: typeof workoutExercises.$inferSelect): WorkoutExercise {
+  return {
+    id: item.id,
+    exerciseId: item.exerciseId,
+    position: item.position,
+    supersetGroup: item.supersetGroup,
   };
 }
 
@@ -735,6 +885,7 @@ function toSetRecord(set: typeof sets.$inferSelect): SetRecord {
     rir: set.rir,
     comment: set.comment,
     performedAt: set.performedAt.toISOString(),
+    position: set.position,
     revision: set.revision,
     updatedAt: set.updatedAt.toISOString(),
   };
@@ -748,12 +899,14 @@ function toPublicSet(set: MemorySet): SetRecord {
 function sameWorkoutCreate(
   workout: MemoryWorkout | typeof workouts.$inferSelect,
   input: CreateWorkoutInput,
+  storedPlan: WorkoutExercise[] = 'exercises' in workout ? workout.exercises : [],
 ) {
   return (
     asIso(workout.startedAt) === input.startedAt &&
     asNullableIso(workout.endedAt) === input.endedAt &&
     workout.notes === input.notes &&
-    workout.locale === input.locale
+    workout.locale === input.locale &&
+    samePlan(storedPlan, input.exercises)
   );
 }
 
@@ -765,18 +918,21 @@ function sameSetCreate(set: MemorySet | typeof sets.$inferSelect, input: CreateS
     set.reps === input.set.reps &&
     set.rir === input.set.rir &&
     set.comment === input.set.comment &&
-    asIso(set.performedAt) === input.set.performedAt
+    asIso(set.performedAt) === input.set.performedAt &&
+    set.position === input.set.position
   );
 }
 
 function workoutChangesMatch(
   workout: MemoryWorkout | typeof workouts.$inferSelect,
   changes: UpdateWorkoutInput['changes'],
+  storedPlan: WorkoutExercise[] = 'exercises' in workout ? workout.exercises : [],
 ) {
   return (
     (changes.startedAt === undefined || asIso(workout.startedAt) === changes.startedAt) &&
     (!('endedAt' in changes) || asNullableIso(workout.endedAt) === (changes.endedAt ?? null)) &&
-    (!('notes' in changes) || workout.notes === (changes.notes ?? null))
+    (!('notes' in changes) || workout.notes === (changes.notes ?? null)) &&
+    (changes.exercises === undefined || samePlan(storedPlan, changes.exercises))
   );
 }
 
@@ -789,8 +945,30 @@ function setChangesMatch(
     (changes.reps === undefined || set.reps === changes.reps) &&
     (!('rir' in changes) || set.rir === (changes.rir ?? null)) &&
     (!('comment' in changes) || set.comment === (changes.comment ?? null)) &&
-    (changes.performedAt === undefined || asIso(set.performedAt) === changes.performedAt)
+    (changes.performedAt === undefined || asIso(set.performedAt) === changes.performedAt) &&
+    (changes.position === undefined || set.position === changes.position)
   );
+}
+
+function samePlan(left: WorkoutExercise[], right: WorkoutExercise[]) {
+  const leftOrdered = orderedPlan(left);
+  const rightOrdered = orderedPlan(right);
+  return (
+    leftOrdered.length === rightOrdered.length &&
+    leftOrdered.every((item, index) => {
+      const other = rightOrdered[index];
+      return (
+        item.id === other.id &&
+        item.exerciseId === other.exerciseId &&
+        item.position === other.position &&
+        item.supersetGroup === other.supersetGroup
+      );
+    })
+  );
+}
+
+function orderedPlan(plan: WorkoutExercise[]) {
+  return plan.map((item) => ({ ...item })).sort((left, right) => left.position - right.position);
 }
 
 function asIso(value: string | Date) {
