@@ -32,6 +32,8 @@ services:
       dockerfile: infra/production/Dockerfile.api
     restart: unless-stopped
     env_file: ${PRODUCTION_ENV_FILE:-.env}
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -47,6 +49,8 @@ services:
       dockerfile: infra/production/Dockerfile.worker
     restart: unless-stopped
     env_file: ${PRODUCTION_ENV_FILE:-.env}
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -86,6 +90,8 @@ services:
     command: ['./node_modules/.bin/drizzle-kit', 'migrate', '--config', 'drizzle.config.ts']
     restart: 'no'
     env_file: ${PRODUCTION_ENV_FILE:-.env}
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     depends_on:
       postgres:
         condition: service_healthy
