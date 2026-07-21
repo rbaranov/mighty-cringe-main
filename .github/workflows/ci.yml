@@ -47,6 +47,9 @@ jobs:
       - name: Test encrypted backup and isolated restore
         run: infra/production/scripts/test-backup-restore.sh
 
+      - name: Test production monitoring signals
+        run: infra/production/scripts/test-monitoring.sh
+
   deploy-production:
     name: Deploy the verified main revision
     needs: verify

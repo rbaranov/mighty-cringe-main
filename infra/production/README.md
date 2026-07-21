@@ -62,4 +62,22 @@ that the latest snapshot restores into an isolated PostgreSQL container before i
 For an incident, follow the exact non-overwriting recovery procedure in
 [Hetzner first deployment](../../docs/deployment/hetzner-first-deploy.md#полное-восстановление-после-потери-postgresql).
 
+## Monitoring and logs
+
+Production also installs `mighty-cringe-monitor.timer`. Every five minutes it verifies the public
+HTTPS endpoint, the required Compose services, PostgreSQL readiness, backup timers, the age of the
+latest successful backup and restore check, and disk usage. It then sends a success or failure signal
+to Healthchecks.io. A missed signal detects a dead VPS or lost network; an explicit failure includes
+only bounded operational diagnostics and never application data or credentials.
+
+Before deploying, create a Healthchecks.io check with a five-minute period and ten-minute grace time,
+attach an owner notification integration, and add its secret UUID ping URL as
+`HEALTHCHECKS_PING_URL` in `/etc/mighty-cringe/production.env`. The deployment intentionally fails
+closed while this value is missing. See the
+[first-deploy runbook](../../docs/deployment/hetzner-first-deploy.md#9-мониторинг-и-уведомления).
+
+Compose uses Docker's `local` logging driver with three 10 MB files per container. Caddy access logs
+and application logs remain available through `docker compose logs`; host and timer logs remain in
+journald for up to 30 days, capped at 256 MB while preserving at least 1 GB of free space.
+
 The application must not begin retaining user audio until steps 1–3 are automated and tested.

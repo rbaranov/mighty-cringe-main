@@ -65,6 +65,11 @@ jobs:
             exit 1
           fi
 
+          if ! grep -Eq '^HEALTHCHECKS_PING_URL=https://[-A-Za-z0-9._~:/?&=%+]+$' "$PRODUCTION_ENV_FILE"; then
+            echo "::error title=Monitoring is not configured::Add an unquoted HTTPS HEALTHCHECKS_PING_URL to $PRODUCTION_ENV_FILE"
+            exit 1
+          fi
+
           docker compose --env-file "$PRODUCTION_ENV_FILE" config --quiet
 
       - name: Build, migrate and start production
@@ -89,10 +94,15 @@ jobs:
         env:
           PRODUCTION_ENV_FILE: /etc/mighty-cringe/production.env
         run: |
+          set -euo pipefail
+
+          sudo install -d -m 0750 -o deploy -g deploy /var/lib/mighty-cringe/monitoring
           docker compose --env-file "$PRODUCTION_ENV_FILE" --profile backup build backup
           PRODUCTION_DIR="$GITHUB_WORKSPACE/infra/production" scripts/run-backup.sh backup
           PRODUCTION_DIR="$GITHUB_WORKSPACE/infra/production" scripts/run-backup.sh verify
           sudo scripts/install-backup-timers.sh "$GITHUB_WORKSPACE/infra/production"
+          sudo scripts/install-monitoring-timer.sh "$GITHUB_WORKSPACE/infra/production"
+          sudo systemctl start mighty-cringe-monitor.service
 
       - name: Verify public HTTPS healthcheck
         if: steps.revision.outputs.deploy == 'true'
