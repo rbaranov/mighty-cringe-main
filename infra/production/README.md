@@ -22,7 +22,9 @@ For the full setup procedure, see
 5. Register a self-hosted GitHub Actions runner under that user. It checks out private code using
    GitHub's short-lived workflow token, so no GitHub deploy key or personal access token is stored
    on the server.
-6. Create `/etc/mighty-cringe/production.env` with a unique database password; never commit it.
+6. Create `/etc/mighty-cringe/production.env` with a unique database password and the Google OAuth
+   Web client credentials; never commit it. Authorize the exact redirect URI
+   `https://mightycringe.com/api/v1/auth/google/callback` in Google Cloud Console.
 
 ## Deployment
 

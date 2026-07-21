@@ -2,10 +2,9 @@
 
 Этот runbook разворачивает техническое окружение в Hetzner Cloud, Helsinki.
 
-> **Внимание:** текущая версия не реализует Google OAuth и использует
-> демонстрационного пользователя. Не приглашайте реальных пользователей и не храните
-> реальные персональные или голосовые данные до внедрения авторизации, Object Storage
-> и проверенной автоматизации резервного копирования.
+> **Внимание:** не приглашайте реальных пользователей и не храните реальные персональные
+> или голосовые данные, пока Google OAuth не настроен, а Object Storage и проверенная
+> автоматизация резервного копирования не введены в эксплуатацию.
 
 ## Целевая конфигурация
 
@@ -211,10 +210,24 @@ POSTGRES_DB=mightycringe
 POSTGRES_USER=mightycringe
 POSTGRES_PASSWORD=<DB_PASSWORD>
 DATABASE_URL=postgresql://mightycringe:<DB_PASSWORD>@postgres:5432/mightycringe
+
+GOOGLE_CLIENT_ID=<GOOGLE_OAUTH_WEB_CLIENT_ID>
+GOOGLE_CLIENT_SECRET=<GOOGLE_OAUTH_WEB_CLIENT_SECRET>
+ADMIN_EMAILS=<OWNER_GOOGLE_EMAIL>
+SESSION_TTL_DAYS=30
 ```
 
-Остальные поля оставьте пустыми до появления соответствующих интеграций. Права на
-`/etc/mighty-cringe/production.env` уже заданы предыдущей командой.
+В Google Cloud Console создайте OAuth client типа **Web application** и укажите точный
+Authorized redirect URI:
+
+```text
+https://mightycringe.com/api/v1/auth/google/callback
+```
+
+Настройте OAuth consent screen и добавьте аккаунты-тестировщики, пока приложение находится в
+режиме Testing. Значения client ID и secret внесите только в серверный файл. `ADMIN_EMAILS` —
+список email через запятую; совпавшие подтверждённые Google-аккаунты получают роль `admin` при
+входе. Права на `/etc/mighty-cringe/production.env` уже заданы предыдущей командой.
 
 ## 6. Первый запуск и проверка
 
@@ -235,6 +248,7 @@ PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose logs --tail
 
 ```bash
 curl -fsS https://mightycringe.com/health
+curl -fsS https://mightycringe.com/api/v1/auth/config
 ```
 
 Ожидаемый ответ:
@@ -242,6 +256,9 @@ curl -fsS https://mightycringe.com/health
 ```json
 { "status": "ok" }
 ```
+
+Второй запрос должен вернуть `{"googleEnabled":true}`. Затем в приватном окне браузера
+проверьте вход, создание тренировки, выход и ответ `401` от `/api/v1/me` после выхода.
 
 ## 7. Автоматический deploy через server-side runner
 

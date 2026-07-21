@@ -1,6 +1,6 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
-export { and, desc, eq, isNull } from 'drizzle-orm';
+export { and, asc, desc, eq, gt, isNull, lt } from 'drizzle-orm';
 
 import * as schema from './schema.js';
 

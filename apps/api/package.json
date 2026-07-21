@@ -12,11 +12,13 @@
     "test": "node --test dist/app.test.js"
   },
   "dependencies": {
+    "@fastify/cookie": "^11.1.2",
     "@fastify/cors": "^11.0.0",
     "@mighty-cringe/contracts": "workspace:*",
     "@mighty-cringe/db": "workspace:*",
     "dotenv": "^16.6.0",
-    "fastify": "^5.5.0"
+    "fastify": "^5.5.0",
+    "jose": "^6.2.3"
   },
   "devDependencies": {
     "tsx": "^4.20.0"

@@ -8,6 +8,13 @@
    API-данных к пользователю; отключить демонстрационный доступ. Готово, когда пользователь
    может войти и выйти, видеть только свои данные, а базовые роли `athlete` / `admin` работают.
 
+   **Статус:** реализация и миграция готовы в
+   [draft PR #5](https://github.com/mighty-cringe/mighty-cringe-main/pull/5), локальные проверки
+   проходят. **Требуется участие владельца:** создать Google OAuth Web client с redirect URI
+   `https://mightycringe.com/api/v1/auth/google/callback`; внести `GOOGLE_CLIENT_ID`,
+   `GOOGLE_CLIENT_SECRET` и `ADMIN_EMAILS` в `/etc/mighty-cringe/production.env`; разрешить merge;
+   после деплоя проверить вход, выход и два разных аккаунта. До этого пункт остаётся в бэклоге.
+
 2. **Моя история восстанавливается после любой поломки.** Создать приватный Hetzner Object
    Storage и настроить автоматические зашифрованные бэкапы PostgreSQL с проверенным
    восстановлением, сроком хранения и понятной процедурой recovery.

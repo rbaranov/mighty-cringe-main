@@ -35,6 +35,42 @@ button {
   padding: 22px 18px 110px;
   background: radial-gradient(circle at 85% 0, #273416 0, transparent 31%), #10130e;
 }
+.auth-shell {
+  display: grid;
+  width: min(100%, 560px);
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding: 28px 18px;
+  align-content: start;
+  gap: clamp(70px, 18vh, 150px);
+  background: radial-gradient(circle at 85% 0, #304118 0, transparent 36%), #10130e;
+}
+.auth-card {
+  padding: 24px;
+  border: 1px solid #34402d;
+  border-radius: 22px;
+  background: rgba(23, 28, 20, 0.94);
+  box-shadow: 0 24px 80px #0005;
+}
+.auth-card h1 {
+  margin: 7px 0 14px;
+  font-size: clamp(34px, 10vw, 48px);
+  line-height: 0.98;
+  letter-spacing: -0.05em;
+}
+.login-button {
+  display: block;
+  text-align: center;
+  text-decoration: none;
+}
+.auth-error {
+  padding: 10px 12px;
+  border: 1px solid #784538;
+  border-radius: 10px;
+  background: #39221c;
+  color: #ffd6ca;
+  font-size: 13px;
+}
 .topbar,
 .section-head,
 .exercise-card-head,
@@ -44,6 +80,42 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+.profile-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  margin: 22px 0 10px;
+  padding: 14px;
+  border: 1px solid #34402d;
+  border-radius: 16px;
+  background: #171c14;
+}
+.profile-card img {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.profile-card strong,
+.profile-card small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.profile-card small {
+  margin-top: 3px;
+}
+.profile-card > span {
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: #29351f;
+  color: #c9f774;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
 }
 .brand {
   margin: 0;

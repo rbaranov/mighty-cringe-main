@@ -15,7 +15,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
-export const roleEnum = pgEnum('role', ['athlete', 'trainer', 'superadmin']);
+export const roleEnum = pgEnum('role', ['athlete', 'admin', 'trainer', 'superadmin']);
 export const exerciseScopeEnum = pgEnum('exercise_scope', ['global', 'user']);
 export const exerciseTagEnum = pgEnum('exercise_tag', ['mighty', 'normal', 'cringe']);
 export const voiceStatusEnum = pgEnum('voice_status', ['pending', 'confirmed', 'failed']);
@@ -35,6 +35,37 @@ export const users = pgTable('users', {
   locale: varchar('locale', { length: 10 }).notNull().default('ru'),
   ...timestamps,
 });
+
+export const authAttempts = pgTable(
+  'auth_attempts',
+  {
+    stateHash: varchar('state_hash', { length: 64 }).primaryKey(),
+    codeVerifier: varchar('code_verifier', { length: 128 }).notNull(),
+    nonce: varchar('nonce', { length: 128 }).notNull(),
+    returnTo: varchar('return_to', { length: 2048 }).notNull().default('/'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('auth_attempt_expires_idx').on(table.expiresAt)],
+);
+
+export const sessions = pgTable(
+  'sessions',
+  {
+    id: uuid('id').primaryKey(),
+    tokenHash: varchar('token_hash', { length: 64 }).notNull().unique(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('session_user_idx').on(table.userId),
+    index('session_expires_idx').on(table.expiresAt),
+  ],
+);
 
 export const trainerAthleteLinks = pgTable(
   'trainer_athlete_links',

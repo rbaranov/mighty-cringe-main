@@ -36,8 +36,8 @@ See [ADR 0001](docs/adr/0001-production-platform.md) for the decision and
 
 ## Current implementation boundary
 
-The initial vertical slice is deliberately limited to a local-first athlete flow: catalog,
-start-workout, manual set logging, idempotent sync API and PostgreSQL migrations. Google OAuth,
-voice transcription, trainer/admin consoles, push, media uploads and measurements are separate
-subsequent slices. Do not admit real users to a public deployment until OAuth and backup automation
-are complete.
+The current vertical slice covers a local-first athlete flow, Google OIDC login, opaque server-side
+sessions, per-user API isolation, the `athlete` / `admin` role boundary, idempotent sync API and
+PostgreSQL migrations. Voice transcription, trainer consoles, push, media uploads and measurements
+are subsequent slices. Do not admit real users to a public deployment until Google credentials and
+backup automation are configured and verified in production.
