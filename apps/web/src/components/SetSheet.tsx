@@ -3,6 +3,14 @@ import { useEffect, useState } from 'react';
 import type { Exercise } from '@mighty-cringe/contracts';
 
 import type { LocalSet } from '../lib/db';
+import {
+  canonicalWeight,
+  displayWeight,
+  exerciseName,
+  tr,
+  usePreferences,
+  weightUnit,
+} from '../lib/preferences';
 
 type Props = {
   exercise: Exercise | null;
@@ -18,17 +26,18 @@ type Props = {
 };
 
 export function SetSheet({ exercise, initial, onClose, onExplain, onSave }: Props) {
-  const [weightKg, setWeightKg] = useState('');
+  const { locale, unitSystem } = usePreferences();
+  const [weight, setWeight] = useState('');
   const [reps, setReps] = useState('');
   const [rir, setRir] = useState('');
   const [comment, setComment] = useState('');
 
   useEffect(() => {
-    setWeightKg(initial ? String(initial.weightKg) : '');
+    setWeight(initial ? String(displayWeight(initial.weightKg, unitSystem)) : '');
     setReps(initial ? String(initial.reps) : '');
     setRir(initial?.rir === null || initial?.rir === undefined ? '' : String(initial.rir));
     setComment(initial?.comment ?? '');
-  }, [exercise?.id, initial?.id, initial?.updatedAt]);
+  }, [exercise?.id, initial?.id, initial?.updatedAt, unitSystem]);
 
   if (!exercise) return null;
 
@@ -37,36 +46,40 @@ export function SetSheet({ exercise, initial, onClose, onExplain, onSave }: Prop
       <section
         className="sheet"
         aria-modal="true"
-        aria-label={`${initial ? 'Изменить' : 'Новый'} подход: ${exercise.nameRu}`}
+        aria-label={`${initial ? tr(locale, 'Изменить', 'Edit') : tr(locale, 'Новый', 'New')} ${tr(locale, 'подход', 'set')}: ${exerciseName(exercise, locale)}`}
         role="dialog"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="sheet-handle" />
-        <p className="eyebrow">{initial ? 'Изменить подход' : 'Новый подход'}</p>
-        <h2>{exercise.nameRu}</h2>
+        <p className="eyebrow">
+          {initial
+            ? tr(locale, 'Изменить подход', 'Edit set')
+            : tr(locale, 'Новый подход', 'New set')}
+        </p>
+        <h2>{exerciseName(exercise, locale)}</h2>
         {!initial && (
           <>
             <button className="button explain-entry full" onClick={onExplain} type="button">
-              🎙️✏️ Сказать или написать
+              🎙️✏️ {tr(locale, 'Сказать или написать', 'Speak or type')}
             </button>
-            <p className="form-divider">или ввести вручную</p>
+            <p className="form-divider">{tr(locale, 'или ввести вручную', 'or enter manually')}</p>
           </>
         )}
         <div className="form-grid">
           <label>
-            Вес, кг
+            {tr(locale, 'Вес', 'Weight')}, {weightUnit(unitSystem, locale)}
             <input
               autoFocus
               inputMode="decimal"
               min="0"
-              onChange={(event) => setWeightKg(event.target.value)}
+              onChange={(event) => setWeight(event.target.value)}
               placeholder="40"
               type="number"
-              value={weightKg}
+              value={weight}
             />
           </label>
           <label>
-            Повторы
+            {tr(locale, 'Повторы', 'Reps')}
             <input
               inputMode="numeric"
               min="1"
@@ -88,21 +101,21 @@ export function SetSheet({ exercise, initial, onClose, onExplain, onSave }: Prop
             />
           </label>
           <label className="wide">
-            Комментарий
+            {tr(locale, 'Комментарий', 'Comment')}
             <input
               maxLength={1000}
               onChange={(event) => setComment(event.target.value)}
-              placeholder="Как ощущалось?"
+              placeholder={tr(locale, 'Как ощущалось?', 'How did it feel?')}
               value={comment}
             />
           </label>
         </div>
         <button
           className="button primary full"
-          disabled={!Number.isFinite(Number(weightKg)) || Number(reps) < 1}
+          disabled={!Number.isFinite(Number(weight)) || Number(reps) < 1}
           onClick={() =>
             onSave({
-              weightKg: Number(weightKg),
+              weightKg: canonicalWeight(Number(weight), unitSystem),
               reps: Number(reps),
               rir: rir === '' ? null : Number(rir),
               comment: comment.trim() || null,
@@ -110,10 +123,12 @@ export function SetSheet({ exercise, initial, onClose, onExplain, onSave }: Prop
           }
           type="button"
         >
-          {initial ? 'Сохранить изменения' : 'Сохранить подход'}
+          {initial
+            ? tr(locale, 'Сохранить изменения', 'Save changes')
+            : tr(locale, 'Сохранить подход', 'Save set')}
         </button>
         <button className="button ghost full" onClick={onClose} type="button">
-          Отмена
+          {tr(locale, 'Отмена', 'Cancel')}
         </button>
       </section>
     </div>

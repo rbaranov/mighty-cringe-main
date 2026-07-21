@@ -18,6 +18,7 @@ import {
   updateMeasurementSchema,
   updateNotificationPreferencesSchema,
   updateSetSchema,
+  updateUserPreferencesSchema,
   updateWorkoutSchema,
   voiceEntryIdSchema,
 } from '@mighty-cringe/contracts';
@@ -183,6 +184,14 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
     const user = await getCurrentUser(request, repository, now());
     if (!user) return reply.status(401).send({ error: 'Authentication required' });
     return { user };
+  });
+
+  app.patch('/api/v1/me/preferences', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    const parsed = updateUserPreferencesSchema.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() });
+    return { user: await repository.updateUserPreferences(user.id, parsed.data) };
   });
 
   app.post('/api/v1/auth/logout', async (request, reply) => {

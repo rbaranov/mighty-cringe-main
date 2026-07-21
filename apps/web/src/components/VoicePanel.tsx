@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 
 import { db, type LocalVoiceEntry } from '../lib/db';
+import { tr, usePreferences } from '../lib/preferences';
 import {
   flushVoiceQueue,
   loadVoiceConfig,
@@ -26,6 +27,7 @@ export function VoicePanel({
   activeWorkoutId: string | null;
   onTranscript: (transcript: string) => void;
 }) {
+  const { locale } = usePreferences();
   const [config, setConfig] = useState<VoiceConfig | null | undefined>(undefined);
   const [consented, setConsented] = useState(false);
   const [captureState, setCaptureState] = useState<'idle' | 'requesting' | 'recording' | 'saving'>(
@@ -97,7 +99,13 @@ export function VoicePanel({
     } catch {
       stream?.getTracks().forEach((track) => track.stop());
       setCaptureState('idle');
-      setError('Не удалось получить доступ к микрофону. Проверь разрешение браузера.');
+      setError(
+        tr(
+          locale,
+          'Не удалось получить доступ к микрофону. Проверь разрешение браузера.',
+          'Could not access the microphone. Check the browser permission.',
+        ),
+      );
     }
   }
 
@@ -122,7 +130,11 @@ export function VoicePanel({
           status: 'failed',
           retryable: false,
           nextAttemptAt: null,
-          lastError: 'Запись слишком большая. Удали её и запиши короче.',
+          lastError: tr(
+            locale,
+            'Запись слишком большая. Удали её и запиши короче.',
+            'The recording is too large. Delete it and record a shorter one.',
+          ),
         });
       } else {
         await flushVoiceQueue();
@@ -132,7 +144,13 @@ export function VoicePanel({
       setCaptureState('idle');
     } catch {
       setCaptureState('idle');
-      setError('Не удалось сохранить запись на устройстве. Освободи место и попробуй снова.');
+      setError(
+        tr(
+          locale,
+          'Не удалось сохранить запись на устройстве. Освободи место и попробуй снова.',
+          'Could not save the recording on this device. Free some space and try again.',
+        ),
+      );
     }
   }
 
@@ -142,15 +160,32 @@ export function VoicePanel({
   }
 
   if (config === undefined) {
-    return <div className="voice-boundary">Проверяем приватную голосовую обработку…</div>;
+    return (
+      <div className="voice-boundary">
+        {tr(
+          locale,
+          'Проверяем приватную голосовую обработку…',
+          'Checking private voice processing…',
+        )}
+      </div>
+    );
   }
   if (!config?.enabled) {
     return (
       <div className="voice-boundary" role="status">
-        <strong>Голосовой ввод ещё не настроен на сервере</strong>
+        <strong>
+          {tr(
+            locale,
+            'Голосовой ввод ещё не настроен на сервере',
+            'Voice input is not configured on the server yet',
+          )}
+        </strong>
         <p>
-          Нужны отдельное приватное хранилище и серверный ключ распознавания. Текстовый ввод
-          продолжает работать без них.
+          {tr(
+            locale,
+            'Нужны отдельное приватное хранилище и серверный ключ распознавания. Текстовый ввод продолжает работать без них.',
+            'A private storage bucket and server-side transcription key are required. Text input keeps working without them.',
+          )}
         </p>
       </div>
     );
@@ -159,10 +194,25 @@ export function VoicePanel({
   return (
     <div className="voice-panel">
       <div className="voice-consent">
-        <strong>Перед каждой записью — явное согласие</strong>
+        <strong>
+          {tr(
+            locale,
+            'Перед каждой записью — явное согласие',
+            'Explicit consent before every recording',
+          )}
+        </strong>
         <p>
-          Аудио сразу сохранится на этом устройстве, затем уйдёт в приватное серверное хранилище и в{' '}
-          {config.provider} только для расшифровки. Оно хранится до твоего явного удаления.
+          {tr(
+            locale,
+            'Аудио сразу сохранится на этом устройстве, затем уйдёт в приватное серверное хранилище и в',
+            'Audio is saved on this device first, then sent to private server storage and to',
+          )}{' '}
+          {config.provider}{' '}
+          {tr(
+            locale,
+            'только для расшифровки. Оно хранится до твоего явного удаления.',
+            'for transcription only. It is retained until you explicitly delete it.',
+          )}
         </p>
         <label>
           <input
@@ -171,19 +221,30 @@ export function VoicePanel({
             onChange={(event) => setConsented(event.target.checked)}
             type="checkbox"
           />
-          Я согласен на запись и описанную обработку этого аудио
+          {tr(
+            locale,
+            'Я согласен на запись и описанную обработку этого аудио',
+            'I agree to record and process this audio as described',
+          )}
         </label>
       </div>
 
       {captureState === 'recording' ? (
         <div className="recording-controls" role="status">
-          <span>● Идёт запись — максимум {config.maximumSeconds} сек.</span>
+          <span>
+            ●{' '}
+            {tr(
+              locale,
+              `Идёт запись — максимум ${config.maximumSeconds} сек.`,
+              `Recording — up to ${config.maximumSeconds} sec.`,
+            )}
+          </span>
           <div>
             <button className="button primary" onClick={() => stopRecording(false)} type="button">
-              Остановить и сохранить
+              {tr(locale, 'Остановить и сохранить', 'Stop and save')}
             </button>
             <button className="button ghost" onClick={() => stopRecording(true)} type="button">
-              Отменить
+              {tr(locale, 'Отменить', 'Cancel')}
             </button>
           </div>
         </div>
@@ -195,13 +256,17 @@ export function VoicePanel({
           type="button"
         >
           {captureState === 'requesting'
-            ? 'Запрашиваем микрофон…'
+            ? tr(locale, 'Запрашиваем микрофон…', 'Requesting microphone…')
             : captureState === 'saving'
-              ? 'Сохраняем на устройстве…'
-              : 'Согласен и начать запись'}
+              ? tr(locale, 'Сохраняем на устройстве…', 'Saving on device…')
+              : tr(locale, 'Согласен и начать запись', 'Agree and start recording')}
         </button>
       )}
-      {!activeWorkoutId && <p className="voice-hint">Сначала начни тренировку.</p>}
+      {!activeWorkoutId && (
+        <p className="voice-hint">
+          {tr(locale, 'Сначала начни тренировку.', 'Start a workout first.')}
+        </p>
+      )}
       {error && (
         <p className="clarification compact" role="alert">
           {error}
@@ -210,12 +275,12 @@ export function VoicePanel({
 
       {entries.length > 0 && (
         <div className="voice-history">
-          <strong>Последние записи</strong>
+          <strong>{tr(locale, 'Последние записи', 'Recent recordings')}</strong>
           {entries.map((entry) => (
             <article key={entry.id}>
               <div>
-                <span>{voiceStatusLabel(entry)}</span>
-                <small>{formatVoiceTime(entry.createdAt)}</small>
+                <span>{voiceStatusLabel(entry, locale)}</span>
+                <small>{formatVoiceTime(entry.createdAt, locale)}</small>
               </div>
               {entry.transcript && <p>«{entry.transcript}»</p>}
               {entry.status !== 'deleting' && <VoicePlayback entry={entry} />}
@@ -225,17 +290,23 @@ export function VoicePanel({
                   onClick={() => onTranscript(entry.transcript!)}
                   type="button"
                 >
-                  Разобрать расшифровку
+                  {tr(locale, 'Разобрать расшифровку', 'Parse transcript')}
                 </button>
               )}
               {confirmDeleteId === entry.id ? (
                 <div className="voice-delete-confirm">
-                  <span>Удалить аудио с устройства и сервера?</span>
+                  <span>
+                    {tr(
+                      locale,
+                      'Удалить аудио с устройства и сервера?',
+                      'Delete audio from the device and server?',
+                    )}
+                  </span>
                   <button onClick={() => void deleteEntry(entry.id)} type="button">
-                    Да, удалить
+                    {tr(locale, 'Да, удалить', 'Delete')}
                   </button>
                   <button onClick={() => setConfirmDeleteId(null)} type="button">
-                    Отмена
+                    {tr(locale, 'Отмена', 'Cancel')}
                   </button>
                 </div>
               ) : (
@@ -245,7 +316,7 @@ export function VoicePanel({
                   onClick={() => setConfirmDeleteId(entry.id)}
                   type="button"
                 >
-                  Удалить аудио
+                  {tr(locale, 'Удалить аудио', 'Delete audio')}
                 </button>
               )}
             </article>
@@ -257,6 +328,7 @@ export function VoicePanel({
 }
 
 function VoicePlayback({ entry }: { entry: LocalVoiceEntry }) {
+  const { locale } = usePreferences();
   const [source, setSource] = useState(
     entry.audio ? '' : entry.serverStored ? `/api/v1/voice-entries/${entry.id}/audio` : '',
   );
@@ -273,7 +345,12 @@ function VoicePlayback({ entry }: { entry: LocalVoiceEntry }) {
 
   if (!source) return null;
   return (
-    <audio aria-label="Прослушать сохранённую запись" controls preload="metadata" src={source} />
+    <audio
+      aria-label={tr(locale, 'Прослушать сохранённую запись', 'Play saved recording')}
+      controls
+      preload="metadata"
+      src={source}
+    />
   );
 }
 
@@ -287,26 +364,33 @@ function preferredMimeType() {
   return candidates.find((type) => MediaRecorder.isTypeSupported(type)) ?? '';
 }
 
-function voiceStatusLabel(entry: LocalVoiceEntry) {
+function voiceStatusLabel(entry: LocalVoiceEntry, locale: 'ru' | 'en') {
   switch (entry.status) {
     case 'queued':
     case 'uploading':
-      return 'Сохранено — ждёт отправки';
+      return tr(locale, 'Сохранено — ждёт отправки', 'Saved — waiting to upload');
     case 'pending':
-      return 'В очереди распознавания';
+      return tr(locale, 'В очереди распознавания', 'Queued for transcription');
     case 'processing':
-      return 'Распознаётся';
+      return tr(locale, 'Распознаётся', 'Transcribing');
     case 'confirmed':
-      return 'Расшифровка готова · аудио хранится до удаления';
+      return tr(
+        locale,
+        'Расшифровка готова · аудио хранится до удаления',
+        'Transcript ready · audio retained until deletion',
+      );
     case 'deleting':
-      return 'Удаляем везде…';
+      return tr(locale, 'Удаляем везде…', 'Deleting everywhere…');
     case 'failed':
-      return entry.retryable ? 'Повторим автоматически' : 'Не удалось распознать';
+      return entry.retryable
+        ? tr(locale, 'Повторим автоматически', 'Will retry automatically')
+        : tr(locale, 'Не удалось распознать', 'Transcription failed');
   }
 }
 
-function formatVoiceTime(value: string) {
-  return new Intl.DateTimeFormat('ru', { hour: '2-digit', minute: '2-digit' }).format(
-    new Date(value),
-  );
+function formatVoiceTime(value: string, locale: 'ru' | 'en') {
+  return new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'ru-RU', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value));
 }

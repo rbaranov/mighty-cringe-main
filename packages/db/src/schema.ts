@@ -40,6 +40,7 @@ export const notificationJobStatusEnum = pgEnum('notification_job_status', [
   'sent',
   'failed',
 ]);
+export const unitSystemEnum = pgEnum('unit_system', ['metric', 'imperial']);
 
 const timestamps = {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -54,6 +55,7 @@ export const users = pgTable('users', {
   avatarUrl: text('avatar_url'),
   role: roleEnum('role').notNull().default('athlete'),
   locale: varchar('locale', { length: 10 }).notNull().default('ru'),
+  unitSystem: unitSystemEnum('unit_system').notNull().default('metric'),
   ...timestamps,
 });
 

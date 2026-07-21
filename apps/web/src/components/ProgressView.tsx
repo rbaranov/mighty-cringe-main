@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import type { Exercise } from '@mighty-cringe/contracts';
 
 import type { LocalMeasurement, LocalSet, LocalWorkout } from '../lib/db';
+import { exerciseName, formatWeight, tr, usePreferences } from '../lib/preferences';
 import { setEntrySourceSuffix } from '../lib/setEntrySource';
 import {
   buildCalendarMonth,
@@ -15,20 +16,23 @@ import {
 } from '../lib/progress';
 import { BodyMeasurementsSection, type MeasurementDraft } from './BodyMeasurementsSection';
 
-const weekdayLabels = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+const weekdayLabels = {
+  ru: ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'],
+  en: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+};
 
-const muscleLabels: Record<string, string> = {
-  chest: 'Грудь',
-  back: 'Спина',
-  front_delt: 'Передняя дельта',
-  middle_delt: 'Средняя дельта',
-  rear_delt: 'Задняя дельта',
-  biceps: 'Бицепс',
-  triceps: 'Трицепс',
-  quadriceps: 'Квадрицепс',
-  hamstrings: 'Задняя поверхность бедра',
-  calves: 'Икры',
-  core: 'Кор',
+const muscleLabels: Record<string, [string, string]> = {
+  chest: ['Грудь', 'Chest'],
+  back: ['Спина', 'Back'],
+  front_delt: ['Передняя дельта', 'Front delts'],
+  middle_delt: ['Средняя дельта', 'Middle delts'],
+  rear_delt: ['Задняя дельта', 'Rear delts'],
+  biceps: ['Бицепс', 'Biceps'],
+  triceps: ['Трицепс', 'Triceps'],
+  quadriceps: ['Квадрицепс', 'Quadriceps'],
+  hamstrings: ['Задняя поверхность бедра', 'Hamstrings'],
+  calves: ['Икры', 'Calves'],
+  core: ['Кор', 'Core'],
 };
 
 export function ProgressView({
@@ -48,6 +52,7 @@ export function ProgressView({
   onImportMeasurements: (drafts: MeasurementDraft[]) => Promise<void>;
   onSaveMeasurement: (draft: MeasurementDraft, existing: LocalMeasurement | null) => Promise<void>;
 }) {
+  const { locale, unitSystem } = usePreferences();
   const timeZone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', []);
   const todayKey = dateKeyInTimeZone(new Date(), timeZone);
   const visibleSets = useMemo(() => sets.filter((set) => !set.deleted), [sets]);
@@ -117,54 +122,88 @@ export function ProgressView({
 
   return (
     <section className="screen progress-screen">
-      <p className="eyebrow">Твоё движение</p>
-      <h1>Прогресс</h1>
+      <p className="eyebrow">{tr(locale, 'Твоё движение', 'Your movement')}</p>
+      <h1>{tr(locale, 'Прогресс', 'Progress')}</h1>
       <p className="intro">
-        Здесь только твои завершённые тренировки. День раскрывает исходные подходы, а история под
-        графиком — расчёт каждой точки.
+        {tr(
+          locale,
+          'Здесь только твои завершённые тренировки. День раскрывает исходные подходы, а история под графиком — расчёт каждой точки.',
+          'Only your completed workouts appear here. Open a day to see the original sets and use the history below the chart to verify every point.',
+        )}
       </p>
 
       {hasUnsyncedData && (
-        <p className="progress-notice">Локальные изменения уже учтены и ещё синхронизируются.</p>
+        <p className="progress-notice">
+          {tr(
+            locale,
+            'Локальные изменения уже учтены и ещё синхронизируются.',
+            'Local changes are included and are still syncing.',
+          )}
+        </p>
       )}
 
-      <div className="progress-summary" aria-label="Сводка прогресса">
-        <SummaryMetric label="Тренировок" value={String(completedWorkouts.length)} />
-        <SummaryMetric label="Текущая серия" value={formatDays(streaks.current)} />
-        <SummaryMetric label="Лучшая серия" value={formatDays(streaks.best)} />
-        <SummaryMetric label="Объём · 30 дней" value={formatKg(volume30Days)} />
+      <div
+        className="progress-summary"
+        aria-label={tr(locale, 'Сводка прогресса', 'Progress summary')}
+      >
+        <SummaryMetric
+          label={tr(locale, 'Тренировок', 'Workouts')}
+          value={String(completedWorkouts.length)}
+        />
+        <SummaryMetric
+          label={tr(locale, 'Текущая серия', 'Current streak')}
+          value={formatDays(streaks.current, locale)}
+        />
+        <SummaryMetric
+          label={tr(locale, 'Лучшая серия', 'Best streak')}
+          value={formatDays(streaks.best, locale)}
+        />
+        <SummaryMetric
+          label={tr(locale, 'Объём · 30 дней', 'Volume · 30 days')}
+          value={formatWeight(volume30Days, locale, unitSystem)}
+        />
       </div>
-      <p className="streak-note">Серия остаётся текущей до конца сегодняшнего дня.</p>
+      <p className="streak-note">
+        {tr(
+          locale,
+          'Серия остаётся текущей до конца сегодняшнего дня.',
+          'The streak stays current through the end of today.',
+        )}
+      </p>
 
       <section className="progress-section" aria-labelledby="calendar-heading">
         <div className="section-head progress-heading">
           <div>
-            <p className="eyebrow">Ритм</p>
-            <h2 id="calendar-heading">Календарь тренировок</h2>
+            <p className="eyebrow">{tr(locale, 'Ритм', 'Rhythm')}</p>
+            <h2 id="calendar-heading">{tr(locale, 'Календарь тренировок', 'Workout calendar')}</h2>
           </div>
           <div className="month-controls">
             <button
-              aria-label="Предыдущий месяц"
+              aria-label={tr(locale, 'Предыдущий месяц', 'Previous month')}
               onClick={() => showAdjacentMonth(-1)}
               type="button"
             >
               ←
             </button>
-            <strong>{formatMonth(monthKey)}</strong>
-            <button aria-label="Следующий месяц" onClick={() => showAdjacentMonth(1)} type="button">
+            <strong>{formatMonth(monthKey, locale)}</strong>
+            <button
+              aria-label={tr(locale, 'Следующий месяц', 'Next month')}
+              onClick={() => showAdjacentMonth(1)}
+              type="button"
+            >
               →
             </button>
           </div>
         </div>
         <div className="calendar-weekdays" aria-hidden="true">
-          {weekdayLabels.map((label) => (
+          {weekdayLabels[locale].map((label) => (
             <span key={label}>{label}</span>
           ))}
         </div>
         <div className="workout-calendar">
           {calendar.map((day) => (
             <button
-              aria-label={`${formatDate(day.dateKey)}${day.workout ? `, тренировок: ${day.workout.workoutCount}` : ''}`}
+              aria-label={`${formatDate(day.dateKey, locale)}${day.workout ? tr(locale, `, тренировок: ${day.workout.workoutCount}`, `, workouts: ${day.workout.workoutCount}`) : ''}`}
               className={[
                 'calendar-day',
                 !day.inMonth && 'outside',
@@ -193,23 +232,31 @@ export function ProgressView({
             workouts={workouts}
           />
         ) : (
-          <p className="progress-empty compact">В этом месяце пока нет завершённых тренировок.</p>
+          <p className="progress-empty compact">
+            {tr(
+              locale,
+              'В этом месяце пока нет завершённых тренировок.',
+              'No completed workouts this month yet.',
+            )}
+          </p>
         )}
       </section>
 
       <section className="progress-section" aria-labelledby="strength-heading">
         <div className="section-head progress-heading">
           <div>
-            <p className="eyebrow">Сила</p>
-            <h2 id="strength-heading">Рабочий вес и расчётный 1RM</h2>
+            <p className="eyebrow">{tr(locale, 'Сила', 'Strength')}</p>
+            <h2 id="strength-heading">
+              {tr(locale, 'Рабочий вес и расчётный 1RM', 'Working weight and estimated 1RM')}
+            </h2>
           </div>
         </div>
         {trackedExercises.length ? (
           <>
-            <div className="muscle-filters" aria-label="Группа мышц">
+            <div className="muscle-filters" aria-label={tr(locale, 'Группа мышц', 'Muscle group')}>
               <FilterChip
                 active={selectedMuscle === 'all'}
-                label="Все"
+                label={tr(locale, 'Все', 'All')}
                 onClick={() => {
                   setSelectedMuscle('all');
                   setSelectedExerciseId('');
@@ -219,7 +266,7 @@ export function ProgressView({
                 <FilterChip
                   active={selectedMuscle === muscle}
                   key={muscle}
-                  label={muscleLabels[muscle] ?? muscle}
+                  label={muscleLabels[muscle]?.[locale === 'en' ? 1 : 0] ?? muscle}
                   onClick={() => {
                     setSelectedMuscle(muscle);
                     setSelectedExerciseId('');
@@ -228,14 +275,14 @@ export function ProgressView({
               ))}
             </div>
             <label className="progress-select">
-              Упражнение
+              {tr(locale, 'Упражнение', 'Exercise')}
               <select
                 onChange={(event) => setSelectedExerciseId(event.target.value)}
                 value={selectedExercise?.id ?? ''}
               >
                 {filteredExercises.map((exercise) => (
                   <option key={exercise.id} value={exercise.id}>
-                    {exercise.nameRu}
+                    {exerciseName(exercise, locale)}
                   </option>
                 ))}
               </select>
@@ -244,18 +291,24 @@ export function ProgressView({
             {bestPoint && (
               <article className="one-rep-explainer">
                 <div>
-                  <span>Личный расчётный рекорд</span>
-                  <strong>{formatKg(bestPoint.estimatedOneRepMaxKg)}</strong>
+                  <span>{tr(locale, 'Личный расчётный рекорд', 'Personal estimated record')}</span>
+                  <strong>
+                    {formatWeight(bestPoint.estimatedOneRepMaxKg, locale, unitSystem)}
+                  </strong>
                 </div>
                 <p>
-                  {formatKg(bestPoint.sourceSet.weightKg)} × {bestPoint.sourceSet.reps} повторов
+                  {formatWeight(bestPoint.sourceSet.weightKg, locale, unitSystem)} ×{' '}
+                  {bestPoint.sourceSet.reps} {tr(locale, 'повторов', 'reps')}
                   {bestPoint.sourceSet.rir === null
                     ? ''
-                    : ` · RIR ${bestPoint.sourceSet.rir}`} · {formatDate(bestPoint.dateKey)}
+                    : ` · RIR ${bestPoint.sourceSet.rir}`} · {formatDate(bestPoint.dateKey, locale)}
                 </p>
                 <small>
-                  Epley: вес × (1 + (повторы + RIR) / 30). Это ориентир для сравнения твоих
-                  тренировок, а не обещание реального максимума.
+                  {tr(
+                    locale,
+                    'Epley: вес × (1 + (повторы + RIR) / 30). Это ориентир для сравнения твоих тренировок, а не обещание реального максимума.',
+                    'Epley: weight × (1 + (reps + RIR) / 30). This is a comparison estimate, not a promise of your actual maximum.',
+                  )}
                 </small>
               </article>
             )}
@@ -265,13 +318,16 @@ export function ProgressView({
                 .slice(0, 5)
                 .map((point) => (
                   <article key={point.workoutId}>
-                    <time dateTime={point.dateKey}>{formatDate(point.dateKey)}</time>
+                    <time dateTime={point.dateKey}>{formatDate(point.dateKey, locale)}</time>
                     <span>
-                      {point.setCount} подх. · {formatKg(point.volumeKg)} объёма
+                      {point.setCount} {tr(locale, 'подх.', 'sets')} ·{' '}
+                      {formatWeight(point.volumeKg, locale, unitSystem)}{' '}
+                      {tr(locale, 'объёма', 'volume')}
                     </span>
                     <strong>
-                      {formatKg(point.topWeightKg)} рабочий · {formatKg(point.estimatedOneRepMaxKg)}{' '}
-                      1RM
+                      {formatWeight(point.topWeightKg, locale, unitSystem)}{' '}
+                      {tr(locale, 'рабочий', 'working')} ·{' '}
+                      {formatWeight(point.estimatedOneRepMaxKg, locale, unitSystem)} 1RM
                     </strong>
                   </article>
                 ))}
@@ -279,8 +335,11 @@ export function ProgressView({
           </>
         ) : (
           <p className="progress-empty">
-            После первой завершённой тренировки здесь появится честная динамика по каждому
-            упражнению.
+            {tr(
+              locale,
+              'После первой завершённой тренировки здесь появится честная динамика по каждому упражнению.',
+              'Complete your first workout to see progress for each exercise.',
+            )}
           </p>
         )}
       </section>
@@ -333,10 +392,11 @@ function DayDetails({
   sets: LocalSet[];
   exercises: Exercise[];
 }) {
+  const { locale, unitSystem } = usePreferences();
   const exerciseById = new Map(exercises.map((exercise) => [exercise.id, exercise]));
   return (
     <div className="calendar-details">
-      <strong>{formatDate(dateKey)}</strong>
+      <strong>{formatDate(dateKey, locale)}</strong>
       {workoutIds.map((workoutId) => {
         const workout = workouts.find((candidate) => candidate.id === workoutId);
         const workoutSets = sets
@@ -349,25 +409,37 @@ function DayDetails({
         return (
           <article key={workoutId}>
             <div>
-              <span>{workout?.endedAt ? formatTime(workout.endedAt) : 'Завершена'}</span>
-              {workout?.syncState !== 'synced' && <em>синхронизируется</em>}
+              <span>
+                {workout?.endedAt
+                  ? formatTime(workout.endedAt, locale)
+                  : tr(locale, 'Завершена', 'Completed')}
+              </span>
+              {workout?.syncState !== 'synced' && (
+                <em>{tr(locale, 'синхронизируется', 'syncing')}</em>
+              )}
             </div>
             {grouped.size ? (
               [...grouped.entries()].map(([exerciseId, exerciseSets]) => (
                 <p key={exerciseId}>
-                  <b>{exerciseById.get(exerciseId)?.nameRu ?? 'Упражнение'}</b>
+                  <b>
+                    {exerciseById.has(exerciseId)
+                      ? exerciseName(exerciseById.get(exerciseId)!, locale)
+                      : tr(locale, 'Упражнение', 'Exercise')}
+                  </b>
                   <span>
                     {exerciseSets
                       .map(
                         (set) =>
-                          `${formatNumber(set.weightKg)}×${set.reps}${set.rir === null ? '' : ` @${set.rir}`}${setEntrySourceSuffix(set.entrySource)}`,
+                          `${formatWeight(set.weightKg, locale, unitSystem)}×${set.reps}${set.rir === null ? '' : ` @${set.rir}`}${setEntrySourceSuffix(set.entrySource, locale)}`,
                       )
                       .join(' · ')}
                   </span>
                 </p>
               ))
             ) : (
-              <p>Тренировка без записанных подходов.</p>
+              <p>
+                {tr(locale, 'Тренировка без записанных подходов.', 'Workout with no logged sets.')}
+              </p>
             )}
           </article>
         );
@@ -377,8 +449,13 @@ function DayDetails({
 }
 
 function StrengthChart({ points }: { points: ExerciseProgressPoint[] }) {
+  const { locale, unitSystem } = usePreferences();
   if (!points.length)
-    return <p className="progress-empty compact">Для упражнения ещё нет данных.</p>;
+    return (
+      <p className="progress-empty compact">
+        {tr(locale, 'Для упражнения ещё нет данных.', 'No data for this exercise yet.')}
+      </p>
+    );
 
   const visible = points.slice(-12);
   const maximum = Math.max(
@@ -397,10 +474,18 @@ function StrengthChart({ points }: { points: ExerciseProgressPoint[] }) {
   return (
     <div className="strength-chart">
       <div className="chart-legend">
-        <span className="weight">Рабочий вес</span>
-        <span className="estimated">Расчётный 1RM</span>
+        <span className="weight">{tr(locale, 'Рабочий вес', 'Working weight')}</span>
+        <span className="estimated">{tr(locale, 'Расчётный 1RM', 'Estimated 1RM')}</span>
       </div>
-      <svg aria-label="График рабочего веса и расчётного 1RM" role="img" viewBox="0 0 320 170">
+      <svg
+        aria-label={tr(
+          locale,
+          'График рабочего веса и расчётного 1RM',
+          'Working weight and estimated 1RM chart',
+        )}
+        role="img"
+        viewBox="0 0 320 170"
+      >
         {[30, 86, 142].map((y) => (
           <line className="chart-grid" key={y} x1="22" x2="298" y1={y} y2={y} />
         ))}
@@ -419,18 +504,18 @@ function StrengthChart({ points }: { points: ExerciseProgressPoint[] }) {
           return (
             <g key={point.workoutId}>
               <circle className="chart-point estimated" cx={x} cy={estimatedY} r="3.5">
-                <title>{`${formatDate(point.dateKey)}: ${formatKg(point.estimatedOneRepMaxKg)} расчётный 1RM`}</title>
+                <title>{`${formatDate(point.dateKey, locale)}: ${formatWeight(point.estimatedOneRepMaxKg, locale, unitSystem)} ${tr(locale, 'расчётный 1RM', 'estimated 1RM')}`}</title>
               </circle>
               <circle className="chart-point weight" cx={x} cy={weightY} r="3.5">
-                <title>{`${formatDate(point.dateKey)}: ${formatKg(point.topWeightKg)} рабочий вес`}</title>
+                <title>{`${formatDate(point.dateKey, locale)}: ${formatWeight(point.topWeightKg, locale, unitSystem)} ${tr(locale, 'рабочий вес', 'working weight')}`}</title>
               </circle>
             </g>
           );
         })}
       </svg>
       <div className="chart-range">
-        <span>{formatDate(visible[0].dateKey)}</span>
-        <span>{formatDate(visible.at(-1)!.dateKey)}</span>
+        <span>{formatDate(visible[0].dateKey, locale)}</span>
+        <span>{formatDate(visible.at(-1)!.dateKey, locale)}</span>
       </div>
     </div>
   );
@@ -442,36 +527,30 @@ function moveMonth(monthKey: string, amount: number): string {
   return date.toISOString().slice(0, 7);
 }
 
-function formatMonth(monthKey: string): string {
-  return new Intl.DateTimeFormat('ru-RU', {
+function formatMonth(monthKey: string, locale: 'ru' | 'en'): string {
+  return new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'ru-RU', {
     month: 'long',
     year: 'numeric',
     timeZone: 'UTC',
   }).format(new Date(`${monthKey}-01T12:00:00Z`));
 }
 
-function formatDate(dateKey: string): string {
-  return new Intl.DateTimeFormat('ru-RU', {
+function formatDate(dateKey: string, locale: 'ru' | 'en'): string {
+  return new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'ru-RU', {
     day: 'numeric',
     month: 'short',
     timeZone: 'UTC',
   }).format(new Date(`${dateKey}T12:00:00Z`));
 }
 
-function formatTime(value: string): string {
-  return new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' }).format(
-    new Date(value),
-  );
+function formatTime(value: string, locale: 'ru' | 'en'): string {
+  return new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'ru-RU', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value));
 }
 
-function formatDays(value: number): string {
+function formatDays(value: number, locale: 'ru' | 'en'): string {
+  if (locale === 'en') return `${value} ${value === 1 ? 'day' : 'days'}`;
   return `${value} ${value % 10 === 1 && value % 100 !== 11 ? 'день' : value % 10 >= 2 && value % 10 <= 4 && (value % 100 < 10 || value % 100 >= 20) ? 'дня' : 'дней'}`;
-}
-
-function formatKg(value: number): string {
-  return `${formatNumber(value)} кг`;
-}
-
-function formatNumber(value: number): string {
-  return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 }).format(value);
 }

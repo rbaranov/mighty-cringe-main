@@ -18,8 +18,10 @@ import {
   revokeTrainerInvite,
   revokeTrainerRelationship,
 } from '../lib/trainer';
+import { displayMeasurement, formatWeight, tr, usePreferences } from '../lib/preferences';
 
 export function TrainerRelationshipCard({ refreshKey = 0 }: { refreshKey?: number }) {
+  const { locale } = usePreferences();
   const [trainer, setTrainer] = useState<TrainerSummary | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -31,12 +33,16 @@ export function TrainerRelationshipCard({ refreshKey = 0 }: { refreshKey?: numbe
         if (active) setTrainer(payload.trainer);
       })
       .catch(() => {
-        if (active) setError('Связь с тренером сейчас недоступна.');
+        if (active) {
+          setError(
+            tr(locale, 'Связь с тренером сейчас недоступна.', 'Coach connection is unavailable.'),
+          );
+        }
       });
     return () => {
       active = false;
     };
-  }, [refreshKey]);
+  }, [locale, refreshKey]);
 
   async function revoke() {
     setError(null);
@@ -46,7 +52,9 @@ export function TrainerRelationshipCard({ refreshKey = 0 }: { refreshKey?: numbe
       setConfirming(false);
     } catch (requestError) {
       setError(
-        requestError instanceof Error ? requestError.message : 'Не удалось отозвать доступ.',
+        requestError instanceof Error
+          ? requestError.message
+          : tr(locale, 'Не удалось отозвать доступ.', 'Could not revoke access.'),
       );
     }
   }
@@ -54,24 +62,32 @@ export function TrainerRelationshipCard({ refreshKey = 0 }: { refreshKey?: numbe
   return (
     <section className="trainer-relationship" aria-live="polite">
       <div className="setting">
-        <span>Мой тренер</span>
+        <span>{tr(locale, 'Мой тренер', 'My coach')}</span>
         <strong>
-          {trainer === undefined ? 'Проверяем…' : (trainer?.displayName ?? 'Не подключён')}
+          {trainer === undefined
+            ? tr(locale, 'Проверяем…', 'Checking…')
+            : (trainer?.displayName ?? tr(locale, 'Не подключён', 'Not connected'))}
         </strong>
       </div>
       {trainer && !confirming && (
         <button className="button ghost small" onClick={() => setConfirming(true)} type="button">
-          Отозвать доступ тренера
+          {tr(locale, 'Отозвать доступ тренера', 'Revoke coach access')}
         </button>
       )}
       {trainer && confirming && (
         <div className="inline-confirmation">
-          <p>Тренер сразу перестанет видеть тренировки и замеры. Продолжить?</p>
+          <p>
+            {tr(
+              locale,
+              'Тренер сразу перестанет видеть тренировки и замеры. Продолжить?',
+              'The coach will immediately lose access to workouts and measurements. Continue?',
+            )}
+          </p>
           <button className="button danger small" onClick={() => void revoke()} type="button">
-            Да, отозвать
+            {tr(locale, 'Да, отозвать', 'Revoke')}
           </button>
           <button className="button ghost small" onClick={() => setConfirming(false)} type="button">
-            Отмена
+            {tr(locale, 'Отмена', 'Cancel')}
           </button>
         </div>
       )}
@@ -81,6 +97,7 @@ export function TrainerRelationshipCard({ refreshKey = 0 }: { refreshKey?: numbe
 }
 
 export function TrainerDashboard({ onBack }: { onBack: () => void }) {
+  const { locale } = usePreferences();
   const [athletes, setAthletes] = useState<TrainerAthleteSummary[]>([]);
   const [invites, setInvites] = useState<TrainerInviteRecord[]>([]);
   const [email, setEmail] = useState('');
@@ -105,12 +122,14 @@ export function TrainerDashboard({ onBack }: { onBack: () => void }) {
       setInvites(invitePayload.items);
     } catch (requestError) {
       setError(
-        requestError instanceof Error ? requestError.message : 'Не удалось открыть кабинет.',
+        requestError instanceof Error
+          ? requestError.message
+          : tr(locale, 'Не удалось открыть кабинет.', 'Could not open the coach dashboard.'),
       );
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [locale]);
 
   useEffect(() => {
     void reload();
@@ -127,7 +146,9 @@ export function TrainerDashboard({ onBack }: { onBack: () => void }) {
       await reload();
     } catch (requestError) {
       setError(
-        requestError instanceof Error ? requestError.message : 'Не удалось создать приглашение.',
+        requestError instanceof Error
+          ? requestError.message
+          : tr(locale, 'Не удалось создать приглашение.', 'Could not create an invitation.'),
       );
     }
   }
@@ -137,7 +158,9 @@ export function TrainerDashboard({ onBack }: { onBack: () => void }) {
     try {
       await navigator.clipboard.writeText(shareUrl);
     } catch {
-      setError('Скопируй ссылку из поля вручную.');
+      setError(
+        tr(locale, 'Скопируй ссылку из поля вручную.', 'Copy the link from the field manually.'),
+      );
     }
   }
 
@@ -148,7 +171,11 @@ export function TrainerDashboard({ onBack }: { onBack: () => void }) {
     try {
       setDetails(await loadTrainerAthlete(athlete.id));
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Данные недоступны.');
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : tr(locale, 'Данные недоступны.', 'Data is unavailable.'),
+      );
     }
   }
 
@@ -161,7 +188,11 @@ export function TrainerDashboard({ onBack }: { onBack: () => void }) {
       setDetails(null);
       await reload();
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Не удалось убрать ученика.');
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : tr(locale, 'Не удалось убрать ученика.', 'Could not remove the athlete.'),
+      );
     }
   }
 
@@ -172,7 +203,9 @@ export function TrainerDashboard({ onBack }: { onBack: () => void }) {
       await reload();
     } catch (requestError) {
       setError(
-        requestError instanceof Error ? requestError.message : 'Не удалось отозвать приглашение.',
+        requestError instanceof Error
+          ? requestError.message
+          : tr(locale, 'Не удалось отозвать приглашение.', 'Could not revoke the invitation.'),
       );
     }
   }
@@ -181,37 +214,43 @@ export function TrainerDashboard({ onBack }: { onBack: () => void }) {
     return (
       <section className="screen trainer-dashboard">
         <button className="button ghost small" onClick={() => setSelected(null)} type="button">
-          ‹ Подопечные
+          ‹ {tr(locale, 'Подопечные', 'Athletes')}
         </button>
         <div className="trainer-heading">
           <div>
-            <p className="eyebrow">Ученик</p>
+            <p className="eyebrow">{tr(locale, 'Ученик', 'Athlete')}</p>
             <h1>{selected.displayName}</h1>
           </div>
-          <span className="read-only-badge">👁 Только чтение</span>
+          <span className="read-only-badge">👁 {tr(locale, 'Только чтение', 'Read only')}</span>
         </div>
         {error && <p className="auth-error">{error}</p>}
         {!details ? (
-          <p className="sets-line muted">Загружаем историю…</p>
+          <p className="sets-line muted">{tr(locale, 'Загружаем историю…', 'Loading history…')}</p>
         ) : (
           <AthleteReadOnlyDetails {...details} />
         )}
         {confirmRevoke === selected.id ? (
           <div className="inline-confirmation">
-            <p>Убрать ученика? После этого его данные сразу станут недоступны.</p>
+            <p>
+              {tr(
+                locale,
+                'Убрать ученика? После этого его данные сразу станут недоступны.',
+                'Remove this athlete? Their data will become unavailable immediately.',
+              )}
+            </p>
             <button
               className="button danger small"
               onClick={() => void removeAthlete(selected.id)}
               type="button"
             >
-              Да, убрать
+              {tr(locale, 'Да, убрать', 'Remove')}
             </button>
             <button
               className="button ghost small"
               onClick={() => setConfirmRevoke(null)}
               type="button"
             >
-              Отмена
+              {tr(locale, 'Отмена', 'Cancel')}
             </button>
           </div>
         ) : (
@@ -220,7 +259,7 @@ export function TrainerDashboard({ onBack }: { onBack: () => void }) {
             onClick={() => setConfirmRevoke(selected.id)}
             type="button"
           >
-            Убрать ученика из кабинета
+            {tr(locale, 'Убрать ученика из кабинета', 'Remove athlete from dashboard')}
           </button>
         )}
       </section>
@@ -230,19 +269,27 @@ export function TrainerDashboard({ onBack }: { onBack: () => void }) {
   return (
     <section className="screen trainer-dashboard">
       <button className="button ghost small" onClick={onBack} type="button">
-        ‹ Моя тренировка
+        ‹ {tr(locale, 'Моя тренировка', 'My workout')}
       </button>
       <div className="trainer-heading">
         <div>
-          <p className="eyebrow">Тренерский кабинет</p>
-          <h1>Подопечные</h1>
+          <p className="eyebrow">{tr(locale, 'Тренерский кабинет', 'Coach dashboard')}</p>
+          <h1>{tr(locale, 'Подопечные', 'Athletes')}</h1>
         </div>
-        <span className="read-only-badge">👁 Только чтение</span>
+        <span className="read-only-badge">👁 {tr(locale, 'Только чтение', 'Read only')}</span>
       </div>
-      <p className="intro">Ты видишь тренировки и замеры только после принятого приглашения.</p>
+      <p className="intro">
+        {tr(
+          locale,
+          'Ты видишь тренировки и замеры только после принятого приглашения.',
+          'You can see workouts and measurements only after an invitation is accepted.',
+        )}
+      </p>
       <section className="trainer-invite-card">
-        <h2>Пригласить ученика</h2>
-        <label htmlFor="trainer-invite-email">Google email — необязательно</label>
+        <h2>{tr(locale, 'Пригласить ученика', 'Invite an athlete')}</h2>
+        <label htmlFor="trainer-invite-email">
+          {tr(locale, 'Google email — необязательно', 'Google email — optional')}
+        </label>
         <input
           id="trainer-invite-email"
           onChange={(event) => setEmail(event.target.value)}
@@ -251,47 +298,58 @@ export function TrainerDashboard({ onBack }: { onBack: () => void }) {
           value={email}
         />
         <button className="button primary full" onClick={() => void createInvite()} type="button">
-          Создать ссылку на 7 дней
+          {tr(locale, 'Создать ссылку на 7 дней', 'Create a 7-day link')}
         </button>
         {shareUrl && (
           <div className="share-link" aria-live="polite">
-            <input aria-label="Ссылка-приглашение" readOnly value={shareUrl} />
+            <input
+              aria-label={tr(locale, 'Ссылка-приглашение', 'Invitation link')}
+              readOnly
+              value={shareUrl}
+            />
             <button className="button ghost small" onClick={() => void copyInvite()} type="button">
-              Копировать
+              {tr(locale, 'Копировать', 'Copy')}
             </button>
           </div>
         )}
       </section>
       {error && <p className="auth-error">{error}</p>}
       {loading ? (
-        <p className="sets-line muted">Загружаем кабинет…</p>
+        <p className="sets-line muted">{tr(locale, 'Загружаем кабинет…', 'Loading dashboard…')}</p>
       ) : athletes.length ? (
         <div className="trainer-roster">
           {athletes.map((athlete) => (
             <button onClick={() => void openAthlete(athlete)} key={athlete.id} type="button">
               <span>{athlete.displayName}</span>
-              <small>Подключён {formatDate(athlete.linkedAt)}</small>
+              <small>
+                {tr(locale, 'Подключён', 'Connected')} {formatDate(athlete.linkedAt, locale)}
+              </small>
               <b>›</b>
             </button>
           ))}
         </div>
       ) : (
-        <p className="sets-line muted">Пока нет подключённых учеников.</p>
+        <p className="sets-line muted">
+          {tr(locale, 'Пока нет подключённых учеников.', 'No connected athletes yet.')}
+        </p>
       )}
       {invites.some((invite) => invite.status === 'pending') && (
         <section className="pending-invites">
-          <h2>Ожидают принятия</h2>
+          <h2>{tr(locale, 'Ожидают принятия', 'Pending invitations')}</h2>
           {invites
             .filter((invite) => invite.status === 'pending')
             .map((invite) => (
               <div key={invite.id}>
-                <span>{invite.email ?? 'Ссылка без привязки к email'}</span>
+                <span>
+                  {invite.email ??
+                    tr(locale, 'Ссылка без привязки к email', 'Link not restricted to an email')}
+                </span>
                 <button
                   className="danger-text"
                   onClick={() => void cancelInvite(invite.id)}
                   type="button"
                 >
-                  Отозвать
+                  {tr(locale, 'Отозвать', 'Revoke')}
                 </button>
               </div>
             ))}
@@ -308,67 +366,80 @@ function AthleteReadOnlyDetails({
   workouts: WorkoutRecord[];
   measurements: MeasurementRecord[];
 }) {
+  const { locale, unitSystem } = usePreferences();
   return (
     <div className="athlete-read-only-details">
       <section>
-        <h2>Последние тренировки</h2>
+        <h2>{tr(locale, 'Последние тренировки', 'Recent workouts')}</h2>
         {workouts.length ? (
           workouts.slice(0, 10).map((workout) => (
             <article key={workout.id}>
-              <strong>{formatDate(workout.startedAt)}</strong>
+              <strong>{formatDate(workout.startedAt, locale)}</strong>
               <span>
-                {workout.exercises.length} упр. · {workout.sets.length}{' '}
-                {setCountLabel(workout.sets.length)}
+                {workout.exercises.length} {tr(locale, 'упр.', 'exercises')} · {workout.sets.length}{' '}
+                {setCountLabel(workout.sets.length, locale)}
               </span>
               <small>
                 {workout.sets
                   .slice(0, 8)
-                  .map((set) => `${set.weightKg}×${set.reps}`)
-                  .join(' · ') || 'Без подходов'}
+                  .map((set) => `${formatWeight(set.weightKg, locale, unitSystem)}×${set.reps}`)
+                  .join(' · ') || tr(locale, 'Без подходов', 'No sets')}
               </small>
             </article>
           ))
         ) : (
-          <p className="sets-line muted">Тренировок ещё нет.</p>
+          <p className="sets-line muted">{tr(locale, 'Тренировок ещё нет.', 'No workouts yet.')}</p>
         )}
       </section>
       <section>
-        <h2>Последние замеры</h2>
+        <h2>{tr(locale, 'Последние замеры', 'Recent measurements')}</h2>
         {measurements.length ? (
           measurements.slice(0, 5).map((measurement) => (
             <article key={measurement.id}>
-              <strong>{formatDate(measurement.measuredOn)}</strong>
-              <span>{formatMeasurements(measurement)}</span>
+              <strong>{formatDate(measurement.measuredOn, locale)}</strong>
+              <span>{formatMeasurements(measurement, locale, unitSystem)}</span>
             </article>
           ))
         ) : (
-          <p className="sets-line muted">Замеров ещё нет.</p>
+          <p className="sets-line muted">
+            {tr(locale, 'Замеров ещё нет.', 'No measurements yet.')}
+          </p>
         )}
       </section>
     </div>
   );
 }
 
-function formatMeasurements(measurement: MeasurementRecord) {
-  const labels: Record<string, string> = {
-    heightCm: 'рост',
-    weightKg: 'вес',
-    waistCm: 'талия',
-    chestCm: 'грудь',
-    bicepsCm: 'бицепс',
+function formatMeasurements(
+  measurement: MeasurementRecord,
+  locale: 'ru' | 'en',
+  unitSystem: 'metric' | 'imperial',
+) {
+  const labels: Record<string, [string, string]> = {
+    heightCm: ['рост', 'height'],
+    weightKg: ['вес', 'weight'],
+    waistCm: ['талия', 'waist'],
+    chestCm: ['грудь', 'chest'],
+    bicepsCm: ['бицепс', 'biceps'],
   };
   return Object.entries(measurement.values)
     .filter((entry): entry is [string, number] => entry[1] !== null)
     .slice(0, 4)
-    .map(([key, value]) => `${labels[key] ?? key}: ${value}`)
+    .map(([key, value]) => {
+      const label = labels[key]?.[locale === 'en' ? 1 : 0] ?? key;
+      return `${label}: ${displayMeasurement(key as keyof MeasurementRecord['values'], value, locale, unitSystem)}`;
+    })
     .join(' · ');
 }
 
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat('ru-RU', { dateStyle: 'medium' }).format(new Date(value));
+function formatDate(value: string, locale: 'ru' | 'en') {
+  return new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'ru-RU', {
+    dateStyle: 'medium',
+  }).format(new Date(value));
 }
 
-function setCountLabel(value: number) {
+function setCountLabel(value: number, locale: 'ru' | 'en') {
+  if (locale === 'en') return value === 1 ? 'set' : 'sets';
   const mod100 = value % 100;
   const mod10 = value % 10;
   if (mod100 >= 11 && mod100 <= 14) return 'подходов';

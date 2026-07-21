@@ -19,6 +19,7 @@ export const userRoles = ['athlete', 'admin', 'trainer', 'superadmin'] as const;
 export const voiceStatuses = ['pending', 'processing', 'confirmed', 'failed'] as const;
 export const setEntrySources = ['manual', 'natural_text', 'voice_ai'] as const;
 export const notificationFrequencies = ['daily', 'weekdays', 'weekly'] as const;
+export const unitSystems = ['metric', 'imperial'] as const;
 
 export const currentUserSchema = z.object({
   id: z.string().uuid(),
@@ -27,6 +28,12 @@ export const currentUserSchema = z.object({
   avatarUrl: z.string().url().nullable(),
   role: z.enum(userRoles),
   locale: z.enum(['ru', 'en']),
+  unitSystem: z.enum(unitSystems),
+});
+
+export const updateUserPreferencesSchema = z.object({
+  locale: z.enum(['ru', 'en']),
+  unitSystem: z.enum(unitSystems),
 });
 
 export const exerciseSchema = z.object({
@@ -362,4 +369,6 @@ export type SyncMutation = z.infer<typeof syncMutationSchema>;
 export type SetRecord = z.infer<typeof setRecordSchema>;
 export type WorkoutRecord = z.infer<typeof workoutRecordSchema>;
 export type CurrentUser = z.infer<typeof currentUserSchema>;
+export type UpdateUserPreferences = z.infer<typeof updateUserPreferencesSchema>;
+export type UnitSystem = CurrentUser['unitSystem'];
 export type UserRole = CurrentUser['role'];

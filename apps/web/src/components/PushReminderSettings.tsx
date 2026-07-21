@@ -11,8 +11,12 @@ import {
   updateNotificationPreferences,
   type NotificationConfig,
 } from '../lib/notifications';
+import { tr, usePreferences } from '../lib/preferences';
 
-const weekdays = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+const weekdayLabels = {
+  ru: ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'],
+  en: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+};
 
 const initialPreferences: UpdateNotificationPreferences = {
   enabled: false,
@@ -25,6 +29,7 @@ const initialPreferences: UpdateNotificationPreferences = {
 };
 
 export function PushReminderSettings() {
+  const { locale } = usePreferences();
   const [config, setConfig] = useState<NotificationConfig | null>(null);
   const [preferences, setPreferences] = useState(initialPreferences);
   const [loading, setLoading] = useState(true);
@@ -47,7 +52,15 @@ export function PushReminderSettings() {
         });
       })
       .catch(() => {
-        if (active) setError('Не удалось загрузить настройки напоминаний.');
+        if (active) {
+          setError(
+            tr(
+              locale,
+              'Не удалось загрузить настройки напоминаний.',
+              'Could not load reminder settings.',
+            ),
+          );
+        }
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -55,7 +68,7 @@ export function PushReminderSettings() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [locale]);
 
   function validate() {
     if (
@@ -65,7 +78,13 @@ export function PushReminderSettings() {
         preferences.quietEnd,
       )
     ) {
-      setError('Время напоминания попадает в тихие часы. Выбери другое время.');
+      setError(
+        tr(
+          locale,
+          'Время напоминания попадает в тихие часы. Выбери другое время.',
+          'The reminder falls inside quiet hours. Choose another time.',
+        ),
+      );
       return false;
     }
     return true;
@@ -82,10 +101,20 @@ export function PushReminderSettings() {
       subscribed = true;
       const result = await updateNotificationPreferences({ ...preferences, enabled: true });
       setPreferences(result.preferences);
-      setNotice('Напоминания включены на этом устройстве.');
+      setNotice(
+        tr(
+          locale,
+          'Напоминания включены на этом устройстве.',
+          'Reminders are enabled on this device.',
+        ),
+      );
     } catch (requestError) {
       if (subscribed) await unsubscribeFromPush().catch(() => undefined);
-      setError(requestError instanceof Error ? requestError.message : 'Не удалось включить push.');
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : tr(locale, 'Не удалось включить push.', 'Could not enable push notifications.'),
+      );
     } finally {
       setSaving(false);
     }
@@ -99,10 +128,12 @@ export function PushReminderSettings() {
     try {
       const result = await updateNotificationPreferences(preferences);
       setPreferences(result.preferences);
-      setNotice('Расписание сохранено.');
+      setNotice(tr(locale, 'Расписание сохранено.', 'Schedule saved.'));
     } catch (requestError) {
       setError(
-        requestError instanceof Error ? requestError.message : 'Не удалось сохранить расписание.',
+        requestError instanceof Error
+          ? requestError.message
+          : tr(locale, 'Не удалось сохранить расписание.', 'Could not save the schedule.'),
       );
     } finally {
       setSaving(false);
@@ -117,10 +148,12 @@ export function PushReminderSettings() {
       const result = await updateNotificationPreferences({ ...preferences, enabled: false });
       await unsubscribeFromPush();
       setPreferences(result.preferences);
-      setNotice('Напоминания выключены.');
+      setNotice(tr(locale, 'Напоминания выключены.', 'Reminders are off.'));
     } catch (requestError) {
       setError(
-        requestError instanceof Error ? requestError.message : 'Не удалось выключить напоминания.',
+        requestError instanceof Error
+          ? requestError.message
+          : tr(locale, 'Не удалось выключить напоминания.', 'Could not disable reminders.'),
       );
     } finally {
       setSaving(false);
@@ -132,18 +165,27 @@ export function PushReminderSettings() {
   return (
     <section className="push-settings" aria-live="polite">
       <div className="setting">
-        <span>Напоминания</span>
-        <strong>{loading ? 'Проверяем…' : preferences.enabled ? 'Включены' : 'Выключены'}</strong>
+        <span>{tr(locale, 'Напоминания', 'Reminders')}</span>
+        <strong>
+          {loading
+            ? tr(locale, 'Проверяем…', 'Checking…')
+            : preferences.enabled
+              ? tr(locale, 'Включены', 'On')
+              : tr(locale, 'Выключены', 'Off')}
+        </strong>
       </div>
       {!loading && (
         <div className="push-settings-panel">
           <p>
-            Разрешение спрашивается только после нажатия. Напоминания не содержат тренировочных
-            данных.
+            {tr(
+              locale,
+              'Разрешение спрашивается только после нажатия. Напоминания не содержат тренировочных данных.',
+              'Permission is requested only after you tap the button. Reminders contain no workout data.',
+            )}
           </p>
           <div className="push-settings-grid">
             <label>
-              Частота
+              {tr(locale, 'Частота', 'Frequency')}
               <select
                 onChange={(event) =>
                   setPreferences({
@@ -153,21 +195,21 @@ export function PushReminderSettings() {
                 }
                 value={preferences.frequency}
               >
-                <option value="daily">Каждый день</option>
-                <option value="weekdays">По будням</option>
-                <option value="weekly">Раз в неделю</option>
+                <option value="daily">{tr(locale, 'Каждый день', 'Daily')}</option>
+                <option value="weekdays">{tr(locale, 'По будням', 'Weekdays')}</option>
+                <option value="weekly">{tr(locale, 'Раз в неделю', 'Weekly')}</option>
               </select>
             </label>
             {preferences.frequency === 'weekly' && (
               <label>
-                День
+                {tr(locale, 'День', 'Day')}
                 <select
                   onChange={(event) =>
                     setPreferences({ ...preferences, weekday: Number(event.target.value) })
                   }
                   value={preferences.weekday}
                 >
-                  {weekdays.map((weekday, index) => (
+                  {weekdayLabels[locale].map((weekday, index) => (
                     <option key={weekday} value={index}>
                       {weekday}
                     </option>
@@ -176,7 +218,7 @@ export function PushReminderSettings() {
               </label>
             )}
             <label>
-              Время
+              {tr(locale, 'Время', 'Time')}
               <input
                 onChange={(event) =>
                   setPreferences({ ...preferences, reminderTime: event.target.value })
@@ -186,7 +228,7 @@ export function PushReminderSettings() {
               />
             </label>
             <label>
-              Тихие часы с
+              {tr(locale, 'Тихие часы с', 'Quiet hours from')}
               <input
                 onChange={(event) =>
                   setPreferences({ ...preferences, quietStart: event.target.value })
@@ -196,7 +238,7 @@ export function PushReminderSettings() {
               />
             </label>
             <label>
-              Тихие часы до
+              {tr(locale, 'Тихие часы до', 'Quiet hours until')}
               <input
                 onChange={(event) =>
                   setPreferences({ ...preferences, quietEnd: event.target.value })
@@ -206,11 +248,16 @@ export function PushReminderSettings() {
               />
             </label>
           </div>
-          <small>Часовой пояс: {preferences.timeZone}</small>
+          <small>
+            {tr(locale, 'Часовой пояс', 'Time zone')}: {preferences.timeZone}
+          </small>
           {unavailable && (
             <p className="auth-error">
-              Push пока недоступен: открой установленную PWA в поддерживаемом браузере или дождись
-              серверной настройки.
+              {tr(
+                locale,
+                'Push пока недоступен: открой установленную PWA в поддерживаемом браузере или дождись серверной настройки.',
+                'Push is unavailable: open the installed PWA in a supported browser or wait for server configuration.',
+              )}
             </p>
           )}
           {error && <p className="auth-error">{error}</p>}
@@ -224,7 +271,7 @@ export function PushReminderSettings() {
                   onClick={() => void save()}
                   type="button"
                 >
-                  Сохранить
+                  {tr(locale, 'Сохранить', 'Save')}
                 </button>
                 <button
                   className="button ghost small"
@@ -232,7 +279,7 @@ export function PushReminderSettings() {
                   onClick={() => void disable()}
                   type="button"
                 >
-                  Выключить
+                  {tr(locale, 'Выключить', 'Turn off')}
                 </button>
               </>
             ) : (
@@ -242,7 +289,7 @@ export function PushReminderSettings() {
                 onClick={() => void enable()}
                 type="button"
               >
-                Разрешить и включить
+                {tr(locale, 'Разрешить и включить', 'Allow and enable')}
               </button>
             )}
           </div>

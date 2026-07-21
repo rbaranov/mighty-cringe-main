@@ -1,4 +1,4 @@
-import type { MeasurementValues } from '@mighty-cringe/contracts';
+import type { CurrentUser, MeasurementValues, UnitSystem } from '@mighty-cringe/contracts';
 
 import type { LocalMeasurement } from './db';
 
@@ -153,26 +153,60 @@ export function measurementTrend(
   });
 }
 
-export function parseMeasurementCsv(text: string): MeasurementImportResult {
+export function parseMeasurementCsv(
+  text: string,
+  options: { locale?: CurrentUser['locale']; unitSystem?: UnitSystem } = {},
+): MeasurementImportResult {
+  const locale = options.locale ?? 'ru';
+  const unitSystem = options.unitSystem ?? 'metric';
   const lines = text
     .replace(/^\uFEFF/, '')
     .split(/\r?\n/)
     .filter((line) => line.trim());
   if (lines.length < 2) {
-    return { rows: [], errors: ['Нужны строка заголовков и хотя бы одна строка данных.'] };
+    return {
+      rows: [],
+      errors: [
+        message(
+          locale,
+          'Нужны строка заголовков и хотя бы одна строка данных.',
+          'A header and at least one data row are required.',
+        ),
+      ],
+    };
   }
 
   const delimiter = detectDelimiter(lines[0]);
   const headers = splitCsvLine(lines[0], delimiter).map(normalizeHeader);
   const dateIndex = headers.findIndex((header) => dateHeaders.has(header));
-  if (dateIndex < 0) return { rows: [], errors: ['Не найдена обязательная колонка «Дата».'] };
+  if (dateIndex < 0) {
+    return {
+      rows: [],
+      errors: [
+        message(
+          locale,
+          'Не найдена обязательная колонка «Дата».',
+          'Required “Date” column not found.',
+        ),
+      ],
+    };
+  }
   const selfMeasuredIndex = headers.findIndex((header) => selfMeasuredHeaders.has(header));
   const valueColumns = headers.flatMap((header, index) => {
     const key = measurementHeaderAliases[header];
     return key ? [{ index, key }] : [];
   });
   if (!valueColumns.length) {
-    return { rows: [], errors: ['Не найдены колонки замеров: Вес, Рост, Талия и другие.'] };
+    return {
+      rows: [],
+      errors: [
+        message(
+          locale,
+          'Не найдены колонки замеров: Вес, Рост, Талия и другие.',
+          'No measurement columns were found: Weight, Height, Waist, and others.',
+        ),
+      ],
+    };
   }
 
   const rows: MeasurementImportRow[] = [];
@@ -183,11 +217,23 @@ export function parseMeasurementCsv(text: string): MeasurementImportResult {
     const cells = splitCsvLine(lines[lineIndex], delimiter);
     const dateKey = parseDateKey(cells[dateIndex]?.trim() ?? '');
     if (!dateKey) {
-      errors.push(`Строка ${lineNumber}: дата должна быть в формате ДД.ММ.ГГГГ или ГГГГ-ММ-ДД.`);
+      errors.push(
+        message(
+          locale,
+          `Строка ${lineNumber}: дата должна быть в формате ДД.ММ.ГГГГ или ГГГГ-ММ-ДД.`,
+          `Row ${lineNumber}: date must use DD.MM.YYYY or YYYY-MM-DD.`,
+        ),
+      );
       continue;
     }
     if (seenDates.has(dateKey)) {
-      errors.push(`Строка ${lineNumber}: дата ${dateKey} повторяется в файле.`);
+      errors.push(
+        message(
+          locale,
+          `Строка ${lineNumber}: дата ${dateKey} повторяется в файле.`,
+          `Row ${lineNumber}: date ${dateKey} is duplicated.`,
+        ),
+      );
       continue;
     }
     seenDates.add(dateKey);
@@ -197,11 +243,29 @@ export function parseMeasurementCsv(text: string): MeasurementImportResult {
     for (const column of valueColumns) {
       const raw = cells[column.index]?.trim() ?? '';
       if (!raw) continue;
-      const value = Number(raw.replace(',', '.').replace(/\s*(кг|см)$/i, ''));
+      const unitMatch = raw.match(/\s*(кг|kg|см|cm|lb|lbs|pounds?|in|inch|inches)$/i);
+      const displayValue = Number(
+        raw.replace(',', '.').replace(/\s*(кг|kg|см|cm|lb|lbs|pounds?|in|inch|inches)$/i, ''),
+      );
       const definition = measurementDefinitions.find((item) => item.key === column.key)!;
+      const explicitUnit = unitMatch?.[1].toLocaleLowerCase();
+      const inputSystem = explicitUnit
+        ? ['lb', 'lbs', 'pound', 'pounds', 'in', 'inch', 'inches'].includes(explicitUnit)
+          ? 'imperial'
+          : 'metric'
+        : unitSystem;
+      const value = canonicalMeasurementValue(column.key, displayValue, inputSystem);
       if (!Number.isFinite(value) || value <= 0 || value > definition.maximum) {
+        const label =
+          locale === 'en'
+            ? (englishMeasurementLabels[column.key] ?? definition.label)
+            : definition.label;
         errors.push(
-          `Строка ${lineNumber}: «${definition.label}» должно быть числом от 0 до ${definition.maximum}.`,
+          message(
+            locale,
+            `Строка ${lineNumber}: «${label}» должно быть числом от 0 до ${definition.maximum}.`,
+            `Row ${lineNumber}: “${label}” must be a positive number in the allowed range.`,
+          ),
         );
         invalidValue = true;
         break;
@@ -210,7 +274,13 @@ export function parseMeasurementCsv(text: string): MeasurementImportResult {
     }
     if (invalidValue) continue;
     if (!Object.values(values).some((value) => value !== null)) {
-      errors.push(`Строка ${lineNumber}: нет ни одного заполненного замера.`);
+      errors.push(
+        message(
+          locale,
+          `Строка ${lineNumber}: нет ни одного заполненного замера.`,
+          `Row ${lineNumber}: no measurements were provided.`,
+        ),
+      );
       continue;
     }
 
@@ -223,6 +293,28 @@ export function parseMeasurementCsv(text: string): MeasurementImportResult {
   }
   return { rows, errors };
 }
+
+function canonicalMeasurementValue(key: MeasurementKey, value: number, unitSystem: UnitSystem) {
+  if (unitSystem === 'metric') return value;
+  const canonical = key === 'weightKg' ? value / 2.2046226218 : value * 2.54;
+  return Math.round((canonical + Number.EPSILON) * 100) / 100;
+}
+
+function message(locale: CurrentUser['locale'], russian: string, english: string) {
+  return locale === 'en' ? english : russian;
+}
+
+const englishMeasurementLabels: Partial<Record<MeasurementKey, string>> = {
+  heightCm: 'Height',
+  weightKg: 'Weight',
+  neckCm: 'Neck',
+  chestCm: 'Chest',
+  bicepsCm: 'Biceps',
+  thighLeftCm: 'Left thigh',
+  thighRightCm: 'Right thigh',
+  calfCm: 'Calf',
+  waistCm: 'Waist',
+};
 
 function emptyMeasurementValues(): MeasurementValues {
   return Object.fromEntries(
@@ -292,38 +384,56 @@ const selfMeasuredHeaders = new Set([
 const measurementHeaderAliases: Record<string, MeasurementKey> = {
   height: 'heightCm',
   height_cm: 'heightCm',
+  height_in: 'heightCm',
   рост: 'heightCm',
   рост_см: 'heightCm',
+  рост_in: 'heightCm',
   weight: 'weightKg',
   weight_kg: 'weightKg',
+  weight_lb: 'weightKg',
   вес: 'weightKg',
   вес_кг: 'weightKg',
+  вес_lb: 'weightKg',
   neck: 'neckCm',
   neck_cm: 'neckCm',
+  neck_in: 'neckCm',
   шея: 'neckCm',
+  шея_in: 'neckCm',
   chest: 'chestCm',
   chest_cm: 'chestCm',
+  chest_in: 'chestCm',
   грудь: 'chestCm',
+  грудь_in: 'chestCm',
   biceps: 'bicepsCm',
   biceps_cm: 'bicepsCm',
+  biceps_in: 'bicepsCm',
   бицепс: 'bicepsCm',
+  бицепс_in: 'bicepsCm',
   thigh_left: 'thighLeftCm',
   left_thigh: 'thighLeftCm',
+  left_thigh_in: 'thighLeftCm',
   бедро_левое: 'thighLeftCm',
+  бедро_левое_in: 'thighLeftCm',
   левое_бедро: 'thighLeftCm',
   бедро_л: 'thighLeftCm',
   thigh_right: 'thighRightCm',
   right_thigh: 'thighRightCm',
+  right_thigh_in: 'thighRightCm',
   бедро_правое: 'thighRightCm',
+  бедро_правое_in: 'thighRightCm',
   правое_бедро: 'thighRightCm',
   бедро_п: 'thighRightCm',
   calf: 'calfCm',
   calf_cm: 'calfCm',
+  calf_in: 'calfCm',
   икра: 'calfCm',
+  икра_in: 'calfCm',
   waist: 'waistCm',
   waist_cm: 'waistCm',
+  waist_in: 'waistCm',
   belly: 'waistCm',
   талия: 'waistCm',
+  талия_in: 'waistCm',
   живот: 'waistCm',
   живот_талия: 'waistCm',
 };
