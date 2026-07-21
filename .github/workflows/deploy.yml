@@ -11,11 +11,13 @@ jobs:
     environment: production
     runs-on: [self-hosted, linux, x64, mighty-cringe-production]
     steps:
+      - name: Check out the approved main revision
+        uses: actions/checkout@v4
+
       - name: Deploy the approved main revision
+        working-directory: infra/production
+        env:
+          PRODUCTION_ENV_FILE: /etc/mighty-cringe/production.env
         run: |
           set -eu
-          cd /srv/mighty-cringe
-          git fetch origin main
-          git reset --hard origin/main
-          cd infra/production
-          docker compose up -d --build
+          docker compose up -d --build --remove-orphans
