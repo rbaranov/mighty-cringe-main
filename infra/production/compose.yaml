@@ -82,13 +82,8 @@ services:
     build:
       context: ../..
       dockerfile: infra/production/Dockerfile.api
-    command:
-      [
-        './packages/db/node_modules/.bin/drizzle-kit',
-        'migrate',
-        '--config',
-        'packages/db/drizzle.config.ts',
-      ]
+    working_dir: /app/packages/db
+    command: ['./node_modules/.bin/drizzle-kit', 'migrate', '--config', 'drizzle.config.ts']
     restart: 'no'
     env_file: ${PRODUCTION_ENV_FILE:-.env}
     depends_on:
