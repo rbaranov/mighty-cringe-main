@@ -3,10 +3,13 @@ import { randomUUID } from 'node:crypto';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import {
+  createMeasurementSchema,
   createSetSchema,
   createWorkoutSchema,
+  deleteMeasurementSchema,
   deleteSetSchema,
   syncMutationSchema,
+  updateMeasurementSchema,
   updateSetSchema,
   updateWorkoutSchema,
 } from '@mighty-cringe/contracts';
@@ -249,6 +252,57 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
     }
   });
 
+  app.get('/api/v1/measurements', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    return { items: await repository.listMeasurements(user.id) };
+  });
+
+  app.post('/api/v1/measurements', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    const parsed = createMeasurementSchema.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() });
+    try {
+      const result = await repository.createMeasurement(user.id, parsed.data);
+      return reply.status(result.duplicate ? 200 : 201).send(result);
+    } catch (error) {
+      return sendRepositoryError(reply, error);
+    }
+  });
+
+  app.patch('/api/v1/measurements/:measurementId', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    const measurementId = (request.params as { measurementId?: unknown }).measurementId;
+    const parsed = updateMeasurementSchema.safeParse({
+      ...(request.body as object),
+      measurementId,
+    });
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() });
+    try {
+      return await repository.updateMeasurement(user.id, parsed.data);
+    } catch (error) {
+      return sendRepositoryError(reply, error);
+    }
+  });
+
+  app.delete('/api/v1/measurements/:measurementId', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    const measurementId = (request.params as { measurementId?: unknown }).measurementId;
+    const parsed = deleteMeasurementSchema.safeParse({
+      ...(request.body as object),
+      measurementId,
+    });
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() });
+    try {
+      return await repository.deleteMeasurement(user.id, parsed.data);
+    } catch (error) {
+      return sendRepositoryError(reply, error);
+    }
+  });
+
   app.post('/api/v1/sync', async (request, reply) => {
     const user = await getCurrentUser(request, repository, now());
     if (!user) return reply.status(401).send({ error: 'Authentication required' });
@@ -274,8 +328,20 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
         case 'set.delete':
           result = await repository.deleteSet(user.id, parsed.data.payload);
           break;
+        case 'measurement.create':
+          result = await repository.createMeasurement(user.id, parsed.data.payload);
+          break;
+        case 'measurement.update':
+          result = await repository.updateMeasurement(user.id, parsed.data.payload);
+          break;
+        case 'measurement.delete':
+          result = await repository.deleteMeasurement(user.id, parsed.data.payload);
+          break;
       }
-      const created = parsed.data.type === 'workout.create' || parsed.data.type === 'set.create';
+      const created =
+        parsed.data.type === 'workout.create' ||
+        parsed.data.type === 'set.create' ||
+        parsed.data.type === 'measurement.create';
       return reply
         .status(!result.duplicate && created ? 201 : 200)
         .send({ ...result, type: parsed.data.type });

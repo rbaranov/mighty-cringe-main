@@ -1,0 +1,2 @@
+ALTER TABLE "measurement_entries" ADD COLUMN "revision" integer DEFAULT 1 NOT NULL;--> statement-breakpoint
+ALTER TABLE "measurement_entries" ADD COLUMN "updated_at" timestamp with time zone DEFAULT now() NOT NULL;

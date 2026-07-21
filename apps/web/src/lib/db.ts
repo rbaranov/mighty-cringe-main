@@ -1,6 +1,12 @@
 import Dexie, { type EntityTable } from 'dexie';
 
-import type { Exercise, SetRecord, SyncMutation, WorkoutRecord } from '@mighty-cringe/contracts';
+import type {
+  Exercise,
+  MeasurementRecord,
+  SetRecord,
+  SyncMutation,
+  WorkoutRecord,
+} from '@mighty-cringe/contracts';
 
 export type SyncState = 'pending' | 'synced' | 'conflict';
 
@@ -9,6 +15,11 @@ export type LocalWorkout = Omit<WorkoutRecord, 'sets'> & {
 };
 
 export type LocalSet = SetRecord & {
+  syncState: SyncState;
+  deleted: boolean;
+};
+
+export type LocalMeasurement = MeasurementRecord & {
   syncState: SyncState;
   deleted: boolean;
 };
@@ -22,12 +33,12 @@ export type OutboxMutation = {
 
 export type SyncConflict = {
   id: string;
-  entityType: 'workout' | 'set';
+  entityType: 'workout' | 'set' | 'measurement';
   entityId: string;
   createdAt: string;
   message: string;
   mutation: SyncMutation;
-  current: WorkoutRecord | SetRecord | null;
+  current: WorkoutRecord | SetRecord | MeasurementRecord | null;
 };
 
 type LocalMeta = {
@@ -39,6 +50,7 @@ export class MightyCringeDatabase extends Dexie {
   workouts!: EntityTable<LocalWorkout, 'id'>;
   sets!: EntityTable<LocalSet, 'id'>;
   exercises!: EntityTable<Exercise, 'id'>;
+  measurements!: EntityTable<LocalMeasurement, 'id'>;
   outbox!: EntityTable<OutboxMutation, 'id'>;
   conflicts!: EntityTable<SyncConflict, 'id'>;
   meta!: EntityTable<LocalMeta, 'key'>;
@@ -119,6 +131,15 @@ export class MightyCringeDatabase extends Dexie {
             set.deleted ??= false;
           });
       });
+    this.version(5).stores({
+      workouts: 'id, startedAt, syncState',
+      sets: 'id, workoutId, exerciseId, performedAt, position, syncState, deleted',
+      exercises: 'id, *primaryMuscles',
+      measurements: 'id, measuredOn, syncState, deleted',
+      outbox: 'id, sequence, createdAt',
+      conflicts: 'id, entityType, entityId, createdAt',
+      meta: 'key',
+    });
   }
 }
 
@@ -128,25 +149,35 @@ export async function activateLocalUser(userId: string) {
   const activeUser = await db.meta.get('activeUserId');
   if (activeUser?.value === userId) return;
 
-  await db.transaction('rw', db.workouts, db.sets, db.outbox, db.conflicts, db.meta, async () => {
-    await Promise.all([
-      db.workouts.clear(),
-      db.sets.clear(),
-      db.outbox.clear(),
-      db.conflicts.clear(),
-    ]);
-    await db.meta.put({ key: 'activeUserId', value: userId });
-  });
+  await db.transaction(
+    'rw',
+    [db.workouts, db.sets, db.measurements, db.outbox, db.conflicts, db.meta],
+    async () => {
+      await Promise.all([
+        db.workouts.clear(),
+        db.sets.clear(),
+        db.measurements.clear(),
+        db.outbox.clear(),
+        db.conflicts.clear(),
+      ]);
+      await db.meta.put({ key: 'activeUserId', value: userId });
+    },
+  );
 }
 
 export async function clearLocalUserData() {
-  await db.transaction('rw', db.workouts, db.sets, db.outbox, db.conflicts, db.meta, async () => {
-    await Promise.all([
-      db.workouts.clear(),
-      db.sets.clear(),
-      db.outbox.clear(),
-      db.conflicts.clear(),
-    ]);
-    await db.meta.delete('activeUserId');
-  });
+  await db.transaction(
+    'rw',
+    [db.workouts, db.sets, db.measurements, db.outbox, db.conflicts, db.meta],
+    async () => {
+      await Promise.all([
+        db.workouts.clear(),
+        db.sets.clear(),
+        db.measurements.clear(),
+        db.outbox.clear(),
+        db.conflicts.clear(),
+      ]);
+      await db.meta.delete('activeUserId');
+    },
+  );
 }

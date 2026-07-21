@@ -105,6 +105,63 @@ export const setRecordSchema = setInputSchema.extend({
   updatedAt: z.string().datetime(),
 });
 
+const optionalMeasurement = (maximum: number) =>
+  z.number().positive().max(maximum).nullable().default(null);
+
+export const measurementValuesSchema = z
+  .object({
+    heightCm: optionalMeasurement(300),
+    weightKg: optionalMeasurement(500),
+    neckCm: optionalMeasurement(200),
+    chestCm: optionalMeasurement(300),
+    bicepsCm: optionalMeasurement(150),
+    thighLeftCm: optionalMeasurement(200),
+    thighRightCm: optionalMeasurement(200),
+    calfCm: optionalMeasurement(150),
+    waistCm: optionalMeasurement(300),
+  })
+  .refine((values) => Object.values(values).some((value) => value !== null), {
+    message: 'At least one measurement value is required',
+  });
+
+export const measurementRecordSchema = z.object({
+  id: z.string().uuid(),
+  measuredOn: z.string().datetime(),
+  isSelfMeasured: z.boolean(),
+  values: measurementValuesSchema,
+  revision: z.number().int().positive(),
+  updatedAt: z.string().datetime(),
+});
+
+export const createMeasurementSchema = z.object({
+  id: z.string().uuid(),
+  clientMutationId: z.string().uuid(),
+  measuredOn: z.string().datetime(),
+  isSelfMeasured: z.boolean().default(false),
+  values: measurementValuesSchema,
+});
+
+const measurementChangesSchema = z
+  .object({
+    measuredOn: z.string().datetime().optional(),
+    isSelfMeasured: z.boolean().optional(),
+    values: measurementValuesSchema.optional(),
+  })
+  .refine((changes) => Object.keys(changes).length > 0, 'At least one change is required');
+
+export const updateMeasurementSchema = z.object({
+  clientMutationId: z.string().uuid(),
+  measurementId: z.string().uuid(),
+  baseRevision: z.number().int().nonnegative(),
+  changes: measurementChangesSchema,
+});
+
+export const deleteMeasurementSchema = z.object({
+  clientMutationId: z.string().uuid(),
+  measurementId: z.string().uuid(),
+  baseRevision: z.number().int().nonnegative(),
+});
+
 export const createWorkoutSchema = z.object({
   id: z.string().uuid(),
   clientMutationId: z.string().uuid(),
@@ -163,6 +220,9 @@ export const syncMutationSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('set.create'), payload: createSetSchema }),
   z.object({ type: z.literal('set.update'), payload: updateSetSchema }),
   z.object({ type: z.literal('set.delete'), payload: deleteSetSchema }),
+  z.object({ type: z.literal('measurement.create'), payload: createMeasurementSchema }),
+  z.object({ type: z.literal('measurement.update'), payload: updateMeasurementSchema }),
+  z.object({ type: z.literal('measurement.delete'), payload: deleteMeasurementSchema }),
 ]);
 
 export const workoutRecordSchema = z.object({
@@ -185,6 +245,11 @@ export type CreateSetInput = z.infer<typeof createSetSchema>;
 export type UpdateWorkoutInput = z.infer<typeof updateWorkoutSchema>;
 export type UpdateSetInput = z.infer<typeof updateSetSchema>;
 export type DeleteSetInput = z.infer<typeof deleteSetSchema>;
+export type MeasurementValues = z.infer<typeof measurementValuesSchema>;
+export type MeasurementRecord = z.infer<typeof measurementRecordSchema>;
+export type CreateMeasurementInput = z.infer<typeof createMeasurementSchema>;
+export type UpdateMeasurementInput = z.infer<typeof updateMeasurementSchema>;
+export type DeleteMeasurementInput = z.infer<typeof deleteMeasurementSchema>;
 export type SyncMutation = z.infer<typeof syncMutationSchema>;
 export type SetRecord = z.infer<typeof setRecordSchema>;
 export type WorkoutRecord = z.infer<typeof workoutRecordSchema>;
