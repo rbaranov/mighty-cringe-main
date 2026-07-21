@@ -4,6 +4,7 @@ import type { CurrentUser, Exercise, SetInput, WorkoutExercise } from '@mighty-c
 import { useLiveQuery } from 'dexie-react-hooks';
 
 import { SetSheet } from './components/SetSheet';
+import { ProgressView } from './components/ProgressView';
 import {
   activateLocalUser,
   clearLocalUserData,
@@ -472,7 +473,7 @@ function AuthenticatedApp({ user, onLogout }: { user: CurrentUser; onLogout: () 
       )}
       {view === 'catalog' && <CatalogView exercises={exercises} />}
       {view === 'progress' && (
-        <ProgressView sets={sets.filter((set) => !set.deleted)} workouts={workouts} />
+        <ProgressView exercises={exercises} sets={sets} workouts={workouts} />
       )}
       {view === 'settings' && (
         <SettingsView conflicts={conflicts} onLogout={onLogout} user={user} />
@@ -879,36 +880,6 @@ function CatalogView({ exercises }: { exercises: Exercise[] }) {
           </article>
         ))}
       </div>
-    </section>
-  );
-}
-
-function ProgressView({ workouts, sets }: { workouts: LocalWorkout[]; sets: LocalSet[] }) {
-  const maxEstimatedOneRep = sets.reduce((maximum, set) => {
-    const estimated = set.weightKg * (1 + (set.reps + (set.rir ?? 0)) / 30);
-    return Math.max(maximum, estimated);
-  }, 0);
-  return (
-    <section className="screen">
-      <p className="eyebrow">Твоё движение</p>
-      <h1>Прогресс</h1>
-      <div className="progress-card">
-        <span>Тренировок завершено</span>
-        <strong>{workouts.filter((workout) => workout.endedAt).length}</strong>
-        <p>Календарь и серия появятся по мере истории.</p>
-      </div>
-      <div className="progress-card lime">
-        <span>Лучший расчётный 1RM</span>
-        <strong>{maxEstimatedOneRep ? `${Math.round(maxEstimatedOneRep)} кг` : '—'}</strong>
-        <p>Формула Epley с учётом RIR.</p>
-      </div>
-      <div className="section-head">
-        <h2>Замеры</h2>
-        <span>скоро</span>
-      </div>
-      <p className="intro">
-        История тела, тренды и импорт прошлых измерений будут сохранены в следующих срезах.
-      </p>
     </section>
   );
 }
