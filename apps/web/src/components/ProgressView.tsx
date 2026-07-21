@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 
 import type { Exercise } from '@mighty-cringe/contracts';
 
-import type { LocalSet, LocalWorkout } from '../lib/db';
+import type { LocalMeasurement, LocalSet, LocalWorkout } from '../lib/db';
 import {
   buildCalendarMonth,
   buildExerciseProgress,
@@ -12,6 +12,7 @@ import {
   volumeForRecentDays,
   type ExerciseProgressPoint,
 } from '../lib/progress';
+import { BodyMeasurementsSection, type MeasurementDraft } from './BodyMeasurementsSection';
 
 const weekdayLabels = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
@@ -33,10 +34,18 @@ export function ProgressView({
   workouts,
   sets,
   exercises,
+  measurements,
+  onDeleteMeasurement,
+  onImportMeasurements,
+  onSaveMeasurement,
 }: {
   workouts: LocalWorkout[];
   sets: LocalSet[];
   exercises: Exercise[];
+  measurements: LocalMeasurement[];
+  onDeleteMeasurement: (measurement: LocalMeasurement) => void;
+  onImportMeasurements: (drafts: MeasurementDraft[]) => Promise<void>;
+  onSaveMeasurement: (draft: MeasurementDraft, existing: LocalMeasurement | null) => Promise<void>;
 }) {
   const timeZone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', []);
   const todayKey = dateKeyInTimeZone(new Date(), timeZone);
@@ -275,13 +284,12 @@ export function ProgressView({
         )}
       </section>
 
-      <div className="section-head">
-        <h2>Замеры</h2>
-        <span>следующий шаг</span>
-      </div>
-      <p className="intro">
-        Вес и замеры тела добавим отдельно, чтобы не смешивать изменения силы и состава тела.
-      </p>
+      <BodyMeasurementsSection
+        measurements={measurements}
+        onDelete={onDeleteMeasurement}
+        onImport={onImportMeasurements}
+        onSave={onSaveMeasurement}
+      />
     </section>
   );
 }

@@ -175,5 +175,82 @@ test(
     });
     assert.equal(repeatedDelete.duplicate, true);
     assert.equal((await repository.listWorkouts(user.id))[0].sets.length, 0);
+
+    const measurementId = randomUUID();
+    const measurementValues = {
+      heightCm: 180,
+      weightKg: 82,
+      neckCm: null,
+      chestCm: 102,
+      bicepsCm: null,
+      thighLeftCm: null,
+      thighRightCm: null,
+      calfCm: null,
+      waistCm: 91,
+    };
+    const createMeasurement = {
+      id: measurementId,
+      clientMutationId: randomUUID(),
+      measuredOn: '2026-01-22T06:00:00.000Z',
+      isSelfMeasured: true,
+      values: measurementValues,
+    };
+    const concurrentMeasurementCreates = await Promise.all([
+      repository.createMeasurement(user.id, createMeasurement),
+      repository.createMeasurement(user.id, createMeasurement),
+    ]);
+    assert.equal(concurrentMeasurementCreates.filter((result) => result.duplicate).length, 1);
+
+    const updatedMeasurement = await repository.updateMeasurement(user.id, {
+      clientMutationId: randomUUID(),
+      measurementId,
+      baseRevision: 1,
+      changes: { values: { ...measurementValues, weightKg: 80.5, waistCm: 88.5 } },
+    });
+    assert.equal(updatedMeasurement.entity.revision, 2);
+    assert.equal(updatedMeasurement.entity.values.weightKg, 80.5);
+    await assert.rejects(
+      repository.updateMeasurement(user.id, {
+        clientMutationId: randomUUID(),
+        measurementId,
+        baseRevision: 1,
+        changes: { isSelfMeasured: false },
+      }),
+      RepositoryConflictError,
+    );
+    assert.equal((await repository.listMeasurements(user.id)).length, 1);
+
+    const otherUser = await repository.upsertGoogleUser(
+      {
+        subject: `integration-${randomUUID()}`,
+        email: `${randomUUID()}@example.test`,
+        displayName: 'Other Athlete',
+        avatarUrl: null,
+      },
+      'athlete',
+    );
+    assert.deepEqual(await repository.listMeasurements(otherUser.id), []);
+
+    const deleteMeasurementId = randomUUID();
+    await repository.createMeasurement(user.id, {
+      ...createMeasurement,
+      id: deleteMeasurementId,
+      clientMutationId: randomUUID(),
+      measuredOn: '2025-03-23T06:00:00.000Z',
+    });
+    const deleteMeasurementMutationId = randomUUID();
+    const deletedMeasurement = await repository.deleteMeasurement(user.id, {
+      clientMutationId: deleteMeasurementMutationId,
+      measurementId: deleteMeasurementId,
+      baseRevision: 1,
+    });
+    assert.equal(deletedMeasurement.duplicate, false);
+    const repeatedMeasurementDelete = await repository.deleteMeasurement(user.id, {
+      clientMutationId: deleteMeasurementMutationId,
+      measurementId: deleteMeasurementId,
+      baseRevision: 1,
+    });
+    assert.equal(repeatedMeasurementDelete.duplicate, true);
+    assert.equal((await repository.listMeasurements(user.id)).length, 1);
   },
 );

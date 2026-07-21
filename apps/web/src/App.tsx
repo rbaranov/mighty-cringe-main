@@ -4,11 +4,13 @@ import type { CurrentUser, Exercise, SetInput, WorkoutExercise } from '@mighty-c
 import { useLiveQuery } from 'dexie-react-hooks';
 
 import { SetSheet } from './components/SetSheet';
+import type { MeasurementDraft } from './components/BodyMeasurementsSection';
 import { ProgressView } from './components/ProgressView';
 import {
   activateLocalUser,
   clearLocalUserData,
   db,
+  type LocalMeasurement,
   type LocalSet,
   type LocalWorkout,
   type SyncConflict,
@@ -92,6 +94,11 @@ function AuthenticatedApp({ user, onLogout }: { user: CurrentUser; onLogout: () 
   const workouts = useLiveQuery(() => db.workouts.orderBy('startedAt').reverse().toArray(), [], []);
   const sets = useLiveQuery(() => db.sets.toArray(), [], []);
   const exercises = useLiveQuery(() => db.exercises.toArray(), [], []);
+  const measurements = useLiveQuery(
+    () => db.measurements.orderBy('measuredOn').reverse().toArray(),
+    [],
+    [],
+  );
   const outboxCount = useLiveQuery(() => db.outbox.count(), [], 0);
   const conflicts = useLiveQuery(
     () => db.conflicts.orderBy('createdAt').reverse().toArray(),
@@ -376,6 +383,79 @@ function AuthenticatedApp({ user, onLogout }: { user: CurrentUser; onLogout: () 
     });
   }
 
+  async function saveMeasurement(draft: MeasurementDraft, existing: LocalMeasurement | null) {
+    const updatedAt = new Date().toISOString();
+    if (existing) {
+      await db.measurements.update(existing.id, {
+        ...draft,
+        updatedAt,
+        syncState: 'pending',
+      });
+      await queueMutation({
+        type: 'measurement.update',
+        payload: {
+          clientMutationId: crypto.randomUUID(),
+          measurementId: existing.id,
+          baseRevision: existing.revision,
+          changes: draft,
+        },
+      });
+      await flushOutbox();
+      return;
+    }
+
+    await createLocalMeasurement(draft);
+    await flushOutbox();
+  }
+
+  async function createLocalMeasurement(draft: MeasurementDraft) {
+    const id = crypto.randomUUID();
+    const updatedAt = new Date().toISOString();
+    await db.measurements.put({
+      id,
+      ...draft,
+      revision: 0,
+      updatedAt,
+      syncState: 'pending',
+      deleted: false,
+    });
+    await queueMutation({
+      type: 'measurement.create',
+      payload: {
+        id,
+        clientMutationId: crypto.randomUUID(),
+        ...draft,
+      },
+    });
+  }
+
+  async function importMeasurements(drafts: MeasurementDraft[]) {
+    for (const draft of drafts) await createLocalMeasurement(draft);
+    await flushOutbox();
+  }
+
+  async function deleteMeasurement(measurement: LocalMeasurement) {
+    await db.measurements.update(measurement.id, { deleted: true, syncState: 'pending' });
+    await queueMutation({
+      type: 'measurement.delete',
+      payload: {
+        clientMutationId: crypto.randomUUID(),
+        measurementId: measurement.id,
+        baseRevision: measurement.revision,
+      },
+    });
+    await flushOutbox();
+  }
+
+  function requestDeleteMeasurement(measurement: LocalMeasurement) {
+    setConfirmation({
+      title: 'Удалить замер?',
+      message: `Запись за ${new Intl.DateTimeFormat('ru-RU', { dateStyle: 'long' }).format(new Date(measurement.measuredOn))} исчезнет из истории после синхронизации.`,
+      confirmLabel: 'Удалить замер',
+      action: () => deleteMeasurement(measurement),
+    });
+  }
+
   function requestRemoveExercise(itemId: string, hasLoggedSets: boolean) {
     if (!hasLoggedSets) {
       void removeExercise(itemId);
@@ -473,7 +553,15 @@ function AuthenticatedApp({ user, onLogout }: { user: CurrentUser; onLogout: () 
       )}
       {view === 'catalog' && <CatalogView exercises={exercises} />}
       {view === 'progress' && (
-        <ProgressView exercises={exercises} sets={sets} workouts={workouts} />
+        <ProgressView
+          exercises={exercises}
+          measurements={measurements}
+          onDeleteMeasurement={requestDeleteMeasurement}
+          onImportMeasurements={importMeasurements}
+          onSaveMeasurement={saveMeasurement}
+          sets={sets}
+          workouts={workouts}
+        />
       )}
       {view === 'settings' && (
         <SettingsView conflicts={conflicts} onLogout={onLogout} user={user} />
@@ -914,7 +1002,13 @@ function SettingsView({
           </p>
           {conflicts.map((conflict) => (
             <article className="conflict-card" key={conflict.id}>
-              <strong>{conflict.entityType === 'workout' ? 'Тренировка' : 'Подход'}</strong>
+              <strong>
+                {conflict.entityType === 'workout'
+                  ? 'Тренировка'
+                  : conflict.entityType === 'set'
+                    ? 'Подход'
+                    : 'Замер тела'}
+              </strong>
               <small>{conflict.message}</small>
               <div>
                 <button
@@ -1160,7 +1254,9 @@ function canKeepMine(conflict: SyncConflict) {
   return (
     conflict.mutation.type === 'workout.update' ||
     conflict.mutation.type === 'set.update' ||
-    (conflict.mutation.type === 'set.delete' && conflict.current !== null)
+    conflict.mutation.type === 'measurement.update' ||
+    (conflict.mutation.type === 'set.delete' && conflict.current !== null) ||
+    (conflict.mutation.type === 'measurement.delete' && conflict.current !== null)
   );
 }
 

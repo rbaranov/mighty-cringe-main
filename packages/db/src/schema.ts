@@ -195,7 +195,8 @@ export const measurementEntries = pgTable(
     measuredOn: timestamp('measured_on', { withTimezone: true }).notNull(),
     isSelfMeasured: boolean('is_self_measured').notNull().default(false),
     values: jsonb('values').notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    revision: integer('revision').notNull().default(1),
+    ...timestamps,
   },
   (table) => [index('measurement_user_date_idx').on(table.userId, table.measuredOn)],
 );

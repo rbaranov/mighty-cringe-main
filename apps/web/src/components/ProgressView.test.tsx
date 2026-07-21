@@ -46,7 +46,15 @@ describe('ProgressView', () => {
     };
 
     const html = renderToStaticMarkup(
-      <ProgressView exercises={[exercise]} sets={[set]} workouts={[workout]} />,
+      <ProgressView
+        exercises={[exercise]}
+        measurements={[]}
+        onDeleteMeasurement={() => {}}
+        onImportMeasurements={async () => {}}
+        onSaveMeasurement={async () => {}}
+        sets={[set]}
+        workouts={[workout]}
+      />,
     );
 
     expect(html).toContain('Календарь тренировок');

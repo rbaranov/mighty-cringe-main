@@ -1,12 +1,17 @@
 import { randomUUID } from 'node:crypto';
 
 import type {
+  CreateMeasurementInput,
   CreateSetInput,
   CreateWorkoutInput,
   CurrentUser,
+  DeleteMeasurementInput,
   DeleteSetInput,
   Exercise,
+  MeasurementRecord,
+  MeasurementValues,
   SetRecord,
+  UpdateMeasurementInput,
   UpdateSetInput,
   UpdateWorkoutInput,
   UserRole,
@@ -25,6 +30,7 @@ import {
   gt,
   isNull,
   lt,
+  measurementEntries,
   sessions,
   sets,
   users,
@@ -61,10 +67,17 @@ export type SetMutationResult = {
   duplicate: boolean;
 };
 
-export type EntityMutationResult = WorkoutMutationResult | SetMutationResult;
+export type MeasurementMutationResult = {
+  entityType: 'measurement';
+  entity: MeasurementRecord;
+  duplicate: boolean;
+};
+
+export type EntityMutationResult =
+  WorkoutMutationResult | SetMutationResult | MeasurementMutationResult;
 
 export type DeleteMutationResult = {
-  entityType: 'set';
+  entityType: 'set' | 'measurement';
   entity: null;
   entityId: string;
   duplicate: boolean;
@@ -73,7 +86,7 @@ export type DeleteMutationResult = {
 export type MutationResult = EntityMutationResult | DeleteMutationResult;
 
 export class RepositoryConflictError extends Error {
-  constructor(readonly current: WorkoutRecord | SetRecord | null) {
+  constructor(readonly current: WorkoutRecord | SetRecord | MeasurementRecord | null) {
     super('The record changed on another client');
   }
 }
@@ -92,6 +105,16 @@ export interface WorkoutRepository {
   createSet(userId: string, input: CreateSetInput): Promise<SetMutationResult>;
   updateSet(userId: string, input: UpdateSetInput): Promise<SetMutationResult>;
   deleteSet(userId: string, input: DeleteSetInput): Promise<DeleteMutationResult>;
+  listMeasurements(userId: string): Promise<MeasurementRecord[]>;
+  createMeasurement(
+    userId: string,
+    input: CreateMeasurementInput,
+  ): Promise<MeasurementMutationResult>;
+  updateMeasurement(
+    userId: string,
+    input: UpdateMeasurementInput,
+  ): Promise<MeasurementMutationResult>;
+  deleteMeasurement(userId: string, input: DeleteMeasurementInput): Promise<DeleteMutationResult>;
   createAuthAttempt(attempt: AuthAttempt): Promise<void>;
   consumeAuthAttempt(stateHash: string, now: Date): Promise<AuthAttempt | null>;
   upsertGoogleUser(identity: GoogleIdentity, requestedRole: UserRole): Promise<CurrentUser>;
@@ -109,11 +132,13 @@ export interface WorkoutRepository {
 
 type MemoryWorkout = Omit<WorkoutRecord, 'sets'> & { userId: string };
 type MemorySet = SetRecord & { userId: string };
+type MemoryMeasurement = MeasurementRecord & { userId: string };
 type MemorySession = { tokenHash: string; userId: string; expiresAt: Date; revokedAt: Date | null };
 
 export class MemoryRepository implements WorkoutRepository {
   private readonly workouts = new Map<string, MemoryWorkout>();
   private readonly sets = new Map<string, MemorySet>();
+  private readonly measurements = new Map<string, MemoryMeasurement>();
   private readonly mutations = new Set<string>();
   private readonly authAttempts = new Map<string, AuthAttempt>();
   private readonly users = new Map<string, CurrentUser & { googleSubject: string }>();
@@ -267,6 +292,128 @@ export class MemoryRepository implements WorkoutRepository {
     this.sets.delete(set.id);
     this.mutations.add(mutationKey);
     return { entityType: 'set', entity: null, entityId: input.setId, duplicate: false };
+  }
+
+  async listMeasurements(userId: string) {
+    return [...this.measurements.values()]
+      .filter((measurement) => measurement.userId === userId)
+      .sort((left, right) => right.measuredOn.localeCompare(left.measuredOn))
+      .map(toPublicMeasurement);
+  }
+
+  async createMeasurement(
+    userId: string,
+    input: CreateMeasurementInput,
+  ): Promise<MeasurementMutationResult> {
+    const mutationKey = this.mutationKey(userId, input.clientMutationId);
+    const existing = this.measurements.get(input.id);
+    if (this.mutations.has(mutationKey)) {
+      if (!existing || existing.userId !== userId) throw new RepositoryNotFoundError();
+      return { entityType: 'measurement', entity: toPublicMeasurement(existing), duplicate: true };
+    }
+    if (existing) {
+      if (existing.userId !== userId) throw new RepositoryConflictError(null);
+      if (!sameMeasurementCreate(existing, input)) {
+        throw new RepositoryConflictError(toPublicMeasurement(existing));
+      }
+      this.mutations.add(mutationKey);
+      return { entityType: 'measurement', entity: toPublicMeasurement(existing), duplicate: true };
+    }
+
+    const measurement: MemoryMeasurement = {
+      id: input.id,
+      userId,
+      measuredOn: input.measuredOn,
+      isSelfMeasured: input.isSelfMeasured,
+      values: input.values,
+      revision: 1,
+      updatedAt: new Date().toISOString(),
+    };
+    this.measurements.set(measurement.id, measurement);
+    this.mutations.add(mutationKey);
+    return {
+      entityType: 'measurement',
+      entity: toPublicMeasurement(measurement),
+      duplicate: false,
+    };
+  }
+
+  async updateMeasurement(
+    userId: string,
+    input: UpdateMeasurementInput,
+  ): Promise<MeasurementMutationResult> {
+    const mutationKey = this.mutationKey(userId, input.clientMutationId);
+    const measurement = this.measurements.get(input.measurementId);
+    if (!measurement || measurement.userId !== userId) throw new RepositoryNotFoundError();
+    if (this.mutations.has(mutationKey)) {
+      return {
+        entityType: 'measurement',
+        entity: toPublicMeasurement(measurement),
+        duplicate: true,
+      };
+    }
+    if (measurementChangesMatch(measurement, input.changes)) {
+      this.mutations.add(mutationKey);
+      return {
+        entityType: 'measurement',
+        entity: toPublicMeasurement(measurement),
+        duplicate: true,
+      };
+    }
+    if (measurement.revision !== input.baseRevision) {
+      throw new RepositoryConflictError(toPublicMeasurement(measurement));
+    }
+
+    if (input.changes.measuredOn !== undefined) measurement.measuredOn = input.changes.measuredOn;
+    if (input.changes.isSelfMeasured !== undefined) {
+      measurement.isSelfMeasured = input.changes.isSelfMeasured;
+    }
+    if (input.changes.values !== undefined) measurement.values = input.changes.values;
+    measurement.revision += 1;
+    measurement.updatedAt = new Date().toISOString();
+    this.mutations.add(mutationKey);
+    return {
+      entityType: 'measurement',
+      entity: toPublicMeasurement(measurement),
+      duplicate: false,
+    };
+  }
+
+  async deleteMeasurement(
+    userId: string,
+    input: DeleteMeasurementInput,
+  ): Promise<DeleteMutationResult> {
+    const mutationKey = this.mutationKey(userId, input.clientMutationId);
+    if (this.mutations.has(mutationKey)) {
+      return {
+        entityType: 'measurement',
+        entity: null,
+        entityId: input.measurementId,
+        duplicate: true,
+      };
+    }
+    const measurement = this.measurements.get(input.measurementId);
+    if (!measurement || measurement.userId !== userId) {
+      this.mutations.add(mutationKey);
+      return {
+        entityType: 'measurement',
+        entity: null,
+        entityId: input.measurementId,
+        duplicate: true,
+      };
+    }
+    if (measurement.revision !== input.baseRevision) {
+      throw new RepositoryConflictError(toPublicMeasurement(measurement));
+    }
+
+    this.measurements.delete(measurement.id);
+    this.mutations.add(mutationKey);
+    return {
+      entityType: 'measurement',
+      entity: null,
+      entityId: input.measurementId,
+      duplicate: false,
+    };
   }
 
   async createAuthAttempt(attempt: AuthAttempt) {
@@ -670,6 +817,176 @@ export class PostgresRepository implements WorkoutRepository {
     return { entityType: 'set', entity: null, entityId: input.setId, duplicate };
   }
 
+  async listMeasurements(userId: string): Promise<MeasurementRecord[]> {
+    const rows = await this.db
+      .select()
+      .from(measurementEntries)
+      .where(eq(measurementEntries.userId, userId))
+      .orderBy(desc(measurementEntries.measuredOn));
+    return rows.map(toMeasurementRecord);
+  }
+
+  async createMeasurement(
+    userId: string,
+    input: CreateMeasurementInput,
+  ): Promise<MeasurementMutationResult> {
+    const duplicate = await this.db.transaction(async (transaction) => {
+      const alreadyApplied = await recordMutation(transaction, userId, input.clientMutationId);
+      if (alreadyApplied) return true;
+
+      const existingRows = await transaction
+        .select()
+        .from(measurementEntries)
+        .where(eq(measurementEntries.id, input.id))
+        .limit(1);
+      const existing = existingRows[0];
+      if (existing) {
+        if (existing.userId !== userId) throw new RepositoryConflictError(null);
+        if (!sameMeasurementCreate(existing, input)) {
+          throw new RepositoryConflictError(toMeasurementRecord(existing));
+        }
+        return true;
+      }
+
+      await transaction.insert(measurementEntries).values({
+        id: input.id,
+        userId,
+        measuredOn: new Date(input.measuredOn),
+        isSelfMeasured: input.isSelfMeasured,
+        values: input.values,
+      });
+      return false;
+    });
+    const entity = await this.getMeasurement(userId, input.id);
+    if (!entity) throw new RepositoryNotFoundError();
+    return { entityType: 'measurement', entity, duplicate };
+  }
+
+  async updateMeasurement(
+    userId: string,
+    input: UpdateMeasurementInput,
+  ): Promise<MeasurementMutationResult> {
+    const duplicate = await this.db.transaction(async (transaction) => {
+      const alreadyApplied = await recordMutation(transaction, userId, input.clientMutationId);
+      if (alreadyApplied) return true;
+
+      const existingRows = await transaction
+        .select()
+        .from(measurementEntries)
+        .where(
+          and(
+            eq(measurementEntries.id, input.measurementId),
+            eq(measurementEntries.userId, userId),
+          ),
+        )
+        .limit(1);
+      const existing = existingRows[0];
+      if (!existing) throw new RepositoryNotFoundError();
+      if (measurementChangesMatch(existing, input.changes)) return true;
+      if (existing.revision !== input.baseRevision) {
+        throw new RepositoryConflictError(toMeasurementRecord(existing));
+      }
+
+      const updated = await transaction
+        .update(measurementEntries)
+        .set({
+          measuredOn:
+            input.changes.measuredOn === undefined
+              ? existing.measuredOn
+              : new Date(input.changes.measuredOn),
+          isSelfMeasured: input.changes.isSelfMeasured ?? existing.isSelfMeasured,
+          values: input.changes.values ?? existing.values,
+          revision: existing.revision + 1,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(measurementEntries.id, existing.id),
+            eq(measurementEntries.userId, userId),
+            eq(measurementEntries.revision, input.baseRevision),
+          ),
+        )
+        .returning();
+      if (updated.length) return false;
+
+      const currentRows = await transaction
+        .select()
+        .from(measurementEntries)
+        .where(
+          and(
+            eq(measurementEntries.id, input.measurementId),
+            eq(measurementEntries.userId, userId),
+          ),
+        )
+        .limit(1);
+      const current = currentRows[0];
+      if (!current) throw new RepositoryNotFoundError();
+      if (measurementChangesMatch(current, input.changes)) return true;
+      throw new RepositoryConflictError(toMeasurementRecord(current));
+    });
+    const entity = await this.getMeasurement(userId, input.measurementId);
+    if (!entity) throw new RepositoryNotFoundError();
+    return { entityType: 'measurement', entity, duplicate };
+  }
+
+  async deleteMeasurement(
+    userId: string,
+    input: DeleteMeasurementInput,
+  ): Promise<DeleteMutationResult> {
+    const duplicate = await this.db.transaction(async (transaction) => {
+      const alreadyApplied = await recordMutation(transaction, userId, input.clientMutationId);
+      if (alreadyApplied) return true;
+
+      const existingRows = await transaction
+        .select()
+        .from(measurementEntries)
+        .where(
+          and(
+            eq(measurementEntries.id, input.measurementId),
+            eq(measurementEntries.userId, userId),
+          ),
+        )
+        .limit(1);
+      const existing = existingRows[0];
+      if (!existing) return true;
+      if (existing.revision !== input.baseRevision) {
+        throw new RepositoryConflictError(toMeasurementRecord(existing));
+      }
+
+      const removed = await transaction
+        .delete(measurementEntries)
+        .where(
+          and(
+            eq(measurementEntries.id, existing.id),
+            eq(measurementEntries.userId, userId),
+            eq(measurementEntries.revision, input.baseRevision),
+          ),
+        )
+        .returning({ id: measurementEntries.id });
+      if (removed.length) return false;
+
+      const currentRows = await transaction
+        .select()
+        .from(measurementEntries)
+        .where(
+          and(
+            eq(measurementEntries.id, input.measurementId),
+            eq(measurementEntries.userId, userId),
+          ),
+        )
+        .limit(1);
+      const current = currentRows[0];
+      if (!current) return true;
+      throw new RepositoryConflictError(toMeasurementRecord(current));
+    });
+    return {
+      entityType: 'measurement',
+      entity: null,
+      entityId: input.measurementId,
+      duplicate,
+    };
+  }
+
   async createAuthAttempt(attempt: AuthAttempt) {
     await this.db.delete(authAttempts).where(lt(authAttempts.expiresAt, new Date()));
     await this.db.insert(authAttempts).values(attempt);
@@ -803,6 +1120,15 @@ export class PostgresRepository implements WorkoutRepository {
       .limit(1);
     return rows[0] ? toSetRecord(rows[0].set) : null;
   }
+
+  private async getMeasurement(userId: string, measurementId: string) {
+    const rows = await this.db
+      .select()
+      .from(measurementEntries)
+      .where(and(eq(measurementEntries.id, measurementId), eq(measurementEntries.userId, userId)))
+      .limit(1);
+    return rows[0] ? toMeasurementRecord(rows[0]) : null;
+  }
 }
 
 type Database = ReturnType<typeof createDatabase>;
@@ -896,6 +1222,24 @@ function toPublicSet(set: MemorySet): SetRecord {
   return record;
 }
 
+function toMeasurementRecord(
+  measurement: typeof measurementEntries.$inferSelect,
+): MeasurementRecord {
+  return {
+    id: measurement.id,
+    measuredOn: measurement.measuredOn.toISOString(),
+    isSelfMeasured: measurement.isSelfMeasured,
+    values: measurement.values as MeasurementValues,
+    revision: measurement.revision,
+    updatedAt: measurement.updatedAt.toISOString(),
+  };
+}
+
+function toPublicMeasurement(measurement: MemoryMeasurement): MeasurementRecord {
+  const { userId: _userId, ...record } = measurement;
+  return record;
+}
+
 function sameWorkoutCreate(
   workout: MemoryWorkout | typeof workouts.$inferSelect,
   input: CreateWorkoutInput,
@@ -923,6 +1267,17 @@ function sameSetCreate(set: MemorySet | typeof sets.$inferSelect, input: CreateS
   );
 }
 
+function sameMeasurementCreate(
+  measurement: MemoryMeasurement | typeof measurementEntries.$inferSelect,
+  input: CreateMeasurementInput,
+) {
+  return (
+    asIso(measurement.measuredOn) === input.measuredOn &&
+    measurement.isSelfMeasured === input.isSelfMeasured &&
+    sameMeasurementValues(measurement.values, input.values)
+  );
+}
+
 function workoutChangesMatch(
   workout: MemoryWorkout | typeof workouts.$inferSelect,
   changes: UpdateWorkoutInput['changes'],
@@ -947,6 +1302,25 @@ function setChangesMatch(
     (!('comment' in changes) || set.comment === (changes.comment ?? null)) &&
     (changes.performedAt === undefined || asIso(set.performedAt) === changes.performedAt) &&
     (changes.position === undefined || set.position === changes.position)
+  );
+}
+
+function measurementChangesMatch(
+  measurement: MemoryMeasurement | typeof measurementEntries.$inferSelect,
+  changes: UpdateMeasurementInput['changes'],
+) {
+  return (
+    (changes.measuredOn === undefined || asIso(measurement.measuredOn) === changes.measuredOn) &&
+    (changes.isSelfMeasured === undefined ||
+      measurement.isSelfMeasured === changes.isSelfMeasured) &&
+    (changes.values === undefined || sameMeasurementValues(measurement.values, changes.values))
+  );
+}
+
+function sameMeasurementValues(left: unknown, right: MeasurementValues) {
+  if (!left || typeof left !== 'object') return false;
+  return Object.keys(right).every(
+    (key) => (left as Record<string, unknown>)[key] === right[key as keyof MeasurementValues],
   );
 }
 

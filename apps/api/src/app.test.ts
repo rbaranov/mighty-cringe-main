@@ -304,6 +304,141 @@ test('OAuth sessions isolate athlete data, support logout, and enforce admin rol
     headers: { cookie: athleteTwoCookie },
   });
   assert.deepEqual(athleteTwoHistory.json().items, []);
+
+  const measurementId = '60000000-0000-4000-8000-000000000001';
+  const invalidMeasurement = await app.inject({
+    method: 'POST',
+    url: '/api/v1/measurements',
+    headers: { cookie: athleteOneCookie },
+    payload: {
+      id: '60000000-0000-4000-8000-000000000099',
+      clientMutationId: '61000000-0000-4000-8000-000000000099',
+      measuredOn: '2026-01-22T06:00:00.000Z',
+      isSelfMeasured: true,
+      values: {},
+    },
+  });
+  assert.equal(invalidMeasurement.statusCode, 400);
+
+  const createMeasurementMutation = {
+    type: 'measurement.create',
+    payload: {
+      id: measurementId,
+      clientMutationId: '61000000-0000-4000-8000-000000000001',
+      measuredOn: '2026-01-22T06:00:00.000Z',
+      isSelfMeasured: true,
+      values: { weightKg: 82, waistCm: 91 },
+    },
+  };
+  const createdMeasurement = await app.inject({
+    method: 'POST',
+    url: '/api/v1/sync',
+    headers: { cookie: athleteOneCookie },
+    payload: createMeasurementMutation,
+  });
+  assert.equal(createdMeasurement.statusCode, 201);
+  assert.equal(createdMeasurement.json().entity.revision, 1);
+  assert.equal(createdMeasurement.json().entity.values.weightKg, 82);
+  const repeatedMeasurement = await app.inject({
+    method: 'POST',
+    url: '/api/v1/sync',
+    headers: { cookie: athleteOneCookie },
+    payload: createMeasurementMutation,
+  });
+  assert.equal(repeatedMeasurement.statusCode, 200);
+  assert.equal(repeatedMeasurement.json().duplicate, true);
+
+  const updatedMeasurement = await app.inject({
+    method: 'POST',
+    url: '/api/v1/sync',
+    headers: { cookie: athleteOneCookie },
+    payload: {
+      type: 'measurement.update',
+      payload: {
+        clientMutationId: '61000000-0000-4000-8000-000000000002',
+        measurementId,
+        baseRevision: 1,
+        changes: {
+          measuredOn: '2026-01-22T06:00:00.000Z',
+          isSelfMeasured: true,
+          values: { weightKg: 80.5, waistCm: 88.5 },
+        },
+      },
+    },
+  });
+  assert.equal(updatedMeasurement.statusCode, 200);
+  assert.equal(updatedMeasurement.json().entity.revision, 2);
+  assert.equal(updatedMeasurement.json().entity.values.waistCm, 88.5);
+
+  const crossUserMeasurement = await app.inject({
+    method: 'POST',
+    url: '/api/v1/sync',
+    headers: { cookie: athleteTwoCookie },
+    payload: {
+      type: 'measurement.update',
+      payload: {
+        clientMutationId: '61000000-0000-4000-8000-000000000003',
+        measurementId,
+        baseRevision: 2,
+        changes: { isSelfMeasured: false },
+      },
+    },
+  });
+  assert.equal(crossUserMeasurement.statusCode, 404);
+  const athleteOneMeasurements = await app.inject({
+    method: 'GET',
+    url: '/api/v1/measurements',
+    headers: { cookie: athleteOneCookie },
+  });
+  assert.equal(athleteOneMeasurements.statusCode, 200);
+  assert.equal(athleteOneMeasurements.json().items.length, 1);
+  const athleteTwoMeasurements = await app.inject({
+    method: 'GET',
+    url: '/api/v1/measurements',
+    headers: { cookie: athleteTwoCookie },
+  });
+  assert.deepEqual(athleteTwoMeasurements.json().items, []);
+
+  const removedMeasurementId = '60000000-0000-4000-8000-000000000002';
+  await app.inject({
+    method: 'POST',
+    url: '/api/v1/sync',
+    headers: { cookie: athleteOneCookie },
+    payload: {
+      type: 'measurement.create',
+      payload: {
+        ...createMeasurementMutation.payload,
+        id: removedMeasurementId,
+        clientMutationId: '61000000-0000-4000-8000-000000000004',
+        measuredOn: '2025-03-23T06:00:00.000Z',
+      },
+    },
+  });
+  const deleteMeasurementMutation = {
+    type: 'measurement.delete',
+    payload: {
+      clientMutationId: '61000000-0000-4000-8000-000000000005',
+      measurementId: removedMeasurementId,
+      baseRevision: 1,
+    },
+  };
+  const deletedMeasurement = await app.inject({
+    method: 'POST',
+    url: '/api/v1/sync',
+    headers: { cookie: athleteOneCookie },
+    payload: deleteMeasurementMutation,
+  });
+  assert.equal(deletedMeasurement.statusCode, 200);
+  assert.equal(deletedMeasurement.json().duplicate, false);
+  const repeatedMeasurementDelete = await app.inject({
+    method: 'POST',
+    url: '/api/v1/sync',
+    headers: { cookie: athleteOneCookie },
+    payload: deleteMeasurementMutation,
+  });
+  assert.equal(repeatedMeasurementDelete.statusCode, 200);
+  assert.equal(repeatedMeasurementDelete.json().duplicate, true);
+
   const crossUserSet = await app.inject({
     method: 'POST',
     url: '/api/v1/sets',
