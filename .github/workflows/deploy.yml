@@ -20,4 +20,7 @@ jobs:
           PRODUCTION_ENV_FILE: /etc/mighty-cringe/production.env
         run: |
           set -eu
-          docker compose --env-file "$PRODUCTION_ENV_FILE" up -d --build --remove-orphans
+          docker compose --env-file "$PRODUCTION_ENV_FILE" up -d --build --remove-orphans || {
+            docker compose --env-file "$PRODUCTION_ENV_FILE" logs --no-color migrate
+            exit 1
+          }
