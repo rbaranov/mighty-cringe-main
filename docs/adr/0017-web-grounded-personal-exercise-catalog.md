@@ -14,9 +14,12 @@ secret and weaken the user boundary.
 ## Decision
 
 Only an unresolved command target, or an explicit action in the catalog, offers online discovery.
-The authenticated PWA sends the short search phrase and locale to the API. The API calls OpenRouter
-server-side with its web-search plugin and a strict JSON schema. The prompt treats the query and
-retrieved pages as untrusted data and requests at most three plausible candidates.
+The authenticated PWA sends the short search phrase and locale to the API. The API first calls the
+OpenRouter web-search server tool with Exa and keeps its URL-citation records. A second ZDR request,
+without web tools, converts only those bounded citation records into a strict JSON schema. Separating
+search from structuring avoids the provider dropping structured output while a server tool runs. Both
+prompts treat the query and retrieved pages as untrusted data and request at most three plausible
+candidates.
 
 Every candidate includes RU/EN names, aliases, muscles, equipment, notes, confidence, sources, and
 verified YouTube technique links when available. The API keeps only HTTPS sources present in the
@@ -37,7 +40,8 @@ session.
 `OPENROUTER_API_KEY` remains server-only and can be shared with voice transcription.
 `EXERCISE_DISCOVERY_MODEL` independently enables discovery, so voice storage and transcription may
 remain disabled. Production preflight rejects a configured discovery model without the key. The
-selected model must support both strict structured output and the OpenRouter web plugin.
+selected model must support tool calling and strict structured output; OpenRouter supplies the web
+search server tool.
 
 ## Consequences
 

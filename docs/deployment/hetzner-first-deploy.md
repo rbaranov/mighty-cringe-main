@@ -301,7 +301,7 @@ https://docs.hetzner.com/storage/object-storage/faq/s3-credentials/.
 
 Для поиска неизвестных упражнений тот же server-only `OPENROUTER_API_KEY` можно использовать без
 включения голосового хранилища. Выберите в OpenRouter актуальную модель, которая одновременно
-поддерживает strict structured output и web-search plugin, и запишите её slug в
+поддерживает tool calling и strict structured output, и запишите её slug в
 `EXERCISE_DISCOVERY_MODEL`. Ограничьте расходы ключа, отключите provider logging и включите ZDR.
 Пустое значение безопасно выключает поиск; частичная конфигурация не проходит production
 preflight. Ключ и model нельзя добавлять в `VITE_*` или клиентский bundle.

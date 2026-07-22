@@ -33,16 +33,21 @@ const candidate: ExerciseDiscoveryCandidate = {
 };
 
 test('OpenRouter discovery keeps only web-cited sources and cited YouTube videos', async () => {
+  const requests: Array<Record<string, unknown>> = [];
   const discovery = new OpenRouterExerciseDiscovery(
     'secret',
     'provider/model',
-    async () =>
-      new Response(
+    async (_input, init) => {
+      requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return new Response(
         JSON.stringify({
           choices: [
             {
               message: {
-                content: JSON.stringify({ candidates: [candidate] }),
+                content:
+                  requests.length === 1
+                    ? 'Grounded exercise research with citations.'
+                    : JSON.stringify({ candidates: [candidate] }),
                 annotations: [
                   {
                     type: 'url_citation',
@@ -65,7 +70,8 @@ test('OpenRouter discovery keeps only web-cited sources and cited YouTube videos
           ],
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
-      ),
+      );
+    },
   );
 
   const result = await discovery.discover('тяга арни', 'ru');
@@ -78,6 +84,37 @@ test('OpenRouter discovery keeps only web-cited sources and cited YouTube videos
     { title: 'Technique', url: 'https://www.youtube.com/watch?v=abc123DEF45' },
   ]);
   assert.ok(result.candidates[0].aliases.includes('тяга арни'));
+  assert.equal(requests.length, 2);
+  assert.deepEqual(requests[0].provider, { zdr: true });
+  assert.deepEqual(requests[0].tools, [
+    {
+      type: 'openrouter:web_search',
+      parameters: { engine: 'exa', max_results: 5 },
+    },
+  ]);
+  assert.equal(requests[0].response_format, undefined);
+  assert.deepEqual(requests[1].provider, { zdr: true, require_parameters: true });
+  assert.equal(requests[1].tools, undefined);
+  assert.equal(
+    (requests[1].response_format as { json_schema?: { strict?: boolean } }).json_schema?.strict,
+    true,
+  );
+  const evidenceRequest = requests[1].messages as Array<{ content: string }>;
+  assert.match(evidenceRequest[1].content, /https:\/\/example\.test\/row/u);
+  assert.doesNotMatch(evidenceRequest[1].content, /invented\.example/u);
+});
+
+test('does not synthesize a candidate when web search returns no citations', async () => {
+  let requests = 0;
+  const discovery = new OpenRouterExerciseDiscovery('secret', 'provider/model', async () => {
+    requests += 1;
+    return Response.json({ choices: [{ message: { content: 'No reliable result.' } }] });
+  });
+
+  const result = await discovery.discover('unknown movement', 'en');
+
+  assert.deepEqual(result, { query: 'unknown movement', candidates: [] });
+  assert.equal(requests, 1);
 });
 
 test('environment enables exercise discovery only with a key and model', () => {
