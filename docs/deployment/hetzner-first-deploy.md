@@ -197,7 +197,9 @@ openssl rand -hex 32
 nano /etc/mighty-cringe/production.env
 ```
 
-Подставьте сгенерированное значение вместо `<DB_PASSWORD>`:
+Подставьте сгенерированное значение вместо `<DB_PASSWORD>` — угловые скобки и слово
+`DB_PASSWORD` не должны остаться в файле. Preflight принимает только URL-safe пароль длиной не
+менее 32 символов; рекомендуемая команда выше создаёт 64-символьное hex-значение:
 
 ```dotenv
 DOMAIN=mightycringe.com
@@ -209,7 +211,6 @@ LOG_LEVEL=info
 POSTGRES_DB=mightycringe
 POSTGRES_USER=mightycringe
 POSTGRES_PASSWORD=<DB_PASSWORD>
-DATABASE_URL=postgresql://mightycringe:<DB_PASSWORD>@postgres:5432/mightycringe
 
 GOOGLE_CLIENT_ID=<GOOGLE_OAUTH_WEB_CLIENT_ID>
 GOOGLE_CLIENT_SECRET=<GOOGLE_OAUTH_WEB_CLIENT_SECRET>
@@ -252,6 +253,9 @@ https://mightycringe.com/api/v1/auth/google/callback
 Preflight требует основные DB/OAuth-поля, но разрешает полностью пустые voice и VAPID-группы: эти
 возможности останутся выключенными. Частично заполненная группа останавливает deploy до изменения
 контейнеров; значения секретов в диагностике не печатаются.
+После первого запуска нельзя менять только `POSTGRES_PASSWORD` в env: Docker не меняет пароль уже
+инициализированной роли PostgreSQL. Сначала согласованно ротируйте пароль роли и защищённый env,
+затем пересоздайте `postgres`, `migrate`, `api` и `worker` и проверьте миграцию и HTTPS health.
 До подключения бэкапов добавьте полную группу значений из раздела 8; полностью пустая группа
 оставляет backup timers выключенными, а частичная конфигурация отклоняется preflight.
 
