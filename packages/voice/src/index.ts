@@ -177,8 +177,10 @@ export function voiceTranscriberFromEnvironment(
 ): VoiceTranscriber | undefined {
   const apiKey = environment.OPENROUTER_API_KEY?.trim();
   const model = environment.OPENROUTER_STT_MODEL?.trim();
-  if (!apiKey && !model) return undefined;
-  if (!apiKey || !model) throw new Error('OpenRouter voice configuration is incomplete');
+  // The server-only OpenRouter key is shared with exercise discovery. Voice stays disabled until
+  // its own model is selected, while a selected STT model must never run without the shared key.
+  if (!model) return undefined;
+  if (!apiKey) throw new Error('OpenRouter voice configuration is incomplete');
   return new OpenRouterTranscriber(apiKey, model);
 }
 

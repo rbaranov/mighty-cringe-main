@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { OpenRouterTranscriber, VoiceProviderError, voiceStorageFromEnvironment } from './index.js';
+import {
+  OpenRouterTranscriber,
+  VoiceProviderError,
+  voiceStorageFromEnvironment,
+  voiceTranscriberFromEnvironment,
+} from './index.js';
 
 test('requests transcription with raw base64 audio and zero-data-retention routing', async () => {
   let body: Record<string, unknown> | undefined;
@@ -53,5 +58,25 @@ test('does not enable private storage without a valid 32-byte SSE-C key', () => 
       ...environment,
       VOICE_S3_ENCRYPTION_KEY: Buffer.alloc(32).toString('base64'),
     }),
+  );
+});
+
+test('keeps voice disabled when the shared OpenRouter key is used only for exercise discovery', () => {
+  assert.equal(
+    voiceTranscriberFromEnvironment({
+      OPENROUTER_API_KEY: 'server-secret',
+      EXERCISE_DISCOVERY_MODEL: 'openai/gpt-4.1-mini',
+    }),
+    undefined,
+  );
+});
+
+test('rejects an STT model without the shared OpenRouter key', () => {
+  assert.throws(
+    () =>
+      voiceTranscriberFromEnvironment({
+        OPENROUTER_STT_MODEL: 'openai/whisper-large-v3',
+      }),
+    /configuration is incomplete/,
   );
 });
