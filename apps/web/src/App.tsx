@@ -767,11 +767,14 @@ function AuthenticatedAppContent({
 
   return (
     <main
-      className={
-        view === 'workout' && workoutContext
-          ? `app-shell app-shell-live${editingWorkout ? ' app-shell-history-edit' : ''}`
-          : 'app-shell'
-      }
+      className={[
+        'app-shell',
+        `app-shell-${view}`,
+        view === 'workout' && workoutContext && 'app-shell-live',
+        editingWorkout && 'app-shell-history-edit',
+      ]
+        .filter(Boolean)
+        .join(' ')}
     >
       <header className="topbar">
         <div>

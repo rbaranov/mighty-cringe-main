@@ -2717,3 +2717,92 @@ small,
 .profile-card small {
   color: var(--muted);
 }
+
+/* Screen landmarks: warm preparation, green live work, cool analytics. */
+.app-shell-workout:not(.app-shell-live) {
+  --screen-marker: #9a5b00;
+  --nav-bg: rgb(255 251 243 / 95%);
+  background:
+    radial-gradient(circle at 88% 2%, #ffe5b8 0, transparent 31%),
+    linear-gradient(180deg, #fbf7ef 0, var(--canvas) 58%);
+}
+.app-shell-live {
+  --screen-marker: var(--accent-deep);
+  --nav-bg: rgb(246 251 239 / 95%);
+  background:
+    linear-gradient(
+      135deg,
+      rgb(137 188 67 / 7%) 0 16%,
+      transparent 16% 38%,
+      rgb(137 188 67 / 4%) 38% 52%,
+      transparent 52%
+    ),
+    radial-gradient(circle at 88% 0, #dcefc4 0, transparent 34%), #f3f7ee;
+}
+.app-shell-history-edit {
+  --screen-marker: #936700;
+  --nav-bg: rgb(255 250 237 / 95%);
+  background:
+    linear-gradient(135deg, rgb(211 169 68 / 7%) 0 18%, transparent 18% 42%),
+    radial-gradient(circle at 88% 0, #ffebbd 0, transparent 34%), #faf6eb;
+}
+.app-shell-progress {
+  --screen-marker: #49689f;
+  --nav-bg: rgb(247 249 254 / 95%);
+  background:
+    radial-gradient(circle at 88% 0, #dfe8fb 0, transparent 34%),
+    linear-gradient(180deg, #f4f6fb 0, var(--canvas) 62%);
+}
+.app-shell-catalog {
+  --screen-marker: #68752d;
+  --nav-bg: rgb(249 251 243 / 95%);
+  background: radial-gradient(circle at 88% 0, #e9efc9 0, transparent 32%), var(--canvas);
+}
+.app-shell-settings {
+  --screen-marker: #59685d;
+  --nav-bg: rgb(249 250 247 / 95%);
+  background: radial-gradient(circle at 88% 0, #e4e9e2 0, transparent 32%), var(--canvas);
+}
+.app-shell-trainer {
+  --screen-marker: #6b578d;
+  --nav-bg: rgb(250 248 253 / 95%);
+  background: radial-gradient(circle at 88% 0, #ece3f6 0, transparent 32%), var(--canvas);
+}
+.app-shell .screen > .eyebrow {
+  color: var(--screen-marker, var(--accent-deep));
+}
+.app-shell-workout:not(.app-shell-live) .screen::before {
+  display: block;
+  width: 46px;
+  height: 6px;
+  margin-bottom: 14px;
+  border-radius: 99px;
+  background: linear-gradient(90deg, #f1bb57 0 58%, #d7e4c1 58%);
+  content: '';
+}
+.app-shell-live .live-head {
+  border-left: 4px solid var(--screen-marker);
+  padding-left: 10px;
+}
+.app-shell-progress .progress-screen::before {
+  display: block;
+  width: 54px;
+  height: 18px;
+  margin-bottom: 12px;
+  border-bottom: 3px solid #49689f;
+  background: linear-gradient(
+    135deg,
+    transparent 0 30%,
+    #8299c3 31% 38%,
+    transparent 39% 56%,
+    #49689f 57% 65%,
+    transparent 66%
+  );
+  content: '';
+}
+.tabs {
+  background: var(--nav-bg, rgb(250 251 247 / 94%));
+}
+.tab.active {
+  color: var(--screen-marker, var(--accent-deep));
+}
