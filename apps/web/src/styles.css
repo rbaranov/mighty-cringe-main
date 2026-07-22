@@ -1,4 +1,20 @@
 :root {
+  --canvas: #f5f6f0;
+  --surface: #ffffff;
+  --surface-soft: #edf2e8;
+  --surface-strong: #e3eadc;
+  --ink: #1d241b;
+  --muted: #667061;
+  --faint: #879182;
+  --line: #d5ddd0;
+  --line-strong: #b8c5ae;
+  --accent: #a9eb19;
+  --accent-soft: #e5f6bd;
+  --accent-deep: #4d7200;
+  --danger: #ad3f2d;
+  --danger-soft: #fff0eb;
+  --warning: #8a6100;
+  --warning-soft: #fff5d9;
   font-family:
     Inter,
     ui-sans-serif,
@@ -7,8 +23,9 @@
     BlinkMacSystemFont,
     'Segoe UI',
     sans-serif;
-  color: #f5f8ef;
-  background: #10130e;
+  color: var(--ink);
+  color-scheme: light;
+  background: var(--canvas);
   font-synthesis: none;
 }
 
@@ -18,7 +35,7 @@
 body {
   margin: 0;
   min-width: 320px;
-  background: #10130e;
+  background: var(--canvas);
 }
 button,
 input {
@@ -33,13 +50,13 @@ button {
   min-height: 100dvh;
   margin: 0 auto;
   padding: 22px 18px 110px;
-  background: radial-gradient(circle at 85% 0, #273416 0, transparent 31%), #10130e;
+  background: radial-gradient(circle at 85% 0, #e5f4c9 0, transparent 31%), var(--canvas);
 }
 .app-shell-live {
   padding: 14px 12px calc(88px + env(safe-area-inset-bottom));
 }
 .app-shell-history-edit {
-  background: radial-gradient(circle at 85% 0, #3d3318 0, transparent 34%), #10130e;
+  background: radial-gradient(circle at 85% 0, #fff0c4 0, transparent 34%), var(--canvas);
 }
 .app-shell-live .topbar .subtle {
   display: none;
@@ -52,7 +69,7 @@ button {
   padding: 28px 18px;
   align-content: start;
   gap: clamp(70px, 18vh, 150px);
-  background: radial-gradient(circle at 85% 0, #304118 0, transparent 36%), #10130e;
+  background: radial-gradient(circle at 85% 0, #e4f4c4 0, transparent 36%), var(--canvas);
 }
 .auth-card {
   padding: 24px;
@@ -2268,4 +2285,435 @@ small,
     border-right: 1px solid #222b1d;
     border-left: 1px solid #222b1d;
   }
+}
+
+/* Light product theme */
+.auth-card,
+.profile-card,
+.stat,
+.exercise-row,
+.exercise-card,
+.progress-section,
+.measurement-detail,
+.trainer-invite-card,
+.pending-invites,
+.athlete-read-only-details > section,
+.trainer-roster > button,
+.sheet {
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 10px 30px rgb(32 47 24 / 5%);
+}
+
+.brand,
+.eyebrow,
+.tab.active,
+.push-notice,
+.exercise-discovery .discovery-success,
+.discovery-sources a,
+.catalog a {
+  color: var(--accent-deep);
+}
+
+.subtle,
+.intro,
+.sets-line,
+.privacy-note,
+.section-head span,
+.exercise-card small,
+.exercise-row small,
+.explain-context,
+.manual-entry-note,
+.confirmation-message,
+.form-divider,
+.streak-note,
+.chart-legend,
+.chart-range,
+.progress-empty,
+.measurement-delta-note,
+.push-settings-panel > p:first-child,
+.push-settings-grid label,
+.trainer-invite-card label,
+.athlete-read-only-details article small,
+.voice-hint,
+.discovery-sources {
+  color: var(--muted);
+}
+.live-help summary,
+.setting,
+.push-settings-panel > small,
+.calendar-weekdays,
+.month-controls strong,
+.measurement-history time {
+  color: var(--muted);
+}
+
+.screen h1,
+.screen h2,
+.sheet h2,
+.exercise-card strong,
+.exercise-row strong,
+.stat strong,
+.setting strong,
+.progress-summary strong,
+.calendar-details > strong,
+.calendar-details p b,
+.strength-history strong,
+.measurement-trends strong,
+.measurement-history-toggle,
+.measurement-detail header strong,
+.measurement-values strong,
+.self-measured-toggle strong,
+.trainer-roster > button,
+.pending-invites > div,
+.athlete-read-only-details article span,
+.parsed-set > strong,
+.parsed-set dd,
+.exercise-discovery > label,
+.discovery-candidate-head strong,
+.discovery-facts dd,
+.voice-history article p,
+.voice-consent strong,
+.voice-history > strong,
+.natural-input label,
+.form-grid label {
+  color: var(--ink);
+}
+
+.sync-state {
+  border-color: var(--line-strong);
+  color: var(--muted);
+}
+.sync-state.idle,
+.sync-state.syncing {
+  border-color: #8daf4d;
+  color: var(--accent-deep);
+}
+.sync-state.error,
+.sync-state.conflict {
+  border-color: #d58e7f;
+  color: var(--danger);
+}
+
+.button.ghost,
+.plan-controls button,
+.set-controls button,
+.exercise-options summary,
+.month-controls button,
+.measurement-actions button,
+.candidate-list button,
+.voice-delete-confirm button,
+.input-modes,
+.input-modes button.active,
+.trainer-console-link {
+  border-color: var(--line);
+  background: var(--surface-soft);
+  color: var(--ink);
+}
+.button.primary,
+.explain-button {
+  background: var(--accent);
+  color: #253400;
+}
+.button.danger {
+  background: #e85c47;
+  color: #ffffff;
+}
+.danger-text,
+.voice-delete,
+.measurement-error {
+  color: var(--danger) !important;
+}
+
+.profile-card > span,
+.order,
+.tag,
+.superset-label,
+.self-measured,
+.read-only-badge,
+.confidence.high,
+.muscle-filters button.active,
+.previous-result {
+  border-color: #bad28d;
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+}
+.tag.mighty {
+  color: var(--accent-deep);
+}
+.tag.cringe,
+.confidence.low {
+  background: #fff0e7;
+  color: #9a492b;
+}
+
+.connectivity-notice,
+.recovery-notice,
+.progress-notice,
+.import-result,
+.voice-consent,
+.voice-boundary,
+.clarification,
+.exercise-discovery {
+  border-color: #bfd59b;
+  background: #f1f8e5;
+  color: #39551d;
+}
+.connectivity-notice.error,
+.auth-error,
+.conflict-panel,
+.inline-confirmation,
+.recording-controls,
+.import-result.error,
+.set-chip.conflict {
+  border-color: #df9a8c;
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.conflict-card {
+  background: #fff8f5;
+}
+.recovery-notice span,
+.voice-consent p,
+.voice-consent label,
+.voice-boundary p,
+.clarification p,
+.clarification strong,
+.voice-boundary strong {
+  color: var(--muted);
+}
+.recovery-notice button {
+  color: var(--accent-deep);
+}
+.clarification.compact {
+  color: var(--warning);
+}
+
+.exercise-options .plan-controls {
+  border-color: var(--line);
+  background: var(--surface);
+  box-shadow: 0 12px 28px rgb(29 36 27 / 18%);
+}
+.sets-line.muted {
+  color: var(--faint);
+}
+.set-chip,
+.add-set {
+  border-color: #bfd19e;
+  background: #f0f7e5;
+  color: #385319;
+}
+.add-exercise,
+.empty-plan,
+.removed-sets,
+.progress-empty {
+  border-color: var(--line-strong);
+  background: rgb(255 255 255 / 48%);
+}
+.catalog-symbol {
+  background: var(--accent-soft);
+}
+
+.progress-screen {
+  --progress-line: var(--line);
+  --progress-card: var(--surface);
+}
+.progress-summary article,
+.calendar-day,
+.calendar-details article,
+.strength-chart,
+.strength-history article,
+.measurement-trends > article,
+.measurement-history-toggle,
+.measurement-history button,
+.measurement-values > div,
+.self-measured-toggle,
+.measurement-form-grid > label,
+.push-settings-panel,
+.voice-history article,
+.discovery-candidate,
+.parsed-set dl > div,
+.picker-option {
+  border-color: var(--line);
+  background: var(--surface-soft);
+  color: var(--ink);
+}
+.calendar-day {
+  color: var(--muted);
+}
+.calendar-day.today {
+  border-color: #91a984;
+}
+.calendar-day.trained {
+  background: #dff0bf;
+  color: #365600;
+}
+.calendar-day.selected {
+  border-color: var(--accent-deep);
+  box-shadow: 0 0 0 1px var(--accent-deep);
+}
+.calendar-day.trained::after,
+.chart-legend .estimated::before {
+  background: var(--accent-deep);
+}
+.calendar-details,
+.setting,
+.push-settings-panel,
+.pending-invites > div,
+.athlete-read-only-details article {
+  border-color: var(--line);
+}
+.calendar-details article > div,
+.calendar-details p span,
+.strength-history span,
+.measurement-trends span,
+.measurement-trends small,
+.measurement-history span,
+.measurement-history-toggle i,
+.measurement-detail header span,
+.measurement-values span,
+.measurement-values small,
+.discovery-candidate-head small,
+.discovery-facts dt,
+.parsed-set dt,
+.voice-history article span {
+  color: var(--muted);
+}
+.calendar-details em,
+.measurement-history em {
+  color: var(--accent-deep);
+}
+.muscle-filters button {
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--muted);
+}
+.chart-grid {
+  stroke: var(--line);
+}
+.chart-line.weight {
+  stroke: var(--ink);
+}
+.chart-line.estimated,
+.measurement-trends polyline {
+  stroke: var(--accent-deep);
+}
+.chart-point.weight,
+.measurement-trends circle {
+  fill: var(--ink);
+}
+.chart-point.estimated {
+  fill: var(--accent-deep);
+}
+.chart-point {
+  stroke: var(--surface-soft);
+}
+.one-rep-explainer {
+  background: linear-gradient(135deg, #b7ee42, #e4f7b5);
+  color: #223300;
+}
+.one-rep-explainer span,
+.one-rep-explainer small {
+  color: #465d19;
+}
+
+.measurement-import-sheet pre {
+  background: var(--surface-soft);
+  color: var(--muted);
+}
+.measurement-import-sheet textarea,
+.measurement-date input,
+.push-settings-grid input,
+.push-settings-grid select,
+.trainer-invite-card input,
+.share-link input,
+.progress-select select,
+.natural-input textarea,
+.exercise-discovery-search input,
+.exercise-search,
+.form-grid input {
+  border-color: var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  color-scheme: light;
+}
+.measurement-form-grid input {
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+.measurement-form-grid label > span,
+.measurement-date,
+.self-measured-toggle small,
+.measurement-form-grid label > div small,
+.measurement-form-grid em {
+  color: var(--muted);
+}
+
+.tabs {
+  border-color: var(--line);
+  background: rgb(250 251 247 / 94%);
+  box-shadow: 0 -8px 28px rgb(29 36 27 / 7%);
+}
+.tab {
+  color: var(--muted);
+}
+.tab:focus-visible {
+  border-radius: 10px;
+  outline: 2px solid var(--accent-deep);
+  outline-offset: -3px;
+}
+.explain-button {
+  border-color: #fafbf7;
+  box-shadow:
+    0 10px 24px rgb(46 66 19 / 24%),
+    inset 0 1px 0 #f3ffce;
+}
+.explain-button:hover {
+  background: #b8f331;
+}
+.explain-button:focus-visible {
+  outline-color: var(--ink);
+}
+
+.sheet-backdrop {
+  background: rgb(29 36 27 / 38%);
+}
+.sheet-handle {
+  background: #b8c2b2;
+}
+.input-modes {
+  background: var(--surface-soft);
+}
+.input-modes button {
+  color: var(--muted);
+}
+.input-modes button.active {
+  background: var(--surface);
+  color: var(--accent-deep);
+  box-shadow: 0 2px 8px rgb(29 36 27 / 8%);
+}
+.exercise-discovery-search input {
+  background: #ffffff;
+}
+.confidence {
+  background: var(--surface-strong);
+  color: var(--muted);
+}
+.exercise-discovery .discovery-hint,
+.exercise-discovery .discovery-ambiguity,
+.exercise-discovery .discovery-candidate > p {
+  color: var(--muted);
+}
+.explain-entry {
+  border-color: #9bbb61;
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+}
+.profile-card > span {
+  width: fit-content;
+  justify-self: end;
+}
+.profile-card small {
+  color: var(--muted);
 }
