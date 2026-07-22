@@ -178,6 +178,8 @@ function AuthenticatedAppContent({
   const [exercisePicker, setExercisePicker] = useState<ExercisePickerMode | null>(null);
   const [confirmation, setConfirmation] = useState<PendingConfirmation | null>(null);
   const [explainContext, setExplainContext] = useState<{ exercise: Exercise | null } | null>(null);
+  const [editingWorkoutId, setEditingWorkoutId] = useState<string | null>(null);
+  const finishingWorkoutId = useRef<string | null>(null);
   const [inviteNotice, setInviteNotice] = useState<string | null>(null);
   const [relationshipRefreshKey, setRelationshipRefreshKey] = useState(0);
   const inviteHandled = useRef(false);
@@ -248,6 +250,10 @@ function AuthenticatedAppContent({
   }, [storedWorkouts]);
 
   const activeWorkout = workouts.find((workout) => workout.endedAt === null);
+  const editingWorkout = editingWorkoutId
+    ? workouts.find((workout) => workout.id === editingWorkoutId && workout.endedAt !== null)
+    : undefined;
+  const workoutContext = editingWorkout ?? activeWorkout;
   const suggested = useMemo(
     () =>
       suggestedIds
@@ -291,6 +297,7 @@ function AuthenticatedAppContent({
   }, []);
 
   async function startWorkout() {
+    setEditingWorkoutId(null);
     const id = crypto.randomUUID();
     const clientMutationId = crypto.randomUUID();
     const startedAt = new Date().toISOString();
@@ -332,14 +339,14 @@ function AuthenticatedAppContent({
     rir: number | null;
     comment: string | null;
   }) {
-    if (!activeWorkout || !sheet) return;
+    if (!workoutContext || !sheet) return;
     if (sheet.set) {
       await db.sets.update(sheet.set.id, { ...input, syncState: 'pending' });
       await queueMutation({
         type: 'set.update',
         payload: {
           clientMutationId: crypto.randomUUID(),
-          workoutId: activeWorkout.id,
+          workoutId: workoutContext.id,
           setId: sheet.set.id,
           baseRevision: sheet.set.revision,
           changes: input,
@@ -359,20 +366,21 @@ function AuthenticatedAppContent({
     input: NaturalSetDraft,
     entrySource: SetEntrySource = 'manual',
   ) {
-    if (!activeWorkout) return;
+    if (!workoutContext) return;
+    const performedAt = editingWorkout?.endedAt ?? new Date().toISOString();
     const set: SetInput = {
       id: crypto.randomUUID(),
       exerciseId: exercise.id,
       ...input,
       entrySource,
-      performedAt: new Date().toISOString(),
+      performedAt,
       position:
         Math.max(
           -1,
           ...sets
             .filter(
               (item) =>
-                item.workoutId === activeWorkout.id &&
+                item.workoutId === workoutContext.id &&
                 item.exerciseId === exercise.id &&
                 !item.deleted,
             )
@@ -382,7 +390,7 @@ function AuthenticatedAppContent({
     const clientMutationId = crypto.randomUUID();
     await db.sets.put({
       ...set,
-      workoutId: activeWorkout.id,
+      workoutId: workoutContext.id,
       revision: 0,
       updatedAt: set.performedAt,
       syncState: 'pending',
@@ -390,7 +398,7 @@ function AuthenticatedAppContent({
     });
     await queueMutation({
       type: 'set.create',
-      payload: { clientMutationId, workoutId: activeWorkout.id, set },
+      payload: { clientMutationId, workoutId: workoutContext.id, set },
     });
     await flushOutbox();
   }
@@ -406,30 +414,98 @@ function AuthenticatedAppContent({
 
   async function finishWorkout() {
     if (!activeWorkout) return;
+    if (finishingWorkoutId.current === activeWorkout.id) return;
+    finishingWorkoutId.current = activeWorkout.id;
     const endedAt = new Date().toISOString();
-    await db.workouts.update(activeWorkout.id, { endedAt, syncState: 'pending' });
+    try {
+      await db.workouts.update(activeWorkout.id, { endedAt, syncState: 'pending' });
+      await queueMutation({
+        type: 'workout.update',
+        payload: {
+          clientMutationId: crypto.randomUUID(),
+          workoutId: activeWorkout.id,
+          baseRevision: activeWorkout.revision,
+          changes: { endedAt },
+        },
+      });
+      await flushOutbox();
+    } finally {
+      finishingWorkoutId.current = null;
+    }
+  }
+
+  async function updateWorkoutEndedAt(workout: LocalWorkout, endedAt: string | null) {
+    await db.workouts.update(workout.id, { endedAt, syncState: 'pending' });
     await queueMutation({
       type: 'workout.update',
       payload: {
         clientMutationId: crypto.randomUUID(),
-        workoutId: activeWorkout.id,
-        baseRevision: activeWorkout.revision,
+        workoutId: workout.id,
+        baseRevision: workout.revision,
         changes: { endedAt },
       },
     });
+  }
+
+  function requestFinishWorkout() {
+    if (!activeWorkout) return;
+    setConfirmation({
+      title: tr(locale, 'Завершить тренировку?', 'Finish this workout?'),
+      message: tr(
+        locale,
+        'Тренировка перестанет быть активной и появится в истории прогресса.',
+        'The workout will stop being active and appear in your progress history.',
+      ),
+      confirmLabel: tr(locale, 'Да, завершить', 'Yes, finish'),
+      action: finishWorkout,
+    });
+  }
+
+  async function resumeWorkout(workout: LocalWorkout) {
+    if (workout.endedAt === null) return;
+    if (activeWorkout && activeWorkout.id !== workout.id) {
+      await updateWorkoutEndedAt(activeWorkout, new Date().toISOString());
+    }
+    await updateWorkoutEndedAt(workout, null);
+    setEditingWorkoutId(null);
+    setView('workout');
     await flushOutbox();
   }
 
+  function requestResumeWorkout(workout: LocalWorkout) {
+    if (!activeWorkout || activeWorkout.id === workout.id) {
+      void resumeWorkout(workout);
+      return;
+    }
+    setConfirmation({
+      title: tr(locale, 'Продолжить прошлую тренировку?', 'Continue the past workout?'),
+      message: tr(
+        locale,
+        'Текущая активная тренировка будет завершена сейчас, а выбранная снова станет активной.',
+        'The current active workout will finish now, and the selected workout will become active again.',
+      ),
+      confirmLabel: tr(locale, 'Завершить текущую и продолжить', 'Finish current and continue'),
+      action: () => resumeWorkout(workout),
+    });
+  }
+
+  function editCompletedWorkout(workout: LocalWorkout) {
+    if (workout.endedAt === null) return;
+    setEditingWorkoutId(workout.id);
+    setView('workout');
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  }
+
   async function updateWorkoutPlan(nextPlan: WorkoutExercise[]) {
-    if (!activeWorkout) return;
+    if (!workoutContext) return;
     const exercises = normalizeWorkoutPlan(nextPlan);
-    await db.workouts.update(activeWorkout.id, { exercises, syncState: 'pending' });
+    await db.workouts.update(workoutContext.id, { exercises, syncState: 'pending' });
     await queueMutation({
       type: 'workout.update',
       payload: {
         clientMutationId: crypto.randomUUID(),
-        workoutId: activeWorkout.id,
-        baseRevision: activeWorkout.revision,
+        workoutId: workoutContext.id,
+        baseRevision: workoutContext.revision,
         changes: { exercises },
       },
     });
@@ -437,26 +513,26 @@ function AuthenticatedAppContent({
   }
 
   async function executeWorkoutCommand(command: NaturalWorkoutCommand) {
-    if (!activeWorkout) return;
-    await updateWorkoutPlan(applyWorkoutCommandToPlan(activeWorkout.exercises, command));
+    if (!workoutContext) return;
+    await updateWorkoutPlan(applyWorkoutCommandToPlan(workoutContext.exercises, command));
     setExplainContext(null);
   }
 
   async function chooseExercise(exercise: Exercise) {
-    if (!activeWorkout || !exercisePicker) return;
+    if (!workoutContext || !exercisePicker) return;
     if (exercisePicker.mode === 'add') {
       await updateWorkoutPlan([
-        ...activeWorkout.exercises,
+        ...workoutContext.exercises,
         {
           id: crypto.randomUUID(),
           exerciseId: exercise.id,
-          position: activeWorkout.exercises.length,
+          position: workoutContext.exercises.length,
           supersetGroup: null,
         },
       ]);
     } else {
       await updateWorkoutPlan(
-        activeWorkout.exercises.map((item) =>
+        workoutContext.exercises.map((item) =>
           item.id === exercisePicker.itemId ? { ...item, exerciseId: exercise.id } : item,
         ),
       );
@@ -465,9 +541,9 @@ function AuthenticatedAppContent({
   }
 
   async function removeExercise(itemId: string) {
-    if (!activeWorkout) return;
-    const removed = activeWorkout.exercises.find((item) => item.id === itemId);
-    let nextPlan = activeWorkout.exercises.filter((item) => item.id !== itemId);
+    if (!workoutContext) return;
+    const removed = workoutContext.exercises.find((item) => item.id === itemId);
+    let nextPlan = workoutContext.exercises.filter((item) => item.id !== itemId);
     if (removed?.supersetGroup !== null && removed?.supersetGroup !== undefined) {
       nextPlan = nextPlan.map((item) =>
         item.supersetGroup === removed.supersetGroup ? { ...item, supersetGroup: null } : item,
@@ -477,8 +553,8 @@ function AuthenticatedAppContent({
   }
 
   async function moveExercise(itemId: string, direction: -1 | 1) {
-    if (!activeWorkout) return;
-    const nextPlan = activeWorkout.exercises
+    if (!workoutContext) return;
+    const nextPlan = workoutContext.exercises
       .map((item) => ({ ...item }))
       .sort((left, right) => left.position - right.position);
     const index = nextPlan.findIndex((item) => item.id === itemId);
@@ -495,8 +571,8 @@ function AuthenticatedAppContent({
   }
 
   async function toggleSuperset(itemId: string) {
-    if (!activeWorkout) return;
-    const nextPlan = activeWorkout.exercises
+    if (!workoutContext) return;
+    const nextPlan = workoutContext.exercises
       .map((item) => ({ ...item }))
       .sort((left, right) => left.position - right.position);
     const index = nextPlan.findIndex((item) => item.id === itemId);
@@ -690,7 +766,16 @@ function AuthenticatedAppContent({
   }
 
   return (
-    <main className="app-shell">
+    <main
+      className={[
+        'app-shell',
+        `app-shell-${view}`,
+        view === 'workout' && workoutContext && 'app-shell-live',
+        editingWorkout && 'app-shell-history-edit',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+    >
       <header className="topbar">
         <div>
           <p className="brand">Mighty &amp; Cringe</p>
@@ -751,14 +836,19 @@ function AuthenticatedAppContent({
 
       {view === 'workout' && (
         <WorkoutView
-          activeWorkout={activeWorkout}
+          activeWorkout={workoutContext}
           catalog={exercises}
+          editingHistory={Boolean(editingWorkout)}
           exercises={suggested}
           onAddSet={(exercise) => setSheet({ exercise, set: null })}
           onAddExercise={() => setExercisePicker({ mode: 'add' })}
           onDeleteSet={requestDeleteSet}
           onEditSet={(exercise, set) => setSheet({ exercise, set })}
-          onFinish={finishWorkout}
+          onFinish={requestFinishWorkout}
+          onFinishEditing={() => {
+            setEditingWorkoutId(null);
+            setView('progress');
+          }}
           onMoveExercise={moveExercise}
           onMoveSet={moveSet}
           onRemoveExercise={requestRemoveExercise}
@@ -777,7 +867,9 @@ function AuthenticatedAppContent({
           exercises={exercises}
           measurements={measurements}
           onDeleteMeasurement={requestDeleteMeasurement}
+          onEditWorkout={editCompletedWorkout}
           onImportMeasurements={importMeasurements}
+          onResumeWorkout={requestResumeWorkout}
           onSaveMeasurement={saveMeasurement}
           sets={sets}
           workouts={workouts}
@@ -796,12 +888,26 @@ function AuthenticatedAppContent({
 
       {view !== 'trainer' && (
         <button
+          aria-label={tr(
+            locale,
+            'Пояснить подход или изменить тренировку',
+            'Describe a set or change the workout',
+          )}
           className="explain-button"
           onClick={() => setExplainContext({ exercise: null })}
           type="button"
         >
-          <span>🎙️✏️</span>
-          {tr(locale, 'Пояснить', 'Describe')}
+          <span aria-hidden="true" className="explain-button-icons">
+            <svg viewBox="0 0 24 24">
+              <path d="M12 15.25a3.5 3.5 0 0 0 3.5-3.5v-5a3.5 3.5 0 1 0-7 0v5a3.5 3.5 0 0 0 3.5 3.5Z" />
+              <path d="M5.75 11.25v.5a6.25 6.25 0 0 0 12.5 0v-.5M12 18v3M9.25 21h5.5" />
+            </svg>
+            <svg viewBox="0 0 24 24">
+              <path d="m14.75 5.25 4 4M5.5 18.5l2.1-5.1L16.8 4.2a1.4 1.4 0 0 1 2 0l1 1a1.4 1.4 0 0 1 0 2l-9.2 9.2-5.1 2.1Z" />
+              <path d="m7.6 13.4 3 3" />
+            </svg>
+          </span>
+          <span className="explain-button-label">{tr(locale, 'Пояснить', 'Describe')}</span>
         </button>
       )}
       <nav aria-label={tr(locale, 'Основная навигация', 'Primary navigation')} className="tabs">
@@ -845,7 +951,7 @@ function AuthenticatedAppContent({
       />
       <ExercisePickerSheet
         catalog={exercises}
-        currentPlan={activeWorkout?.exercises ?? []}
+        currentPlan={workoutContext?.exercises ?? []}
         mode={exercisePicker}
         onChoose={chooseExercise}
         onClose={() => setExercisePicker(null)}
@@ -857,7 +963,7 @@ function AuthenticatedAppContent({
       />
       {explainContext && (
         <ExplainSheet
-          activeWorkout={activeWorkout}
+          activeWorkout={workoutContext}
           catalog={exercises}
           onApplyCommand={executeWorkoutCommand}
           onClose={() => setExplainContext(null)}
@@ -937,6 +1043,7 @@ function LoginScreen({ googleEnabled }: { googleEnabled: boolean }) {
 function WorkoutView({
   activeWorkout,
   catalog,
+  editingHistory,
   exercises,
   sets,
   workouts,
@@ -946,6 +1053,7 @@ function WorkoutView({
   onDeleteSet,
   onEditSet,
   onFinish,
+  onFinishEditing,
   onMoveExercise,
   onMoveSet,
   onRemoveExercise,
@@ -956,6 +1064,7 @@ function WorkoutView({
 }: {
   activeWorkout: LocalWorkout | undefined;
   catalog: Exercise[];
+  editingHistory: boolean;
   exercises: Exercise[];
   sets: LocalSet[];
   workouts: LocalWorkout[];
@@ -965,6 +1074,7 @@ function WorkoutView({
   onDeleteSet: (set: LocalSet) => void;
   onEditSet: (exercise: Exercise, set: LocalSet) => void;
   onFinish: () => void;
+  onFinishEditing: () => void;
   onMoveExercise: (itemId: string, direction: -1 | 1) => void;
   onMoveSet: (set: LocalSet, direction: -1 | 1) => void;
   onRemoveExercise: (itemId: string, hasLoggedSets: boolean) => void;
@@ -1030,29 +1140,61 @@ function WorkoutView({
   );
 
   return (
-    <section className="screen workout-live">
+    <section
+      className={
+        editingHistory ? 'screen workout-live workout-history-edit' : 'screen workout-live'
+      }
+    >
       <div className="section-head live-head">
         <div>
-          <p className="eyebrow">{tr(locale, 'Тренировка идёт', 'Workout in progress')}</p>
+          <p className="eyebrow">
+            {editingHistory
+              ? tr(locale, 'Редактирование истории', 'Editing history')
+              : tr(locale, 'Тренировка идёт', 'Workout in progress')}
+          </p>
           <h1>
-            {new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'ru-RU', {
-              hour: '2-digit',
-              minute: '2-digit',
-            }).format(new Date(activeWorkout.startedAt))}
+            {editingHistory
+              ? new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'ru-RU', {
+                  day: 'numeric',
+                  month: 'short',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                }).format(new Date(activeWorkout.startedAt))
+              : new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'ru-RU', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                }).format(new Date(activeWorkout.startedAt))}
           </h1>
         </div>
-        <button className="button ghost small" onClick={onFinish} type="button">
-          {tr(locale, 'Завершить', 'Finish')}
+        <button
+          className="button ghost small"
+          onClick={editingHistory ? onFinishEditing : onFinish}
+          type="button"
+        >
+          {editingHistory ? tr(locale, 'Готово', 'Done') : tr(locale, 'Завершить', 'Finish')}
         </button>
       </div>
-      <p className="intro">
-        {tr(
-          locale,
-          'План можно менять в любой момент. Удаление упражнения не стирает уже записанные подходы.',
-          'You can change the plan at any time. Removing an exercise does not erase logged sets.',
-        )}
-      </p>
-      {recovered && (
+      <details className="live-help">
+        <summary>
+          {editingHistory
+            ? tr(locale, 'Правки не возобновляют тренировку', 'Edits do not resume the workout')
+            : tr(locale, 'План можно менять', 'The plan is editable')}
+        </summary>
+        <p>
+          {editingHistory
+            ? tr(
+                locale,
+                'Можно исправлять план и подходы; дата завершения останется прежней.',
+                'You can correct the plan and sets; the completion date stays unchanged.',
+              )
+            : tr(
+                locale,
+                'Переставляй, заменяй и убирай упражнения. Уже записанные подходы останутся в истории.',
+                'Move, replace, or remove exercises. Logged sets will remain in your history.',
+              )}
+        </p>
+      </details>
+      {recovered && !editingHistory && (
         <div className="recovery-notice" role="status">
           <div>
             <strong>
@@ -1088,7 +1230,13 @@ function WorkoutView({
             item.supersetGroup === plan[index + 1]?.item.supersetGroup;
           return (
             <article
-              className={item.supersetGroup === null ? 'exercise-card' : 'exercise-card superset'}
+              className={[
+                'exercise-card',
+                item.supersetGroup === null ? '' : 'superset',
+                logged.length ? 'has-sets' : 'no-sets',
+              ]
+                .filter(Boolean)
+                .join(' ')}
               key={item.id}
             >
               <div className="exercise-card-head">
@@ -1096,51 +1244,60 @@ function WorkoutView({
                   <strong>{exerciseName(exercise, locale)}</strong>
                   <small>{muscleLabel(exercise.primaryMuscles[0], locale)}</small>
                 </div>
-                <Tag tag={exercise.tag} />
+                <div className="exercise-card-actions">
+                  <Tag tag={exercise.tag} />
+                  <details className="exercise-options">
+                    <summary
+                      aria-label={`${tr(locale, 'Настроить упражнение', 'Exercise options')}: ${exerciseName(exercise, locale)}`}
+                    >
+                      •••
+                    </summary>
+                    <div
+                      className="plan-controls"
+                      aria-label={`${tr(locale, 'План', 'Plan')}: ${exerciseName(exercise, locale)}`}
+                    >
+                      <button
+                        aria-label={tr(locale, 'Поднять упражнение', 'Move exercise up')}
+                        disabled={index === 0}
+                        onClick={() => onMoveExercise(item.id, -1)}
+                        type="button"
+                      >
+                        ↑
+                      </button>
+                      <button
+                        aria-label={tr(locale, 'Опустить упражнение', 'Move exercise down')}
+                        disabled={index === plan.length - 1}
+                        onClick={() => onMoveExercise(item.id, 1)}
+                        type="button"
+                      >
+                        ↓
+                      </button>
+                      <button onClick={() => onReplaceExercise(item.id)} type="button">
+                        {tr(locale, 'Заменить', 'Replace')}
+                      </button>
+                      {index < plan.length - 1 && (
+                        <button onClick={() => onToggleSuperset(item.id)} type="button">
+                          {linkedWithNext
+                            ? tr(locale, 'Разъединить', 'Unlink')
+                            : `${tr(locale, 'Суперсет', 'Superset')} ↓`}
+                        </button>
+                      )}
+                      <button
+                        className="danger-text"
+                        onClick={() => onRemoveExercise(item.id, logged.length > 0)}
+                        type="button"
+                      >
+                        {tr(locale, 'Убрать', 'Remove')}
+                      </button>
+                    </div>
+                  </details>
+                </div>
               </div>
               {item.supersetGroup !== null && (
                 <span className="superset-label">
                   {tr(locale, 'Суперсет', 'Superset')} {item.supersetGroup}
                 </span>
               )}
-              <div
-                className="plan-controls"
-                aria-label={`${tr(locale, 'План', 'Plan')}: ${exerciseName(exercise, locale)}`}
-              >
-                <button
-                  aria-label={tr(locale, 'Поднять упражнение', 'Move exercise up')}
-                  disabled={index === 0}
-                  onClick={() => onMoveExercise(item.id, -1)}
-                  type="button"
-                >
-                  ↑
-                </button>
-                <button
-                  aria-label={tr(locale, 'Опустить упражнение', 'Move exercise down')}
-                  disabled={index === plan.length - 1}
-                  onClick={() => onMoveExercise(item.id, 1)}
-                  type="button"
-                >
-                  ↓
-                </button>
-                <button onClick={() => onReplaceExercise(item.id)} type="button">
-                  {tr(locale, 'Заменить', 'Replace')}
-                </button>
-                {index < plan.length - 1 && (
-                  <button onClick={() => onToggleSuperset(item.id)} type="button">
-                    {linkedWithNext
-                      ? tr(locale, 'Разъединить', 'Unlink')
-                      : `${tr(locale, 'Суперсет', 'Superset')} ↓`}
-                  </button>
-                )}
-                <button
-                  className="danger-text"
-                  onClick={() => onRemoveExercise(item.id, logged.length > 0)}
-                  type="button"
-                >
-                  {tr(locale, 'Убрать', 'Remove')}
-                </button>
-              </div>
               {logged.length ? (
                 <div className="sets-line set-list">
                   {logged.map((set, setIndex) => (

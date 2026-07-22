@@ -1,4 +1,20 @@
 :root {
+  --canvas: #f5f6f8;
+  --surface: #ffffff;
+  --surface-soft: #eef1f5;
+  --surface-strong: #e8ebf0;
+  --ink: #14181f;
+  --muted: #737b86;
+  --faint: #9aa1ab;
+  --line: #e6e8ec;
+  --line-strong: #d8dbe0;
+  --accent: #4f46e5;
+  --accent-soft: #eef0fe;
+  --accent-deep: #4f46e5;
+  --danger: #b42318;
+  --danger-soft: #fff1f0;
+  --warning: #b45309;
+  --warning-soft: #fdeccf;
   font-family:
     Inter,
     ui-sans-serif,
@@ -7,8 +23,9 @@
     BlinkMacSystemFont,
     'Segoe UI',
     sans-serif;
-  color: #f5f8ef;
-  background: #10130e;
+  color: var(--ink);
+  color-scheme: light;
+  background: var(--canvas);
   font-synthesis: none;
 }
 
@@ -18,7 +35,7 @@
 body {
   margin: 0;
   min-width: 320px;
-  background: #10130e;
+  background: var(--canvas);
 }
 button,
 input {
@@ -33,7 +50,21 @@ button {
   min-height: 100dvh;
   margin: 0 auto;
   padding: 22px 18px 110px;
-  background: radial-gradient(circle at 85% 0, #273416 0, transparent 31%), #10130e;
+  background: var(--canvas);
+}
+.app-shell-live {
+  display: flex;
+  height: 100dvh;
+  min-height: 0;
+  padding: 14px 12px calc(88px + env(safe-area-inset-bottom));
+  flex-direction: column;
+  overflow: hidden;
+}
+.app-shell-history-edit {
+  background: #faf7f2;
+}
+.app-shell-live .topbar .subtle {
+  display: none;
 }
 .auth-shell {
   display: grid;
@@ -43,7 +74,7 @@ button {
   padding: 28px 18px;
   align-content: start;
   gap: clamp(70px, 18vh, 150px);
-  background: radial-gradient(circle at 85% 0, #304118 0, transparent 36%), #10130e;
+  background: var(--canvas);
 }
 .auth-card {
   padding: 24px;
@@ -330,6 +361,31 @@ small,
 .live-head h1 {
   font-size: 23px;
 }
+.workout-live {
+  display: flex;
+  min-height: 0;
+  margin-top: 14px;
+  flex: 1;
+  flex-direction: column;
+}
+.workout-history-edit .eyebrow {
+  color: #ffd36a;
+}
+.live-help {
+  margin: 0 0 8px;
+  color: #a6ad9c;
+  font-size: 11px;
+}
+.live-help summary {
+  width: fit-content;
+  cursor: pointer;
+  color: #b9c5ae;
+  font-weight: 750;
+}
+.live-help p {
+  margin: 6px 0 0;
+  line-height: 1.4;
+}
 .exercise-list {
   display: grid;
   gap: 10px;
@@ -396,6 +452,54 @@ small,
   border-radius: 16px;
   background: #171c14;
 }
+.workout-live .exercise-list {
+  min-height: 0;
+  padding: 1px 2px 4px;
+  flex: 1;
+  gap: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.workout-live .exercise-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 8px 9px;
+  border-radius: 13px;
+}
+.workout-live .exercise-card-head,
+.workout-live .superset-label {
+  grid-column: 1 / -1;
+}
+.workout-live .exercise-card.no-sets > .exercise-card-head {
+  grid-column: 1;
+}
+.workout-live .exercise-card.no-sets > .sets-line {
+  display: none;
+}
+.workout-live .exercise-card.no-sets > .add-set {
+  grid-row: 1;
+  grid-column: 2;
+}
+.workout-live .exercise-card-head > div:first-child {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 6px;
+}
+.workout-live .exercise-card-head strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workout-live .exercise-card-head small {
+  flex: none;
+  margin: 0;
+  font-size: 10px;
+}
 .exercise-card strong,
 .exercise-card small {
   display: block;
@@ -406,6 +510,50 @@ small,
 }
 .exercise-card.superset {
   border-left: 3px solid #b9f400;
+}
+.exercise-card-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+}
+.exercise-options {
+  position: relative;
+}
+.exercise-options summary {
+  display: grid;
+  width: 30px;
+  height: 26px;
+  cursor: pointer;
+  list-style: none;
+  place-items: center;
+  border: 1px solid #3a4732;
+  border-radius: 8px;
+  background: #20271b;
+  color: #cbd4c1;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+}
+.exercise-options summary::-webkit-details-marker {
+  display: none;
+}
+.exercise-options[open] summary {
+  border-color: #78973f;
+  color: #d7ff70;
+}
+.exercise-options .plan-controls {
+  position: absolute;
+  z-index: 3;
+  top: calc(100% + 5px);
+  right: 0;
+  width: min(286px, calc(100vw - 44px));
+  margin: 0;
+  padding: 8px;
+  border: 1px solid #46553d;
+  border-radius: 11px;
+  background: #171d14;
+  box-shadow: 0 12px 28px #000b;
 }
 .superset-label {
   display: inline-block;
@@ -448,12 +596,31 @@ small,
   color: #deead1;
   font-size: 13px;
 }
+.workout-live .sets-line {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  margin: 0;
+}
 .sets-line.muted {
   color: #838d7a;
 }
 .set-list {
   display: grid;
   gap: 6px;
+}
+.workout-live .set-list {
+  display: flex;
+  overflow-x: auto;
+  gap: 5px;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+.workout-live .set-list::-webkit-scrollbar {
+  display: none;
+}
+.workout-live .set-list .set-row {
+  flex: 0 0 auto;
 }
 .set-row {
   display: grid;
@@ -489,8 +656,30 @@ small,
   font-weight: 800;
   font-size: 13px;
 }
+.workout-live .add-set {
+  width: auto;
+  min-width: 88px;
+  min-height: 32px;
+  padding: 6px 10px;
+}
 .add-exercise {
   border: 1px dashed #52683f;
+}
+.workout-live .add-exercise {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: flex-start;
+  margin-top: 0;
+  padding: 6px 16px;
+}
+.app-shell-live .recovery-notice {
+  margin: 8px 0 6px;
+  padding: 7px 9px;
+  font-size: 10px;
+}
+.app-shell-live .recovery-notice span {
+  display: none;
 }
 .empty-plan,
 .removed-sets {
@@ -699,6 +888,16 @@ small,
   display: flex;
   justify-content: space-between;
   color: #9ca694;
+  font-size: 10px;
+}
+.calendar-details .workout-history-actions {
+  display: flex;
+  justify-content: flex-start;
+  gap: 6px;
+  margin-top: 9px;
+}
+.workout-history-actions .button {
+  padding: 7px 9px;
   font-size: 10px;
 }
 .calendar-details em {
@@ -1549,29 +1748,69 @@ small,
   color: #c8fa64;
 }
 .tab-spacer {
-  width: 82px;
+  flex: 0 0 92px;
 }
 .explain-button {
   position: fixed;
   z-index: 4;
-  bottom: 40px;
+  bottom: calc(36px + env(safe-area-inset-bottom) / 2);
   left: 50%;
   display: grid;
-  width: 76px;
-  height: 76px;
+  grid-template-rows: 28px auto;
+  width: 84px;
+  height: 72px;
   transform: translateX(-50%);
-  place-items: center;
-  border: 6px solid #10130e;
-  border-radius: 50%;
+  align-content: center;
+  justify-items: center;
+  gap: 2px;
+  border: 5px solid #10130e;
+  border-radius: 24px;
   background: #b9f400;
   color: #17200d;
-  box-shadow: 0 8px 20px #0008;
+  box-shadow:
+    0 10px 24px #0008,
+    inset 0 1px 0 #e8ff9a;
+  transition:
+    transform 120ms ease,
+    background-color 120ms ease,
+    box-shadow 120ms ease;
+}
+.explain-button:hover {
+  background: #c8ff2f;
+}
+.explain-button:active {
+  transform: translate(-50%, 2px) scale(0.98);
+  box-shadow:
+    0 5px 14px #0007,
+    inset 0 1px 0 #e8ff9a;
+}
+.explain-button:focus-visible {
+  outline: 3px solid #f5f8ef;
+  outline-offset: 3px;
+}
+.explain-button-icons {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: 100%;
+  height: 28px;
+}
+.explain-button-icons svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.9;
+}
+.explain-button-label {
+  color: inherit;
   font-size: 10px;
   font-weight: 900;
-}
-.explain-button span {
-  display: block;
-  font-size: 19px;
+  line-height: 1;
+  letter-spacing: 0.01em;
 }
 .sheet-backdrop {
   position: fixed;
@@ -1587,6 +1826,13 @@ small,
   padding: 12px 18px calc(24px + env(safe-area-inset-bottom));
   border-radius: 24px 24px 0 0;
   background: #1b2117;
+}
+.set-sheet {
+  max-height: 100dvh;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scroll-padding-block: 24px calc(128px + env(safe-area-inset-bottom));
+  -webkit-overflow-scrolling: touch;
 }
 .sheet-handle {
   width: 42px;
@@ -1802,15 +2048,20 @@ small,
 .candidate-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
 }
 .candidate-list button {
+  min-height: 44px;
   border: 1px solid #687d48;
   border-radius: 999px;
-  padding: 7px 9px;
+  padding: 10px 14px;
   background: #27321f;
   color: #ddf3bb;
-  font-size: 10px;
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.25;
+  text-align: left;
+  touch-action: manipulation;
 }
 .exercise-discovery {
   display: grid;
@@ -2034,12 +2285,15 @@ small,
   justify-content: space-between;
   gap: 10px;
   width: 100%;
+  min-height: 56px;
   border: 0;
   border-radius: 11px;
-  padding: 11px;
+  padding: 12px 14px;
   background: #141a11;
   color: #eef4e6;
+  font-size: 13px;
   text-align: left;
+  touch-action: manipulation;
 }
 .picker-option span:first-child {
   min-width: 0;
@@ -2078,8 +2332,19 @@ small,
   background: #11160e;
   color: #f2f7e9;
 }
+.set-sheet .form-grid input {
+  min-height: 46px;
+  font-size: 16px;
+  line-height: 1.25;
+  scroll-margin-block: 24px 144px;
+  touch-action: manipulation;
+}
 .form-grid input:focus {
   border-color: #b9f400;
+}
+.set-sheet-actions {
+  display: grid;
+  gap: 8px;
 }
 @media (min-width: 561px) {
   .exercise-discovery-search {
@@ -2093,4 +2358,551 @@ small,
     border-right: 1px solid #222b1d;
     border-left: 1px solid #222b1d;
   }
+}
+
+/* Style B · Light minimalism */
+.auth-card,
+.profile-card,
+.stat,
+.exercise-row,
+.exercise-card,
+.progress-section,
+.measurement-detail,
+.trainer-invite-card,
+.pending-invites,
+.athlete-read-only-details > section,
+.trainer-roster > button,
+.sheet {
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgb(20 24 31 / 5%);
+}
+
+.eyebrow,
+.tab.active,
+.push-notice,
+.exercise-discovery .discovery-success,
+.discovery-sources a,
+.catalog a {
+  color: var(--accent-deep);
+}
+
+.brand {
+  color: var(--ink);
+}
+
+.app-shell {
+  border-color: var(--line);
+}
+
+.subtle,
+.intro,
+.sets-line,
+.privacy-note,
+.section-head span,
+.exercise-card small,
+.exercise-row small,
+.explain-context,
+.manual-entry-note,
+.confirmation-message,
+.form-divider,
+.streak-note,
+.chart-legend,
+.chart-range,
+.progress-empty,
+.measurement-delta-note,
+.push-settings-panel > p:first-child,
+.push-settings-grid label,
+.trainer-invite-card label,
+.athlete-read-only-details article small,
+.voice-hint,
+.discovery-sources {
+  color: var(--muted);
+}
+.live-help summary,
+.setting,
+.push-settings-panel > small,
+.calendar-weekdays,
+.month-controls strong,
+.measurement-history time {
+  color: var(--muted);
+}
+
+.screen h1,
+.screen h2,
+.sheet h2,
+.exercise-card strong,
+.exercise-row strong,
+.stat strong,
+.setting strong,
+.progress-summary strong,
+.calendar-details > strong,
+.calendar-details p b,
+.strength-history strong,
+.measurement-trends strong,
+.measurement-history-toggle,
+.measurement-detail header strong,
+.measurement-values strong,
+.self-measured-toggle strong,
+.trainer-roster > button,
+.pending-invites > div,
+.athlete-read-only-details article span,
+.parsed-set > strong,
+.parsed-set dd,
+.exercise-discovery > label,
+.discovery-candidate-head strong,
+.discovery-facts dd,
+.voice-history article p,
+.voice-consent strong,
+.voice-history > strong,
+.natural-input label,
+.form-grid label {
+  color: var(--ink);
+}
+
+.sync-state {
+  border-color: var(--line-strong);
+  color: var(--muted);
+}
+.sync-state.idle,
+.sync-state.syncing {
+  border-color: #c7c9f6;
+  color: var(--accent-deep);
+}
+.sync-state.error,
+.sync-state.conflict {
+  border-color: #d58e7f;
+  color: var(--danger);
+}
+
+.button.ghost,
+.plan-controls button,
+.set-controls button,
+.exercise-options summary,
+.month-controls button,
+.measurement-actions button,
+.candidate-list button,
+.voice-delete-confirm button,
+.input-modes,
+.input-modes button.active,
+.trainer-console-link {
+  border-color: var(--line);
+  background: var(--surface-soft);
+  color: var(--ink);
+}
+.button.primary,
+.explain-button {
+  background: var(--accent);
+  color: #ffffff;
+}
+.button.danger {
+  background: #e85c47;
+  color: #ffffff;
+}
+.danger-text,
+.voice-delete,
+.measurement-error {
+  color: var(--danger) !important;
+}
+
+.profile-card > span,
+.order,
+.superset-label,
+.self-measured,
+.read-only-badge,
+.confidence.high,
+.muscle-filters button.active,
+.previous-result {
+  border-color: #dcdcfb;
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+}
+.tag {
+  border-color: #d7dcfa;
+  background: #e5e9fd;
+  color: #3d5bd6;
+}
+.tag.mighty {
+  border-color: #f6ddb0;
+  background: #fdeccf;
+  color: #b45309;
+}
+.tag.cringe,
+.confidence.low {
+  border-color: #f6d1cd;
+  background: #fff1f0;
+  color: #b42318;
+}
+
+.connectivity-notice,
+.recovery-notice,
+.progress-notice,
+.import-result,
+.voice-consent,
+.voice-boundary,
+.clarification,
+.exercise-discovery {
+  border-color: #dcdcfb;
+  background: #eef0fe;
+  color: #3730a3;
+}
+.connectivity-notice.error,
+.auth-error,
+.conflict-panel,
+.inline-confirmation,
+.recording-controls,
+.import-result.error,
+.set-chip.conflict {
+  border-color: #df9a8c;
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.conflict-card {
+  background: #fff8f5;
+}
+.recovery-notice span,
+.voice-consent p,
+.voice-consent label,
+.voice-boundary p,
+.clarification p,
+.clarification strong,
+.voice-boundary strong {
+  color: var(--muted);
+}
+.recovery-notice button {
+  color: var(--accent-deep);
+}
+.clarification.compact {
+  color: var(--warning);
+}
+
+.exercise-options .plan-controls {
+  border-color: var(--line);
+  background: var(--surface);
+  box-shadow: 0 12px 28px rgb(20 24 31 / 14%);
+}
+.sets-line.muted {
+  color: var(--faint);
+}
+.set-chip,
+.add-set {
+  border-color: #dcdcfb;
+  background: #f5f5ff;
+  color: #3730a3;
+}
+.add-exercise,
+.empty-plan,
+.removed-sets,
+.progress-empty {
+  border-color: var(--line-strong);
+  background: rgb(255 255 255 / 48%);
+}
+.catalog-symbol {
+  background: var(--accent-soft);
+}
+
+.progress-screen {
+  --progress-line: var(--line);
+  --progress-card: var(--surface);
+}
+.progress-summary article,
+.calendar-day,
+.calendar-details article,
+.strength-chart,
+.strength-history article,
+.measurement-trends > article,
+.measurement-history-toggle,
+.measurement-history button,
+.measurement-values > div,
+.self-measured-toggle,
+.measurement-form-grid > label,
+.push-settings-panel,
+.voice-history article,
+.discovery-candidate,
+.parsed-set dl > div,
+.picker-option {
+  border-color: var(--line);
+  background: var(--surface-soft);
+  color: var(--ink);
+}
+.calendar-day {
+  color: var(--muted);
+}
+.calendar-day.today {
+  border-color: #a5a7ef;
+}
+.calendar-day.trained {
+  background: #e5e9fd;
+  color: #3d5bd6;
+}
+.calendar-day.selected {
+  border-color: var(--accent-deep);
+  box-shadow: 0 0 0 1px var(--accent-deep);
+}
+.calendar-day.trained::after,
+.chart-legend .estimated::before {
+  background: var(--accent-deep);
+}
+.calendar-details,
+.setting,
+.push-settings-panel,
+.pending-invites > div,
+.athlete-read-only-details article {
+  border-color: var(--line);
+}
+.calendar-details article > div,
+.calendar-details p span,
+.strength-history span,
+.measurement-trends span,
+.measurement-trends small,
+.measurement-history span,
+.measurement-history-toggle i,
+.measurement-detail header span,
+.measurement-values span,
+.measurement-values small,
+.discovery-candidate-head small,
+.discovery-facts dt,
+.parsed-set dt,
+.voice-history article span {
+  color: var(--muted);
+}
+.calendar-details em,
+.measurement-history em {
+  color: var(--accent-deep);
+}
+.muscle-filters button {
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--muted);
+}
+.chart-grid {
+  stroke: var(--line);
+}
+.chart-line.weight {
+  stroke: var(--ink);
+}
+.chart-line.estimated,
+.measurement-trends polyline {
+  stroke: var(--accent-deep);
+}
+.chart-point.weight,
+.measurement-trends circle {
+  fill: var(--ink);
+}
+.chart-point.estimated {
+  fill: var(--accent-deep);
+}
+.chart-point {
+  stroke: var(--surface-soft);
+}
+.one-rep-explainer {
+  border: 1px solid #dcdcfb;
+  background: #eef0fe;
+  color: #312e81;
+}
+.one-rep-explainer span,
+.one-rep-explainer small {
+  color: #5b5f91;
+}
+
+.measurement-import-sheet pre {
+  background: var(--surface-soft);
+  color: var(--muted);
+}
+.measurement-import-sheet textarea,
+.measurement-date input,
+.push-settings-grid input,
+.push-settings-grid select,
+.trainer-invite-card input,
+.share-link input,
+.progress-select select,
+.natural-input textarea,
+.exercise-discovery-search input,
+.exercise-search,
+.form-grid input {
+  border-color: var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  color-scheme: light;
+}
+.measurement-form-grid input {
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+.measurement-form-grid label > span,
+.measurement-date,
+.self-measured-toggle small,
+.measurement-form-grid label > div small,
+.measurement-form-grid em {
+  color: var(--muted);
+}
+
+.tabs {
+  border-color: var(--line);
+  background: rgb(255 255 255 / 96%);
+  box-shadow: 0 -1px 2px rgb(20 24 31 / 5%);
+}
+.tab {
+  color: var(--muted);
+}
+.tab:focus-visible {
+  border-radius: 10px;
+  outline: 2px solid var(--accent-deep);
+  outline-offset: -3px;
+}
+.explain-button {
+  border-color: #ffffff;
+  box-shadow:
+    0 8px 20px rgb(79 70 229 / 24%),
+    inset 0 1px 0 rgb(255 255 255 / 28%);
+}
+.explain-button:hover {
+  background: #4338ca;
+}
+.explain-button:focus-visible {
+  outline-color: #312e81;
+}
+
+.sheet-backdrop {
+  background: rgb(20 24 31 / 32%);
+}
+.sheet-handle {
+  background: #c4c8cf;
+}
+.input-modes {
+  background: var(--surface-soft);
+}
+.input-modes button {
+  color: var(--muted);
+}
+.input-modes button.active {
+  background: var(--surface);
+  color: var(--accent-deep);
+  box-shadow: 0 1px 2px rgb(20 24 31 / 7%);
+}
+.exercise-discovery-search input {
+  background: #ffffff;
+}
+.confidence {
+  background: var(--surface-strong);
+  color: var(--muted);
+}
+.exercise-discovery .discovery-hint,
+.exercise-discovery .discovery-ambiguity,
+.exercise-discovery .discovery-candidate > p {
+  color: var(--muted);
+}
+.explain-entry {
+  border-color: #dcdcfb;
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+}
+.profile-card > span {
+  width: fit-content;
+  justify-self: end;
+}
+.profile-card small {
+  color: var(--muted);
+}
+
+/* Quiet screen landmarks inside the same neutral design system. */
+.app-shell-workout:not(.app-shell-live) {
+  --screen-marker: #4f46e5;
+  --nav-bg: rgb(255 255 255 / 96%);
+  background: #f5f6f8;
+}
+.app-shell-live {
+  --screen-marker: #4f46e5;
+  --nav-bg: rgb(255 255 255 / 96%);
+  background: #f2f3fa;
+}
+.app-shell-history-edit {
+  --screen-marker: #b45309;
+  --nav-bg: rgb(255 255 255 / 96%);
+  background: #faf7f2;
+}
+.app-shell-progress {
+  --screen-marker: #3d5bd6;
+  --nav-bg: rgb(255 255 255 / 96%);
+  background: #f6f7fa;
+}
+.app-shell-catalog {
+  --screen-marker: #4f46e5;
+  --nav-bg: rgb(255 255 255 / 96%);
+  background: #f5f6f8;
+}
+.app-shell-settings {
+  --screen-marker: #737b86;
+  --nav-bg: rgb(255 255 255 / 96%);
+  background: #f7f7f8;
+}
+.app-shell-trainer {
+  --screen-marker: #4f46e5;
+  --nav-bg: rgb(255 255 255 / 96%);
+  background: #f5f5fa;
+}
+.app-shell .screen > .eyebrow {
+  color: var(--screen-marker, var(--accent-deep));
+}
+.app-shell-workout:not(.app-shell-live) .screen::before {
+  display: none;
+}
+.app-shell-live .live-head {
+  border-left: 4px solid var(--screen-marker);
+  padding-left: 10px;
+}
+.app-shell-progress .progress-screen::before {
+  display: none;
+}
+.tabs {
+  background: var(--nav-bg, rgb(250 251 247 / 94%));
+}
+.tab.active {
+  color: var(--screen-marker, var(--accent-deep));
+}
+
+/* Exact component treatment from Style B: 15 px geometry, indigo focus, hairline depth. */
+.button,
+.stat,
+.exercise-row,
+.exercise-card,
+.workout-live .exercise-card,
+.progress-section,
+.measurement-detail,
+.push-settings-panel,
+.discovery-candidate,
+.picker-option {
+  border-radius: 15px;
+}
+.button.primary,
+.explain-button {
+  background: #4f46e5;
+  color: #ffffff;
+}
+.exercise-card.superset {
+  border-left-color: #4f46e5;
+}
+.exercise-options[open] summary {
+  border-color: #a5a7ef;
+  color: #4f46e5;
+}
+.calendar-day i,
+.measurement-history-toggle strong,
+.trainer-roster b,
+.push-notice {
+  color: #4f46e5;
+}
+.self-measured-toggle input,
+.voice-consent input {
+  accent-color: #4f46e5;
+}
+.measurement-import-sheet textarea:focus,
+.measurement-form-grid input:focus,
+.natural-input textarea:focus,
+.exercise-discovery-search input:focus,
+.exercise-search:focus,
+.form-grid input:focus {
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 3px rgb(79 70 229 / 10%);
 }

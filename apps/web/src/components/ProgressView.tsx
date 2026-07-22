@@ -41,7 +41,9 @@ export function ProgressView({
   exercises,
   measurements,
   onDeleteMeasurement,
+  onEditWorkout,
   onImportMeasurements,
+  onResumeWorkout,
   onSaveMeasurement,
 }: {
   workouts: LocalWorkout[];
@@ -49,7 +51,9 @@ export function ProgressView({
   exercises: Exercise[];
   measurements: LocalMeasurement[];
   onDeleteMeasurement: (measurement: LocalMeasurement) => void;
+  onEditWorkout: (workout: LocalWorkout) => void;
   onImportMeasurements: (drafts: MeasurementDraft[]) => Promise<void>;
+  onResumeWorkout: (workout: LocalWorkout) => void;
   onSaveMeasurement: (draft: MeasurementDraft, existing: LocalMeasurement | null) => Promise<void>;
 }) {
   const { locale, unitSystem } = usePreferences();
@@ -227,6 +231,8 @@ export function ProgressView({
           <DayDetails
             dateKey={selectedDay.dateKey}
             exercises={exercises}
+            onEditWorkout={onEditWorkout}
+            onResumeWorkout={onResumeWorkout}
             sets={visibleSets}
             workoutIds={selectedDay.workout.workoutIds}
             workouts={workouts}
@@ -385,12 +391,16 @@ function DayDetails({
   workouts,
   sets,
   exercises,
+  onEditWorkout,
+  onResumeWorkout,
 }: {
   dateKey: string;
   workoutIds: string[];
   workouts: LocalWorkout[];
   sets: LocalSet[];
   exercises: Exercise[];
+  onEditWorkout: (workout: LocalWorkout) => void;
+  onResumeWorkout: (workout: LocalWorkout) => void;
 }) {
   const { locale, unitSystem } = usePreferences();
   const exerciseById = new Map(exercises.map((exercise) => [exercise.id, exercise]));
@@ -418,6 +428,24 @@ function DayDetails({
                 <em>{tr(locale, 'синхронизируется', 'syncing')}</em>
               )}
             </div>
+            {workout && (
+              <div className="workout-history-actions">
+                <button
+                  className="button ghost small"
+                  onClick={() => onEditWorkout(workout)}
+                  type="button"
+                >
+                  {tr(locale, 'Редактировать', 'Edit')}
+                </button>
+                <button
+                  className="button primary small"
+                  onClick={() => onResumeWorkout(workout)}
+                  type="button"
+                >
+                  {tr(locale, 'Продолжить', 'Continue')}
+                </button>
+              </div>
+            )}
             {grouped.size ? (
               [...grouped.entries()].map(([exerciseId, exerciseSets]) => (
                 <p key={exerciseId}>
