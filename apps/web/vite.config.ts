@@ -9,6 +9,7 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg'],
       workbox: {
+        importScripts: ['push-handler.js'],
         cleanupOutdatedCaches: true,
         clientsClaim: true,
         skipWaiting: true,

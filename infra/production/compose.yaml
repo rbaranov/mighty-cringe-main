@@ -43,6 +43,7 @@ services:
       VOICE_S3_FORCE_PATH_STYLE: ${VOICE_S3_FORCE_PATH_STYLE:-false}
       VOICE_S3_REGION: ${VOICE_S3_REGION:?VOICE_S3_REGION is required}
       VOICE_S3_SECRET_ACCESS_KEY: ${VOICE_S3_SECRET_ACCESS_KEY:?VOICE_S3_SECRET_ACCESS_KEY is required}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -67,6 +68,9 @@ services:
       VOICE_S3_FORCE_PATH_STYLE: ${VOICE_S3_FORCE_PATH_STYLE:-false}
       VOICE_S3_REGION: ${VOICE_S3_REGION:?VOICE_S3_REGION is required}
       VOICE_S3_SECRET_ACCESS_KEY: ${VOICE_S3_SECRET_ACCESS_KEY:?VOICE_S3_SECRET_ACCESS_KEY is required}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
     depends_on:
       migrate:
         condition: service_completed_successfully

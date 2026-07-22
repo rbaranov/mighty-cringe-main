@@ -29,6 +29,17 @@ export const voiceStatusEnum = pgEnum('voice_status', [
   'confirmed',
   'failed',
 ]);
+export const notificationFrequencyEnum = pgEnum('notification_frequency', [
+  'daily',
+  'weekdays',
+  'weekly',
+]);
+export const notificationJobStatusEnum = pgEnum('notification_job_status', [
+  'pending',
+  'processing',
+  'sent',
+  'failed',
+]);
 
 const timestamps = {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -229,6 +240,66 @@ export const voiceEntries = pgTable(
   (table) => [
     index('voice_user_created_idx').on(table.userId, table.createdAt),
     index('voice_pending_retry_idx').on(table.status, table.nextAttemptAt),
+  ],
+);
+
+export const notificationPreferences = pgTable(
+  'notification_preferences',
+  {
+    userId: uuid('user_id')
+      .primaryKey()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    enabled: boolean('enabled').notNull().default(false),
+    frequency: notificationFrequencyEnum('frequency').notNull().default('daily'),
+    weekday: integer('weekday').notNull().default(1),
+    reminderTime: varchar('reminder_time', { length: 5 }).notNull().default('19:00'),
+    quietStart: varchar('quiet_start', { length: 5 }).notNull().default('22:00'),
+    quietEnd: varchar('quiet_end', { length: 5 }).notNull().default('08:00'),
+    timeZone: varchar('time_zone', { length: 100 }).notNull().default('UTC'),
+    nextReminderAt: timestamp('next_reminder_at', { withTimezone: true }),
+    ...timestamps,
+  },
+  (table) => [index('notification_preferences_due_idx').on(table.enabled, table.nextReminderAt)],
+);
+
+export const pushSubscriptions = pgTable(
+  'push_subscriptions',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    endpoint: text('endpoint').notNull().unique(),
+    expirationTime: timestamp('expiration_time', { withTimezone: true }),
+    p256dh: varchar('p256dh', { length: 512 }).notNull(),
+    auth: varchar('auth', { length: 256 }).notNull(),
+    failureCount: integer('failure_count').notNull().default(0),
+    disabledAt: timestamp('disabled_at', { withTimezone: true }),
+    ...timestamps,
+  },
+  (table) => [index('push_subscription_user_idx').on(table.userId, table.disabledAt)],
+);
+
+export const notificationJobs = pgTable(
+  'notification_jobs',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    kind: varchar('kind', { length: 64 }).notNull().default('workout_reminder'),
+    scheduledFor: timestamp('scheduled_for', { withTimezone: true }).notNull(),
+    status: notificationJobStatusEnum('status').notNull().default('pending'),
+    attempts: integer('attempts').notNull().default(0),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
+    lastError: text('last_error'),
+    payload: jsonb('payload').notNull().$type<{ title: string; body: string; url: string }>(),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex('notification_job_schedule_idx').on(table.userId, table.kind, table.scheduledFor),
+    index('notification_job_pending_idx').on(table.status, table.nextAttemptAt, table.scheduledFor),
   ],
 );
 

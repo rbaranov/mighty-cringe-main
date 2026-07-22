@@ -227,6 +227,10 @@ VOICE_S3_ACCESS_KEY_ID=<VOICE_ACCESS_KEY>
 VOICE_S3_SECRET_ACCESS_KEY=<VOICE_SECRET_KEY>
 VOICE_S3_FORCE_PATH_STYLE=false
 VOICE_S3_ENCRYPTION_KEY=<BASE64_32_BYTE_SSE_C_KEY>
+
+VAPID_SUBJECT=mailto:<MONITORED_PRODUCT_EMAIL>
+VAPID_PUBLIC_KEY=<URL_SAFE_PUBLIC_KEY>
+VAPID_PRIVATE_KEY=<SERVER_ONLY_PRIVATE_KEY>
 WORKER_INTERVAL_MS=15000
 ```
 
@@ -290,6 +294,25 @@ https://docs.hetzner.com/storage/object-storage/faq/s3-credentials/.
 Актуальный STT endpoint, форматы и поиск моделей:
 https://openrouter.ai/docs/guides/overview/multimodal/stt. Политика ZDR:
 https://openrouter.ai/docs/guides/features/zdr.
+
+### Web Push: VAPID
+
+Один раз на локальном компьютере сгенерируйте пару ключей:
+
+```bash
+pnpm --filter @mighty-cringe/push exec web-push generate-vapid-keys --json
+```
+
+Перенесите public/private значения в `VAPID_PUBLIC_KEY` и `VAPID_PRIVATE_KEY`, а в
+`VAPID_SUBJECT` укажите контролируемый `mailto:` адрес продукта. Приватный ключ храните только в
+`/etc/mighty-cringe/production.env`; не добавляйте его в GitHub или `VITE_*`. Не ротируйте пару без
+необходимости: уже подписанные браузеры перестанут принимать сообщения и пользователям придётся
+включать напоминания заново.
+
+После deploy установите PWA на телефон, включите напоминания только через явную кнопку, поставьте
+время на несколько минут вперёд и проверьте доставку вне тихих часов. Затем выключите напоминания и
+убедитесь, что следующие задания не доставляются. На iPhone/iPad запрос Web Push доступен только для
+приложения, добавленного на Home Screen.
 
 ## 6. Первый запуск и проверка
 

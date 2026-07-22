@@ -57,6 +57,13 @@
       "when": 1784673211315,
       "tag": "0007_charming_shatterstar",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784674346094,
+      "tag": "0008_low_onslaught",
+      "breakpoints": true
     }
   ]
 }

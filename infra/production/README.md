@@ -22,7 +22,8 @@ For the full setup procedure, see
    GitHub's short-lived workflow token, so no GitHub deploy key or personal access token is stored
    on the server.
 6. Create `/etc/mighty-cringe/production.env` with a unique database password, Google OAuth Web
-   client credentials, optional comma-separated `TRAINER_EMAILS`, and the voice secrets listed in
+   client credentials, optional comma-separated `TRAINER_EMAILS`, the voice secrets, and the VAPID
+   values listed in
    `.env.example`; never commit it. Authorize
    the exact redirect URI
    `https://mightycringe.com/api/v1/auth/google/callback` in Google Cloud Console.
@@ -54,3 +55,17 @@ to encrypted Object Storage and OpenRouter.
 4. Enable server snapshots as an additional recovery mechanism, not as the sole backup.
 
 The application must not begin retaining user audio until steps 1–3 are automated and tested.
+
+## One-time Web Push setup
+
+Generate one VAPID key pair locally with
+`pnpm --filter @mighty-cringe/push exec web-push generate-vapid-keys --json`. Store its public and
+private values as `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` in
+`/etc/mighty-cringe/production.env`, and set `VAPID_SUBJECT` to a monitored `mailto:` address on the
+product domain. Never commit the private key. Keep the pair stable: replacing it invalidates existing
+browser subscriptions and requires athletes to opt in again.
+
+After deployment, install the PWA on a phone, enable reminders from Settings, choose a schedule a few
+minutes ahead, and verify one notification arrives outside the configured quiet hours. Then disable
+reminders and confirm no later job is delivered. On iPhone/iPad, Web Push permission is available only
+to a web app added to the Home Screen.

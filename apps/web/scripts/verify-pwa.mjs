@@ -17,6 +17,8 @@ assert.equal(index.match(/registerSW\.js/g)?.length, 1, 'service worker must reg
 assert.match(serviceWorker, /precacheAndRoute/);
 assert.match(serviceWorker, /createHandlerBoundToURL\("\/?index\.html"\)/);
 assert.match(serviceWorker, /NavigationRoute/);
+assert.match(serviceWorker, /push-handler\.js/);
+assert.match(await readFile(new URL('push-handler.js', dist), 'utf8'), /notificationclick/);
 
 const shellAssets = [...index.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map(
   (match) => match[1],

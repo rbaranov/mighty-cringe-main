@@ -18,6 +18,7 @@ export const exerciseTags = ['mighty', 'normal', 'cringe'] as const;
 export const userRoles = ['athlete', 'admin', 'trainer', 'superadmin'] as const;
 export const voiceStatuses = ['pending', 'processing', 'confirmed', 'failed'] as const;
 export const setEntrySources = ['manual', 'natural_text', 'voice_ai'] as const;
+export const notificationFrequencies = ['daily', 'weekdays', 'weekly'] as const;
 
 export const currentUserSchema = z.object({
   id: z.string().uuid(),
@@ -146,6 +147,42 @@ export const voiceEntryRecordSchema = z.object({
   lastError: z.string().nullable(),
 });
 export const voiceEntryIdSchema = z.string().uuid();
+
+const localTimeSchema = z
+  .string()
+  .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Time must use the HH:mm format');
+
+export const notificationPreferencesSchema = z.object({
+  enabled: z.boolean(),
+  frequency: z.enum(notificationFrequencies),
+  weekday: z.number().int().min(0).max(6),
+  reminderTime: localTimeSchema,
+  quietStart: localTimeSchema,
+  quietEnd: localTimeSchema,
+  timeZone: z.string().trim().min(1).max(100),
+  nextReminderAt: z.string().datetime().nullable(),
+});
+
+export const updateNotificationPreferencesSchema = notificationPreferencesSchema.omit({
+  nextReminderAt: true,
+});
+
+export const pushSubscriptionSchema = z.object({
+  endpoint: z
+    .string()
+    .url()
+    .max(4_096)
+    .refine((endpoint) => endpoint.startsWith('https://'), 'A secure push endpoint is required'),
+  expirationTime: z.number().nonnegative().nullable().default(null),
+  keys: z.object({
+    p256dh: z.string().min(32).max(512),
+    auth: z.string().min(16).max(256),
+  }),
+});
+
+export const deletePushSubscriptionSchema = z.object({
+  endpoint: pushSubscriptionSchema.shape.endpoint,
+});
 
 export const trainerInviteCreateSchema = z.object({
   email: z
@@ -312,6 +349,9 @@ export type DeleteSetInput = z.infer<typeof deleteSetSchema>;
 export type MeasurementValues = z.infer<typeof measurementValuesSchema>;
 export type MeasurementRecord = z.infer<typeof measurementRecordSchema>;
 export type VoiceEntryRecord = z.infer<typeof voiceEntryRecordSchema>;
+export type NotificationPreferences = z.infer<typeof notificationPreferencesSchema>;
+export type UpdateNotificationPreferences = z.infer<typeof updateNotificationPreferencesSchema>;
+export type PushSubscriptionInput = z.infer<typeof pushSubscriptionSchema>;
 export type TrainerSummary = z.infer<typeof trainerSummarySchema>;
 export type TrainerInviteRecord = z.infer<typeof trainerInviteRecordSchema>;
 export type TrainerAthleteSummary = z.infer<typeof trainerAthleteSummarySchema>;
