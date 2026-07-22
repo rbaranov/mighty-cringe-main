@@ -39,12 +39,23 @@ export function SetSheet({ exercise, initial, onClose, onExplain, onSave }: Prop
     setComment(initial?.comment ?? '');
   }, [exercise?.id, initial?.id, initial?.updatedAt, unitSystem]);
 
+  useEffect(() => {
+    if (!exercise) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [exercise]);
+
   if (!exercise) return null;
 
   return (
     <div className="sheet-backdrop" role="presentation" onMouseDown={onClose}>
       <section
-        className="sheet"
+        className="sheet set-sheet"
         aria-modal="true"
         aria-label={`${initial ? tr(locale, 'Изменить', 'Edit') : tr(locale, 'Новый', 'New')} ${tr(locale, 'подход', 'set')}: ${exerciseName(exercise, locale)}`}
         role="dialog"
@@ -69,7 +80,7 @@ export function SetSheet({ exercise, initial, onClose, onExplain, onSave }: Prop
           <label>
             {tr(locale, 'Вес', 'Weight')}, {weightUnit(unitSystem, locale)}
             <input
-              autoFocus
+              enterKeyHint="next"
               inputMode="decimal"
               min="0"
               onChange={(event) => setWeight(event.target.value)}
@@ -81,6 +92,7 @@ export function SetSheet({ exercise, initial, onClose, onExplain, onSave }: Prop
           <label>
             {tr(locale, 'Повторы', 'Reps')}
             <input
+              enterKeyHint="next"
               inputMode="numeric"
               min="1"
               onChange={(event) => setReps(event.target.value)}
@@ -92,6 +104,7 @@ export function SetSheet({ exercise, initial, onClose, onExplain, onSave }: Prop
           <label>
             RIR
             <input
+              enterKeyHint="next"
               inputMode="numeric"
               min="0"
               onChange={(event) => setRir(event.target.value)}
@@ -103,6 +116,7 @@ export function SetSheet({ exercise, initial, onClose, onExplain, onSave }: Prop
           <label className="wide">
             {tr(locale, 'Комментарий', 'Comment')}
             <input
+              enterKeyHint="done"
               maxLength={1000}
               onChange={(event) => setComment(event.target.value)}
               placeholder={tr(locale, 'Как ощущалось?', 'How did it feel?')}
@@ -110,26 +124,28 @@ export function SetSheet({ exercise, initial, onClose, onExplain, onSave }: Prop
             />
           </label>
         </div>
-        <button
-          className="button primary full"
-          disabled={!Number.isFinite(Number(weight)) || Number(reps) < 1}
-          onClick={() =>
-            onSave({
-              weightKg: canonicalWeight(Number(weight), unitSystem),
-              reps: Number(reps),
-              rir: rir === '' ? null : Number(rir),
-              comment: comment.trim() || null,
-            })
-          }
-          type="button"
-        >
-          {initial
-            ? tr(locale, 'Сохранить изменения', 'Save changes')
-            : tr(locale, 'Сохранить подход', 'Save set')}
-        </button>
-        <button className="button ghost full" onClick={onClose} type="button">
-          {tr(locale, 'Отмена', 'Cancel')}
-        </button>
+        <div className="set-sheet-actions">
+          <button
+            className="button primary full"
+            disabled={!Number.isFinite(Number(weight)) || Number(reps) < 1}
+            onClick={() =>
+              onSave({
+                weightKg: canonicalWeight(Number(weight), unitSystem),
+                reps: Number(reps),
+                rir: rir === '' ? null : Number(rir),
+                comment: comment.trim() || null,
+              })
+            }
+            type="button"
+          >
+            {initial
+              ? tr(locale, 'Сохранить изменения', 'Save changes')
+              : tr(locale, 'Сохранить подход', 'Save set')}
+          </button>
+          <button className="button ghost full" onClick={onClose} type="button">
+            {tr(locale, 'Отмена', 'Cancel')}
+          </button>
+        </div>
       </section>
     </div>
   );

@@ -1588,6 +1588,13 @@ small,
   border-radius: 24px 24px 0 0;
   background: #1b2117;
 }
+.set-sheet {
+  max-height: 100dvh;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scroll-padding-block: 24px calc(128px + env(safe-area-inset-bottom));
+  -webkit-overflow-scrolling: touch;
+}
 .sheet-handle {
   width: 42px;
   height: 4px;
@@ -2078,8 +2085,19 @@ small,
   background: #11160e;
   color: #f2f7e9;
 }
+.set-sheet .form-grid input {
+  min-height: 46px;
+  font-size: 16px;
+  line-height: 1.25;
+  scroll-margin-block: 24px 144px;
+  touch-action: manipulation;
+}
 .form-grid input:focus {
   border-color: #b9f400;
+}
+.set-sheet-actions {
+  display: grid;
+  gap: 8px;
 }
 @media (min-width: 561px) {
   .exercise-discovery-search {

@@ -2,6 +2,15 @@
 
 **Обновлён:** 2026-07-22
 
+## 2026-07-22 — защита production credentials
+
+- Production preflight отвергает placeholder, короткие и URL-небезопасные пароли PostgreSQL, не
+  выводя проверяемое значение в ошибках; регрессионные тесты покрывают правила конфигурации.
+- PR #22 смержен в `main`, CI и автоматический production deploy
+  [#29922767047](https://github.com/mighty-cringe/mighty-cringe-main/actions/runs/29922767047)
+  прошли успешно для ревизии `5093e4ec268874de51beaf371c8cd9f1fe6c6252`, публичный health
+  подтвердил состояние `ok`.
+
 ## 2026-07-22 — production-поиск и ротация пароля PostgreSQL
 
 - В защищённый production environment добавлены OpenRouter key и модель discovery; ручной
