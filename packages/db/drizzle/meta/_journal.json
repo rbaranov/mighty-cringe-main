@@ -36,6 +36,13 @@
       "when": 1784663000698,
       "tag": "0004_wealthy_master_chief",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1784670767708,
+      "tag": "0005_groovy_cassandra_nova",
+      "breakpoints": true
     }
   ]
 }

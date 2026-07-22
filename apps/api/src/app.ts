@@ -12,7 +12,15 @@ import {
   updateMeasurementSchema,
   updateSetSchema,
   updateWorkoutSchema,
+  voiceEntryIdSchema,
 } from '@mighty-cringe/contracts';
+import {
+  audioFormatFromMimeType,
+  maximumVoiceBytes,
+  maximumVoiceDurationSeconds,
+  voiceConsentVersion,
+  type VoiceStorage,
+} from '@mighty-cringe/voice';
 import Fastify, { type FastifyBaseLogger, type FastifyReply, type FastifyRequest } from 'fastify';
 
 import { codeChallenge, hashToken, randomToken, type AuthOptions } from './auth.js';
@@ -30,12 +38,20 @@ const oauthAttemptTtlMs = 10 * 60 * 1_000;
 type AppOptions = {
   logger?: FastifyBaseLogger;
   auth?: AuthOptions;
+  voiceStorage?: VoiceStorage;
+  voiceProcessingEnabled?: boolean;
   now?: () => Date;
 };
 
 export function buildApp(repository: WorkoutRepository, options: AppOptions = {}) {
-  const app = Fastify({ logger: options.logger ?? true });
+  const app = Fastify({ logger: options.logger ?? true, bodyLimit: maximumVoiceBytes });
   const now = options.now ?? (() => new Date());
+
+  app.addContentTypeParser(
+    /^audio\/[a-z0-9.+-]+(?:\s*;.*)?$/i,
+    { parseAs: 'buffer', bodyLimit: maximumVoiceBytes },
+    (_request, body, done) => done(null, body),
+  );
 
   void app.register(cookie);
   void app.register(cors, {
@@ -176,6 +192,114 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
     const user = await getCurrentUser(request, repository, now());
     if (!user) return reply.status(401).send({ error: 'Authentication required' });
     return { items: await repository.listWorkouts(user.id) };
+  });
+
+  app.get('/api/v1/voice/config', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    return {
+      enabled: Boolean(options.voiceStorage) && options.voiceProcessingEnabled !== false,
+      consentVersion: voiceConsentVersion,
+      maximumBytes: maximumVoiceBytes,
+      maximumSeconds: maximumVoiceDurationSeconds,
+      provider:
+        Boolean(options.voiceStorage) && options.voiceProcessingEnabled !== false
+          ? 'OpenRouter'
+          : null,
+    };
+  });
+
+  app.get('/api/v1/voice-entries', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    return { items: await repository.listVoiceEntries(user.id) };
+  });
+
+  app.get('/api/v1/voice-entries/:voiceEntryId/audio', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    if (!options.voiceStorage) {
+      return reply.status(503).send({ error: 'Private voice storage is not configured' });
+    }
+    const voiceEntryId = voiceEntryIdSchema.safeParse(
+      (request.params as { voiceEntryId?: unknown }).voiceEntryId,
+    );
+    if (!voiceEntryId.success) return reply.status(400).send({ error: 'Invalid voice entry id' });
+    const object = await repository.getVoiceObject(user.id, voiceEntryId.data);
+    if (!object) return reply.status(404).send({ error: 'Voice entry not found' });
+    const audio = await options.voiceStorage.get(object.objectKey);
+    return reply
+      .header('cache-control', 'private, no-store')
+      .type(object.mimeType)
+      .send(Buffer.from(audio));
+  });
+
+  app.post('/api/v1/voice-entries/:voiceEntryId/audio', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    if (!options.voiceStorage || options.voiceProcessingEnabled === false) {
+      return reply.status(503).send({ error: 'Private voice processing is not configured' });
+    }
+
+    const voiceEntryId = voiceEntryIdSchema.safeParse(
+      (request.params as { voiceEntryId?: unknown }).voiceEntryId,
+    );
+    const query = request.query as { workoutId?: unknown };
+    const workoutId =
+      query.workoutId === undefined || query.workoutId === ''
+        ? { success: true as const, data: null }
+        : voiceEntryIdSchema.safeParse(query.workoutId);
+    if (!voiceEntryId.success || !workoutId.success) {
+      return reply.status(400).send({ error: 'Invalid voice entry or workout id' });
+    }
+    if (request.headers['x-voice-consent-version'] !== voiceConsentVersion) {
+      return reply.status(400).send({ error: 'Current voice consent is required' });
+    }
+
+    const contentType = request.headers['content-type']?.trim().toLowerCase() ?? '';
+    const audioFormat = audioFormatFromMimeType(contentType);
+    const body = request.body;
+    if (!audioFormat || !Buffer.isBuffer(body) || body.length === 0) {
+      return reply.status(400).send({ error: 'A supported non-empty audio body is required' });
+    }
+    if (body.length > maximumVoiceBytes) {
+      return reply.status(413).send({ error: 'Voice recording is too large' });
+    }
+
+    const objectKey = `${user.id}/${voiceEntryId.data}/source.${audioFormat}`;
+    await options.voiceStorage.put(objectKey, body, contentType);
+    try {
+      const entry = await repository.createVoiceEntry(user.id, {
+        id: voiceEntryId.data,
+        workoutId: workoutId.data,
+        objectKey,
+        mimeType: contentType,
+        audioFormat,
+        sizeBytes: body.length,
+        consentVersion: voiceConsentVersion,
+      });
+      return reply.status(202).send({ entry });
+    } catch (error) {
+      await options.voiceStorage.delete(objectKey).catch(() => undefined);
+      return sendRepositoryError(reply, error);
+    }
+  });
+
+  app.delete('/api/v1/voice-entries/:voiceEntryId', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    if (!options.voiceStorage) {
+      return reply.status(503).send({ error: 'Private voice storage is not configured' });
+    }
+    const voiceEntryId = voiceEntryIdSchema.safeParse(
+      (request.params as { voiceEntryId?: unknown }).voiceEntryId,
+    );
+    if (!voiceEntryId.success) return reply.status(400).send({ error: 'Invalid voice entry id' });
+    const object = await repository.getVoiceObject(user.id, voiceEntryId.data);
+    if (!object) return reply.status(404).send({ error: 'Voice entry not found' });
+    await options.voiceStorage.delete(object.objectKey);
+    await repository.deleteVoiceEntry(user.id, voiceEntryId.data);
+    return reply.status(204).send();
   });
 
   app.post('/api/v1/workouts', async (request, reply) => {

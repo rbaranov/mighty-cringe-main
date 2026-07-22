@@ -6,6 +6,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { SetSheet } from './components/SetSheet';
 import type { MeasurementDraft } from './components/BodyMeasurementsSection';
 import { ProgressView } from './components/ProgressView';
+import { VoicePanel } from './components/VoicePanel';
 import {
   activateLocalUser,
   cacheCurrentUser,
@@ -1371,20 +1372,15 @@ function ExplainSheet({
         </div>
 
         {mode === 'voice' ? (
-          <div className="voice-boundary" role="status">
-            <strong>Голос пока не записывается</strong>
-            <p>
-              Сначала добавим явное согласие, приватное хранение и серверный ключ провайдера. Текст
-              уже разбирается офлайн и никуда не отправляется.
-            </p>
-            <button
-              className="button primary full"
-              onClick={() => chooseMode('text')}
-              type="button"
-            >
-              Перейти к тексту
-            </button>
-          </div>
+          <VoicePanel
+            activeWorkoutId={activeWorkout?.id ?? null}
+            onTranscript={(transcript) => {
+              setText(transcript);
+              setMode('text');
+              saveInputMode('text');
+              setResult(parseNaturalSet({ text: transcript, catalog, scopedExercise }));
+            }}
+          />
         ) : result?.status === 'ready' ? (
           <div className="parsed-set" aria-live="polite">
             <strong>Понял так — верно?</strong>

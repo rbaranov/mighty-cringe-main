@@ -11,7 +11,7 @@ Mighty & Cringe — русскоязычная offline-first PWA для личн
 
 - `apps/web` — React PWA и локальное хранилище IndexedDB.
 - `apps/api` — Fastify API и граница авторизации.
-- `apps/worker` — будущая асинхронная обработка голоса, уведомлений и повторов.
+- `apps/worker` — асинхронная обработка голоса, будущих уведомлений и повторов.
 - `packages/contracts` — доменные типы и API-контракты.
 - `packages/db` — PostgreSQL и миграции Drizzle.
 - `infra/production` — Docker Compose и Caddy.
@@ -20,11 +20,12 @@ Mighty & Cringe — русскоязычная offline-first PWA для личн
 
 ## Статус и границы безопасности
 
-- Текущий production-сайт остаётся техническим preview до настройки Google OAuth и merge
-  реализации авторизации. Новая версия не создаёт демонстрационную сессию: без OAuth credentials
-  вход закрыт. Не хранить реальные персональные или голосовые данные до проверки OAuth в
-  production и проверенных автоматических бэкапов.
-- Object Storage ещё не создан; аудио не загружается, worker не обрабатывает голос или push.
+- Google OAuth настроен в production, но интерактивная проверка двух аккаунтов владельцем ещё
+  обязательна. Не хранить реальные персональные или голосовые данные до этой проверки и проверенных
+  автоматических бэкапов.
+- Отдельный Object Storage для голоса ещё не настроен. Голосовой код должен оставаться выключенным,
+  пока нет private bucket, ограниченных S3 credentials, SSE-C recovery key и приватного OpenRouter
+  ключа; не переиспользовать bucket или credentials бэкапов.
 - Никогда не добавлять в репозиторий пароли, OAuth client secret, S3 key, приватные SSH-ключи
   или содержимое production environment file.
 - Изменения автоматически попадают в production только после успешного CI на `main`.

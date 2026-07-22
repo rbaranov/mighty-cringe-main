@@ -16,6 +16,7 @@ export const muscleGroups = [
 
 export const exerciseTags = ['mighty', 'normal', 'cringe'] as const;
 export const userRoles = ['athlete', 'admin', 'trainer', 'superadmin'] as const;
+export const voiceStatuses = ['pending', 'processing', 'confirmed', 'failed'] as const;
 
 export const currentUserSchema = z.object({
   id: z.string().uuid(),
@@ -133,6 +134,17 @@ export const measurementRecordSchema = z.object({
   updatedAt: z.string().datetime(),
 });
 
+export const voiceEntryRecordSchema = z.object({
+  id: z.string().uuid(),
+  workoutId: z.string().uuid().nullable(),
+  status: z.enum(voiceStatuses),
+  transcript: z.string().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  lastError: z.string().nullable(),
+});
+export const voiceEntryIdSchema = z.string().uuid();
+
 export const createMeasurementSchema = z.object({
   id: z.string().uuid(),
   clientMutationId: z.string().uuid(),
@@ -247,6 +259,7 @@ export type UpdateSetInput = z.infer<typeof updateSetSchema>;
 export type DeleteSetInput = z.infer<typeof deleteSetSchema>;
 export type MeasurementValues = z.infer<typeof measurementValuesSchema>;
 export type MeasurementRecord = z.infer<typeof measurementRecordSchema>;
+export type VoiceEntryRecord = z.infer<typeof voiceEntryRecordSchema>;
 export type CreateMeasurementInput = z.infer<typeof createMeasurementSchema>;
 export type UpdateMeasurementInput = z.infer<typeof updateMeasurementSchema>;
 export type DeleteMeasurementInput = z.infer<typeof deleteMeasurementSchema>;

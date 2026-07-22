@@ -34,6 +34,15 @@ services:
     env_file: ${PRODUCTION_ENV_FILE:-.env}
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY is required}
+      OPENROUTER_STT_MODEL: ${OPENROUTER_STT_MODEL:?OPENROUTER_STT_MODEL is required}
+      VOICE_S3_ACCESS_KEY_ID: ${VOICE_S3_ACCESS_KEY_ID:?VOICE_S3_ACCESS_KEY_ID is required}
+      VOICE_S3_BUCKET: ${VOICE_S3_BUCKET:?VOICE_S3_BUCKET is required}
+      VOICE_S3_ENCRYPTION_KEY: ${VOICE_S3_ENCRYPTION_KEY:?VOICE_S3_ENCRYPTION_KEY is required}
+      VOICE_S3_ENDPOINT: ${VOICE_S3_ENDPOINT:?VOICE_S3_ENDPOINT is required}
+      VOICE_S3_FORCE_PATH_STYLE: ${VOICE_S3_FORCE_PATH_STYLE:-false}
+      VOICE_S3_REGION: ${VOICE_S3_REGION:?VOICE_S3_REGION is required}
+      VOICE_S3_SECRET_ACCESS_KEY: ${VOICE_S3_SECRET_ACCESS_KEY:?VOICE_S3_SECRET_ACCESS_KEY is required}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -42,8 +51,6 @@ services:
       - private
 
   worker:
-    profiles:
-      - worker
     build:
       context: ../..
       dockerfile: infra/production/Dockerfile.worker
@@ -51,11 +58,21 @@ services:
     env_file: ${PRODUCTION_ENV_FILE:-.env}
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY is required}
+      OPENROUTER_STT_MODEL: ${OPENROUTER_STT_MODEL:?OPENROUTER_STT_MODEL is required}
+      VOICE_S3_ACCESS_KEY_ID: ${VOICE_S3_ACCESS_KEY_ID:?VOICE_S3_ACCESS_KEY_ID is required}
+      VOICE_S3_BUCKET: ${VOICE_S3_BUCKET:?VOICE_S3_BUCKET is required}
+      VOICE_S3_ENCRYPTION_KEY: ${VOICE_S3_ENCRYPTION_KEY:?VOICE_S3_ENCRYPTION_KEY is required}
+      VOICE_S3_ENDPOINT: ${VOICE_S3_ENDPOINT:?VOICE_S3_ENDPOINT is required}
+      VOICE_S3_FORCE_PATH_STYLE: ${VOICE_S3_FORCE_PATH_STYLE:-false}
+      VOICE_S3_REGION: ${VOICE_S3_REGION:?VOICE_S3_REGION is required}
+      VOICE_S3_SECRET_ACCESS_KEY: ${VOICE_S3_SECRET_ACCESS_KEY:?VOICE_S3_SECRET_ACCESS_KEY is required}
     depends_on:
       migrate:
         condition: service_completed_successfully
     networks:
       - private
+      - egress
 
   postgres:
     image: postgres:17-alpine
@@ -107,3 +124,4 @@ networks:
   edge:
   private:
     internal: true
+  egress:
