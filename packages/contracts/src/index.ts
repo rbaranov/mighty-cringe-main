@@ -36,8 +36,18 @@ export const updateUserPreferencesSchema = z.object({
   unitSystem: z.enum(unitSystems),
 });
 
+export const exerciseLinkSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  url: z
+    .string()
+    .url()
+    .max(2_048)
+    .refine((url) => url.startsWith('https://'), 'Exercise links must use HTTPS'),
+});
+
 export const exerciseSchema = z.object({
   id: z.string().uuid(),
+  scope: z.enum(['global', 'user']).optional(),
   nameRu: z.string().min(1),
   nameEn: z.string().min(1),
   aliases: z.array(z.string()),
@@ -45,6 +55,41 @@ export const exerciseSchema = z.object({
   primaryMuscles: z.array(z.enum(muscleGroups)).min(1),
   secondaryMuscles: z.array(z.enum(muscleGroups)),
   equipment: z.array(z.string()),
+  videos: z.array(exerciseLinkSchema).max(5).optional(),
+  sources: z.array(exerciseLinkSchema).max(8).optional(),
+  notes: z.string().max(2_000).nullable().optional(),
+});
+
+const exerciseDetailsSchema = z.object({
+  nameRu: z.string().trim().min(1).max(255),
+  nameEn: z.string().trim().min(1).max(255),
+  aliases: z.array(z.string().trim().min(1).max(255)).max(20),
+  tag: z.enum(exerciseTags),
+  primaryMuscles: z.array(z.enum(muscleGroups)).min(1).max(4),
+  secondaryMuscles: z.array(z.enum(muscleGroups)).max(6),
+  equipment: z.array(z.string().trim().min(1).max(100)).max(10),
+  videos: z.array(exerciseLinkSchema).max(5),
+  sources: z.array(exerciseLinkSchema).min(1).max(8),
+  notes: z.string().trim().min(1).max(2_000).nullable(),
+});
+
+export const createExerciseSchema = exerciseDetailsSchema.extend({
+  id: z.string().uuid(),
+});
+
+export const exerciseDiscoveryQuerySchema = z.object({
+  query: z.string().trim().min(2).max(200),
+  locale: z.enum(['ru', 'en']).default('ru'),
+});
+
+export const exerciseDiscoveryCandidateSchema = exerciseDetailsSchema.extend({
+  confidence: z.enum(['high', 'medium', 'low']),
+  matchReason: z.string().trim().min(1).max(500),
+});
+
+export const exerciseDiscoveryResultSchema = z.object({
+  query: z.string().min(1),
+  candidates: z.array(exerciseDiscoveryCandidateSchema).max(3),
 });
 
 export const workoutExerciseSchema = z.object({
@@ -345,6 +390,9 @@ export const workoutRecordSchema = z.object({
 });
 
 export type Exercise = z.infer<typeof exerciseSchema>;
+export type CreateExerciseInput = z.infer<typeof createExerciseSchema>;
+export type ExerciseDiscoveryCandidate = z.infer<typeof exerciseDiscoveryCandidateSchema>;
+export type ExerciseDiscoveryResult = z.infer<typeof exerciseDiscoveryResultSchema>;
 export type WorkoutExercise = z.infer<typeof workoutExerciseSchema>;
 export type SetInput = z.infer<typeof setInputSchema>;
 export type SetEntrySource = SetInput['entrySource'];

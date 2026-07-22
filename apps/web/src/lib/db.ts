@@ -198,11 +198,21 @@ export async function activateLocalUser(userId: string) {
 
   await db.transaction(
     'rw',
-    [db.workouts, db.sets, db.measurements, db.voiceEntries, db.outbox, db.conflicts, db.meta],
+    [
+      db.workouts,
+      db.sets,
+      db.exercises,
+      db.measurements,
+      db.voiceEntries,
+      db.outbox,
+      db.conflicts,
+      db.meta,
+    ],
     async () => {
       await Promise.all([
         db.workouts.clear(),
         db.sets.clear(),
+        db.exercises.clear(),
         db.measurements.clear(),
         db.voiceEntries.clear(),
         db.outbox.clear(),
@@ -245,11 +255,21 @@ export async function disableOfflineSession() {
 export async function clearLocalUserData() {
   await db.transaction(
     'rw',
-    [db.workouts, db.sets, db.measurements, db.voiceEntries, db.outbox, db.conflicts, db.meta],
+    [
+      db.workouts,
+      db.sets,
+      db.exercises,
+      db.measurements,
+      db.voiceEntries,
+      db.outbox,
+      db.conflicts,
+      db.meta,
+    ],
     async () => {
       await Promise.all([
         db.workouts.clear(),
         db.sets.clear(),
+        db.exercises.clear(),
         db.measurements.clear(),
         db.voiceEntries.clear(),
         db.outbox.clear(),

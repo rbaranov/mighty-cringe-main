@@ -150,6 +150,7 @@ export const exercises = pgTable(
     secondaryMuscles: jsonb('secondary_muscles').notNull().$type<string[]>().default([]),
     equipment: jsonb('equipment').notNull().$type<string[]>().default([]),
     videos: jsonb('videos').notNull().$type<Array<{ title: string; url: string }>>().default([]),
+    sources: jsonb('sources').notNull().$type<Array<{ title: string; url: string }>>().default([]),
     notes: text('notes'),
     ...timestamps,
   },

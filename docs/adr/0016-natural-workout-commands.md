@@ -23,13 +23,13 @@ the existing `workout.update` IndexedDB and durable outbox flow. Logged sets kee
 exercise identity, and plan normalization preserves valid ordering while detaching invalidated
 supersets. Text input and confirmed voice transcripts use the same parser.
 
-Unknown or ambiguous names are never guessed. The interface asks the athlete to select a candidate;
-an unknown target cannot be created implicitly because custom exercise metadata must be explicit.
+Unknown or ambiguous names are never guessed. The interface asks the athlete to select a catalog
+candidate. ADR 0017 extends an unknown target with an explicit, web-grounded personal-catalog
+discovery flow; the deterministic parser itself remains local and does not create exercises.
 
 ## Consequences
 
 - Core workout commands work offline and do not disclose text to an AI provider.
 - Manual and natural editing share one mutation and conflict model.
 - A recognized command no longer produces a set-volume question.
-- User-specific exercise names require catalog support before the command can reference them
-  directly.
+- A confirmed personal-catalog exercise can be referenced by the same deterministic parser.

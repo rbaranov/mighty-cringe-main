@@ -30,6 +30,7 @@ test('accepts a core production environment with optional integrations disabled'
     monitoringEnabled: false,
     pushEnabled: false,
     voiceEnabled: false,
+    exerciseDiscoveryEnabled: false,
   });
 });
 
@@ -48,7 +49,30 @@ test('accepts complete voice and VAPID groups', () => {
       S3_SECRET_KEY: 'backup-secret-key',
       RESTIC_PASSWORD: 'a'.repeat(32),
     }),
-    { backupEnabled: true, monitoringEnabled: false, pushEnabled: true, voiceEnabled: true },
+    {
+      backupEnabled: true,
+      monitoringEnabled: false,
+      pushEnabled: true,
+      voiceEnabled: true,
+      exerciseDiscoveryEnabled: false,
+    },
+  );
+});
+
+test('accepts web-backed exercise discovery without enabling voice storage', () => {
+  assert.deepEqual(
+    validateProductionEnvironment({
+      ...core,
+      OPENROUTER_API_KEY: 'openrouter-secret',
+      EXERCISE_DISCOVERY_MODEL: 'provider/model-with-web-and-json-schema',
+    }),
+    {
+      backupEnabled: false,
+      monitoringEnabled: false,
+      pushEnabled: false,
+      voiceEnabled: false,
+      exerciseDiscoveryEnabled: true,
+    },
   );
 });
 
@@ -58,7 +82,7 @@ test('rejects partial optional groups without exposing configured values', () =>
     () => validateProductionEnvironment(environment),
     (error) =>
       error instanceof Error &&
-      /OPENROUTER_STT_MODEL/u.test(error.message) &&
+      /OPENROUTER_STT_MODEL or EXERCISE_DISCOVERY_MODEL/u.test(error.message) &&
       !error.message.includes(environment.OPENROUTER_API_KEY),
   );
 

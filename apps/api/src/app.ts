@@ -3,12 +3,14 @@ import { randomUUID } from 'node:crypto';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import {
+  createExerciseSchema,
   createMeasurementSchema,
   createSetSchema,
   createWorkoutSchema,
   deletePushSubscriptionSchema,
   deleteMeasurementSchema,
   deleteSetSchema,
+  exerciseDiscoveryQuerySchema,
   syncMutationSchema,
   pushSubscriptionSchema,
   trainerAthleteIdSchema,
@@ -34,6 +36,7 @@ import { nextNotificationAt } from '@mighty-cringe/push';
 import Fastify, { type FastifyBaseLogger, type FastifyReply, type FastifyRequest } from 'fastify';
 
 import { codeChallenge, hashToken, randomToken, type AuthOptions } from './auth.js';
+import type { ExerciseDiscovery } from './exerciseDiscovery.js';
 import {
   RepositoryConflictError,
   RepositoryInviteError,
@@ -54,6 +57,7 @@ type AppOptions = {
   voiceStorage?: VoiceStorage;
   voiceProcessingEnabled?: boolean;
   pushPublicKey?: string | null;
+  exerciseDiscovery?: ExerciseDiscovery;
   now?: () => Date;
 };
 
@@ -351,7 +355,36 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
   app.get('/api/v1/exercises', async (request, reply) => {
     const user = await getCurrentUser(request, repository, now());
     if (!user) return reply.status(401).send({ error: 'Authentication required' });
-    return { items: await repository.listExercises() };
+    return { items: await repository.listExercises(user.id) };
+  });
+
+  app.post('/api/v1/exercises/discover', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    if (!options.exerciseDiscovery) {
+      return reply.status(503).send({ error: 'Online exercise discovery is not configured' });
+    }
+    const input = exerciseDiscoveryQuerySchema.safeParse(request.body);
+    if (!input.success) return reply.status(400).send({ error: input.error.flatten() });
+    try {
+      return await options.exerciseDiscovery.discover(input.data.query, input.data.locale);
+    } catch (error) {
+      request.log.error({ err: error }, 'Exercise discovery failed');
+      return reply.status(502).send({ error: 'Exercise discovery provider is unavailable' });
+    }
+  });
+
+  app.post('/api/v1/exercises', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    const input = createExerciseSchema.safeParse(request.body);
+    if (!input.success) return reply.status(400).send({ error: input.error.flatten() });
+    try {
+      const exercise = await repository.createExercise(user.id, input.data);
+      return reply.status(201).send({ exercise });
+    } catch (error) {
+      return sendRepositoryError(reply, error);
+    }
   });
 
   app.get('/api/v1/workouts', async (request, reply) => {

@@ -23,6 +23,7 @@ export type NaturalWorkoutCommandResult =
       question: string;
       candidates: Exercise[];
       role: WorkoutCommandExerciseRole;
+      unresolvedPhrase?: string;
     };
 
 export type WorkoutCommandOverrides = Partial<Record<WorkoutCommandExerciseRole, Exercise>>;
@@ -310,6 +311,7 @@ function resolveExercise({
         ? `I could not find “${phrase}” in the current plan. Choose the exercise.`
         : `I could not find “${phrase}” in the catalog. Choose an exercise or add it to the catalog first.`,
       candidates,
+      phrase,
     );
   }
   if ('candidates' in match) {
@@ -319,6 +321,7 @@ function resolveExercise({
       'Какое именно упражнение ты имеешь в виду?',
       'Which exercise do you mean?',
       match.candidates,
+      phrase,
     );
   }
   return { exercise: match.exercise };
@@ -384,12 +387,14 @@ function clarification(
   ru: string,
   en: string,
   candidates: Exercise[],
+  unresolvedPhrase?: string,
 ): Extract<NaturalWorkoutCommandResult, { status: 'command_needs_clarification' }> {
   return {
     status: 'command_needs_clarification',
     question: tr(locale, ru, en),
     candidates,
     role,
+    ...(unresolvedPhrase ? { unresolvedPhrase } : {}),
   };
 }
 

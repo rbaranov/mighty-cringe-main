@@ -10,6 +10,7 @@ import type {
 import { useLiveQuery } from 'dexie-react-hooks';
 
 import { SetSheet } from './components/SetSheet';
+import { ExerciseDiscoveryPanel } from './components/ExerciseDiscoveryPanel';
 import type { MeasurementDraft } from './components/BodyMeasurementsSection';
 import { ProgressView } from './components/ProgressView';
 import { PushReminderSettings } from './components/PushReminderSettings';
@@ -265,7 +266,10 @@ function AuthenticatedAppContent({
         }
         if (!response.ok) throw new Error('Catalog is unavailable');
         const payload = (await response.json()) as { items: Exercise[] };
-        await db.exercises.bulkPut(payload.items);
+        await db.transaction('rw', db.exercises, async () => {
+          await db.exercises.clear();
+          await db.exercises.bulkPut(payload.items);
+        });
       } catch {
         await db.exercises.bulkPut(fallbackCatalog);
       }
@@ -1272,10 +1276,24 @@ function WorkoutView({
 
 function CatalogView({ exercises }: { exercises: Exercise[] }) {
   const { locale } = usePreferences();
+  const [adding, setAdding] = useState(false);
   return (
     <section className="screen">
       <p className="eyebrow">{tr(locale, 'Общий + личный', 'Shared + personal')}</p>
       <h1>{tr(locale, 'Каталог упражнений', 'Exercise catalog')}</h1>
+      <button className="button primary" onClick={() => setAdding((value) => !value)} type="button">
+        {adding
+          ? tr(locale, 'Скрыть поиск', 'Hide search')
+          : tr(locale, '＋ Найти и добавить', '＋ Find and add')}
+      </button>
+      {adding && (
+        <ExerciseDiscoveryPanel
+          locale={locale}
+          onExerciseSaved={async (exercise) => {
+            await db.exercises.put(exercise);
+          }}
+        />
+      )}
       <div className="exercise-list catalog-list">
         {exercises.map((exercise) => (
           <article className="exercise-row catalog" key={exercise.id}>
@@ -1287,7 +1305,13 @@ function CatalogView({ exercises }: { exercises: Exercise[] }) {
               <small>
                 {locale === 'en' ? exercise.nameRu : exercise.nameEn} ·{' '}
                 {muscleLabel(exercise.primaryMuscles[0], locale)}
+                {exercise.scope === 'user' ? ` · ${tr(locale, 'личное', 'personal')}` : ''}
               </small>
+              {exercise.videos?.[0] && (
+                <a href={exercise.videos[0].url} rel="noreferrer" target="_blank">
+                  {tr(locale, 'Видео техники', 'Technique video')}
+                </a>
+              )}
             </div>
             <Tag tag={exercise.tag} />
           </article>
@@ -1610,10 +1634,11 @@ function ExplainSheet({
     input: string,
     exerciseOverride: Exercise | null = null,
     overrides: WorkoutCommandOverrides = {},
+    inputCatalog: Exercise[] = catalog,
   ): NaturalInputResult {
     const command = parseNaturalWorkoutCommand({
       text: input,
-      catalog,
+      catalog: inputCatalog,
       plan: activeWorkout?.exercises ?? [],
       locale,
       overrides,
@@ -1867,6 +1892,25 @@ function ExplainSheet({
               <div className="clarification" role="alert">
                 <strong>{tr(locale, 'Нужно уточнение', 'One detail is missing')}</strong>
                 <p>{result.question}</p>
+                {result.status === 'command_needs_clarification' &&
+                  result.role === 'target' &&
+                  result.unresolvedPhrase && (
+                    <ExerciseDiscoveryPanel
+                      initialQuery={result.unresolvedPhrase}
+                      locale={locale}
+                      onExerciseSaved={async (exercise) => {
+                        await db.exercises.put(exercise);
+                        const nextOverrides = { ...commandOverrides, target: exercise };
+                        setCommandOverrides(nextOverrides);
+                        setResult(
+                          parseInput(text, null, nextOverrides, [
+                            ...catalog.filter((item) => item.id !== exercise.id),
+                            exercise,
+                          ]),
+                        );
+                      }}
+                    />
+                  )}
                 {result.candidates.length > 0 && (
                   <div className="candidate-list">
                     {result.candidates.map((exercise) => (

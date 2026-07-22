@@ -63,8 +63,34 @@ describe('natural workout commands', () => {
     ).toMatchObject({
       status: 'command_needs_clarification',
       role: 'target',
+      unresolvedPhrase: 'тягу арни',
       question:
         'Не нашёл «тягу арни» в каталоге. Выбери упражнение или сначала добавь его в каталог.',
+    });
+  });
+
+  it('completes the original command after a discovered alias enters the personal catalog', () => {
+    const personalExercise = {
+      ...fallbackCatalog[7],
+      id: '70000000-0000-4000-8000-000000000001',
+      scope: 'user' as const,
+      nameRu: 'Тяга гантели одной рукой',
+      nameEn: 'One-arm dumbbell row',
+      aliases: ['тяга арни'],
+    };
+
+    expect(
+      parseNaturalWorkoutCommand({
+        text: 'Замени тягу верхнего блока на тягу арни',
+        catalog: [...fallbackCatalog, personalExercise],
+        plan,
+      }),
+    ).toMatchObject({
+      status: 'command_ready',
+      command: {
+        type: 'replace',
+        replacement: { id: personalExercise.id, scope: 'user' },
+      },
     });
   });
 
