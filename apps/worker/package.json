@@ -9,10 +9,14 @@
     "start": "node dist/worker.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "tsc --noEmit -p tsconfig.json",
-    "test": "node --test dist/**/*.test.js"
+    "test": "node --test dist/*.test.js"
   },
   "dependencies": {
-    "dotenv": "^16.6.0"
+    "@mighty-cringe/contracts": "workspace:*",
+    "@mighty-cringe/push": "workspace:*",
+    "@mighty-cringe/voice": "workspace:*",
+    "dotenv": "^16.6.0",
+    "postgres": "^3.4.7"
   },
   "devDependencies": {
     "tsx": "^4.20.0"

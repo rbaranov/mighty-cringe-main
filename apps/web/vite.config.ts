@@ -8,13 +8,24 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg'],
+      workbox: {
+        importScripts: ['push-handler.js'],
+        cleanupOutdatedCaches: true,
+        clientsClaim: true,
+        skipWaiting: true,
+        navigateFallback: '/index.html',
+        navigateFallbackDenylist: [/^\/api\//, /^\/health$/],
+      },
       manifest: {
+        id: '/',
         name: 'Mighty & Cringe',
         short_name: 'M&C',
         description: 'Твой офлайн-first помощник для силовых тренировок.',
         theme_color: '#b9f400',
         background_color: '#10130e',
         display: 'standalone',
+        start_url: '/',
+        scope: '/',
         lang: 'ru',
         icons: [
           {

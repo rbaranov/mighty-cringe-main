@@ -34,6 +34,16 @@ services:
     env_file: ${PRODUCTION_ENV_FILE:-.env}
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_STT_MODEL: ${OPENROUTER_STT_MODEL:-}
+      VOICE_S3_ACCESS_KEY_ID: ${VOICE_S3_ACCESS_KEY_ID:-}
+      VOICE_S3_BUCKET: ${VOICE_S3_BUCKET:-}
+      VOICE_S3_ENCRYPTION_KEY: ${VOICE_S3_ENCRYPTION_KEY:-}
+      VOICE_S3_ENDPOINT: ${VOICE_S3_ENDPOINT:-}
+      VOICE_S3_FORCE_PATH_STYLE: ${VOICE_S3_FORCE_PATH_STYLE:-false}
+      VOICE_S3_REGION: ${VOICE_S3_REGION:-}
+      VOICE_S3_SECRET_ACCESS_KEY: ${VOICE_S3_SECRET_ACCESS_KEY:-}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -42,8 +52,6 @@ services:
       - private
 
   worker:
-    profiles:
-      - worker
     build:
       context: ../..
       dockerfile: infra/production/Dockerfile.worker
@@ -51,11 +59,24 @@ services:
     env_file: ${PRODUCTION_ENV_FILE:-.env}
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_STT_MODEL: ${OPENROUTER_STT_MODEL:-}
+      VOICE_S3_ACCESS_KEY_ID: ${VOICE_S3_ACCESS_KEY_ID:-}
+      VOICE_S3_BUCKET: ${VOICE_S3_BUCKET:-}
+      VOICE_S3_ENCRYPTION_KEY: ${VOICE_S3_ENCRYPTION_KEY:-}
+      VOICE_S3_ENDPOINT: ${VOICE_S3_ENDPOINT:-}
+      VOICE_S3_FORCE_PATH_STYLE: ${VOICE_S3_FORCE_PATH_STYLE:-false}
+      VOICE_S3_REGION: ${VOICE_S3_REGION:-}
+      VOICE_S3_SECRET_ACCESS_KEY: ${VOICE_S3_SECRET_ACCESS_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
     depends_on:
       migrate:
         condition: service_completed_successfully
     networks:
       - private
+      - egress
 
   postgres:
     image: postgres:17-alpine
@@ -116,6 +137,7 @@ services:
       - /restore:size=512m,mode=0700
     networks:
       - private
+      - egress
 
   restore-postgres:
     profiles:
@@ -146,3 +168,4 @@ networks:
   edge:
   private:
     internal: true
+  egress:
