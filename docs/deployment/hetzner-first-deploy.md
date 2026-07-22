@@ -2,10 +2,9 @@
 
 Этот runbook разворачивает техническое окружение в Hetzner Cloud, Helsinki.
 
-> **Внимание:** текущая версия не реализует Google OAuth и использует
-> демонстрационного пользователя. Не приглашайте реальных пользователей и не храните
-> реальные персональные или голосовые данные до внедрения авторизации, Object Storage
-> и проверенной автоматизации резервного копирования.
+> **Внимание:** не приглашайте реальных пользователей и не храните реальные персональные
+> или голосовые данные, пока Google OAuth не настроен, а Object Storage и проверенная
+> автоматизация резервного копирования не введены в эксплуатацию.
 
 ## Целевая конфигурация
 
@@ -211,11 +210,116 @@ POSTGRES_DB=mightycringe
 POSTGRES_USER=mightycringe
 POSTGRES_PASSWORD=<DB_PASSWORD>
 DATABASE_URL=postgresql://mightycringe:<DB_PASSWORD>@postgres:5432/mightycringe
+
+GOOGLE_CLIENT_ID=<GOOGLE_OAUTH_WEB_CLIENT_ID>
+GOOGLE_CLIENT_SECRET=<GOOGLE_OAUTH_WEB_CLIENT_SECRET>
+ADMIN_EMAILS=<OWNER_GOOGLE_EMAIL>
+TRAINER_EMAILS=
+SESSION_TTL_DAYS=30
+
+# Оставьте весь voice-блок пустым, пока не готовы одновременно S3 и OpenRouter.
+OPENROUTER_API_KEY=
+OPENROUTER_STT_MODEL=
+
+VOICE_S3_ENDPOINT=
+VOICE_S3_REGION=
+VOICE_S3_BUCKET=
+VOICE_S3_ACCESS_KEY_ID=
+VOICE_S3_SECRET_ACCESS_KEY=
+VOICE_S3_FORCE_PATH_STYLE=false
+VOICE_S3_ENCRYPTION_KEY=
+
+# Оставьте все три VAPID-поля пустыми до генерации стабильной пары.
+VAPID_SUBJECT=
+VAPID_PUBLIC_KEY=
+VAPID_PRIVATE_KEY=
+WORKER_INTERVAL_MS=15000
 ```
 
-Остальные поля оставьте пустыми до появления соответствующих интеграций. Права на
-`/etc/mighty-cringe/production.env` уже заданы предыдущей командой. До подключения бэкапов
-добавьте значения из раздела 8.
+В Google Cloud Console создайте OAuth client типа **Web application** и укажите точный
+Authorized redirect URI:
+
+```text
+https://mightycringe.com/api/v1/auth/google/callback
+```
+
+Настройте OAuth consent screen и добавьте аккаунты-тестировщики, пока приложение находится в
+режиме Testing. Значения client ID и secret внесите только в серверный файл. `ADMIN_EMAILS` —
+список email через запятую; совпавшие подтверждённые Google-аккаунты получают роль `admin` при
+входе. `TRAINER_EMAILS` таким же образом включает тренерский кабинет только для заранее
+разрешённых аккаунтов. Права на `/etc/mighty-cringe/production.env` уже заданы предыдущей командой.
+Preflight требует основные DB/OAuth-поля, но разрешает полностью пустые voice и VAPID-группы: эти
+возможности останутся выключенными. Частично заполненная группа останавливает deploy до изменения
+контейнеров; значения секретов в диагностике не печатаются.
+До подключения бэкапов добавьте полную группу значений из раздела 8; полностью пустая группа
+оставляет backup timers выключенными, а частичная конфигурация отклоняется preflight.
+
+### Приватный голос: Hetzner Object Storage
+
+Не используйте bucket и credentials бэкапов для голоса. У Hetzner новый S3 key по умолчанию имеет
+доступ ко всем bucket внутри проекта, поэтому самый понятный least-privilege вариант — отдельный
+Hetzner project только для голосового bucket:
+
+1. Создайте отдельный project, например `mighty-cringe-voice-production`.
+2. В нём откройте **Object Storage → Create Bucket**, выберите Helsinki (`hel1`), задайте глобально
+   уникальное имя и visibility **Private**. Не включайте versioning или Object Lock: явное удаление
+   пользователя должно действительно удалять аудио. Включите защиту bucket от случайного удаления.
+3. В этом же отдельном project создайте S3 credentials. Сразу сохраните access key и secret key в
+   менеджере паролей: secret повторно не показывается.
+4. На своём компьютере сгенерируйте отдельный SSE-C key:
+
+   ```bash
+   openssl rand -base64 32
+   ```
+
+   Сохраните результат в менеджере паролей и вставьте без кавычек в
+   `VOICE_S3_ENCRYPTION_KEY`. Резервная копия вне VPS обязательна: Hetzner не хранит этот ключ, а
+   без него уже загруженные записи невозможно прочитать. Не меняйте ключ, пока в bucket остаются
+   записи, если они не были предварительно перешифрованы.
+
+5. Заполните `VOICE_S3_*` в `/etc/mighty-cringe/production.env`. Для Helsinki endpoint —
+   `https://hel1.your-objectstorage.com`, region — `hel1`.
+
+Hetzner документирует отсутствие шифрования объектов по умолчанию и поддержку SSE-C:
+https://docs.hetzner.com/storage/object-storage/faq/general/. Ограничения S3 keys и варианты
+bucket policy описаны здесь:
+https://docs.hetzner.com/storage/object-storage/faq/s3-credentials/.
+
+### Приватный голос: OpenRouter
+
+1. Создайте отдельный API key только для production Mighty & Cringe и установите небольшой credit
+   limit. Не вставляйте ключ в GitHub, браузер или `VITE_*` переменные.
+2. В OpenRouter **Privacy** отключите использование inputs/outputs и включите ZDR для группы,
+   соответствующей выбранной STT-модели. В **Observability** оставьте **Input & Output Logging**
+   выключенным. Код дополнительно отправляет `provider.zdr: true` на каждом запросе и завершает job
+   ошибкой, если у модели нет совместимого ZDR endpoint.
+3. Укажите `OPENROUTER_STT_MODEL=openai/whisper-large-v3` или другой актуальный slug из фильтра
+   Transcription. Модель обязана принимать `webm`, `m4a/mp4` и `ogg`, которые создают мобильные
+   браузеры.
+4. Запишите key и model только в `/etc/mighty-cringe/production.env`.
+
+Актуальный STT endpoint, форматы и поиск моделей:
+https://openrouter.ai/docs/guides/overview/multimodal/stt. Политика ZDR:
+https://openrouter.ai/docs/guides/features/zdr.
+
+### Web Push: VAPID
+
+Один раз на локальном компьютере сгенерируйте пару ключей:
+
+```bash
+pnpm --filter @mighty-cringe/push exec web-push generate-vapid-keys --json
+```
+
+Перенесите public/private значения в `VAPID_PUBLIC_KEY` и `VAPID_PRIVATE_KEY`, а в
+`VAPID_SUBJECT` укажите контролируемый `mailto:` адрес продукта. Приватный ключ храните только в
+`/etc/mighty-cringe/production.env`; не добавляйте его в GitHub или `VITE_*`. Не ротируйте пару без
+необходимости: уже подписанные браузеры перестанут принимать сообщения и пользователям придётся
+включать напоминания заново.
+
+После deploy установите PWA на телефон, включите напоминания только через явную кнопку, поставьте
+время на несколько минут вперёд и проверьте доставку вне тихих часов. Затем выключите напоминания и
+убедитесь, что следующие задания не доставляются. На iPhone/iPad запрос Web Push доступен только для
+приложения, добавленного на Home Screen.
 
 ## 6. Первый запуск и проверка
 
@@ -229,13 +333,15 @@ cd ~/actions-runner/_work/mighty-cringe-main/mighty-cringe-main/infra/production
 PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose ps
 PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose logs --tail=100 migrate
 PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose logs --tail=100 caddy
+PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose logs --tail=100 worker
 ```
 
-`migrate` должен завершиться с кодом `0`; остальные сервисы должны работать. Worker не
-запускается на CPX12 по умолчанию. Проверка:
+`migrate` должен завершиться с кодом `0`; остальные сервисы, включая `worker`, должны работать.
+Проверка:
 
 ```bash
 curl -fsS https://mightycringe.com/health
+curl -fsS https://mightycringe.com/api/v1/auth/config
 ```
 
 Ожидаемый ответ:
@@ -243,6 +349,9 @@ curl -fsS https://mightycringe.com/health
 ```json
 { "status": "ok" }
 ```
+
+Второй запрос должен вернуть `{"googleEnabled":true}`. Затем в приватном окне браузера
+проверьте вход, создание тренировки, выход и ответ `401` от `/api/v1/me` после выхода.
 
 ## 7. Автоматический deploy через server-side runner
 
@@ -337,7 +446,8 @@ Hetzner server backups — дополнительная защита, а не з
 
 ## 9. Мониторинг и уведомления
 
-До merge мониторинга создайте в Healthchecks.io отдельный check `mighty-cringe-production`:
+Чтобы включить monitoring timer, сначала настройте зашифрованные бэкапы из раздела 8, затем
+создайте в Healthchecks.io отдельный check `mighty-cringe-production`:
 
 1. Установите period **5 minutes** и grace time **10 minutes**.
 2. В Integrations подключите личный email или другой канал и отправьте тестовое уведомление.
@@ -402,8 +512,9 @@ Journald хранит persistent-логи до 30 дней, использует
 cd ~/actions-runner/_work/mighty-cringe-main/mighty-cringe-main/infra/production
 PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose ps
 
-# Логи API и reverse proxy
+# Логи API, worker и reverse proxy
 PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose logs --tail=200 api
+PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose logs --tail=200 worker
 PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose logs --tail=200 caddy
 
 # Ручной повторный запуск уже полученной ревизии

@@ -1,0 +1,130 @@
+import { describe, expect, it } from 'vitest';
+
+import type { LocalSet, LocalWorkout } from './db';
+import {
+  buildCalendarMonth,
+  buildExerciseProgress,
+  buildWorkoutDays,
+  calculateStreaks,
+  estimateOneRepMax,
+  volumeForRecentDays,
+} from './progress';
+
+const firstWorkout = workout('2026-07-20T18:00:00.000Z', '2026-07-20T19:00:00.000Z', 'w1');
+const secondWorkout = workout('2026-07-21T18:00:00.000Z', '2026-07-21T19:00:00.000Z', 'w2');
+
+describe('progress metrics', () => {
+  it('calculates an RIR-aware Epley estimate', () => {
+    expect(estimateOneRepMax({ weightKg: 80, reps: 8, rir: 2 })).toBeCloseTo(106.67, 2);
+    expect(estimateOneRepMax({ weightKg: 80, reps: 8, rir: null })).toBeCloseTo(101.33, 2);
+  });
+
+  it('aggregates completed workouts in the user timezone and ignores deleted sets', () => {
+    const activeWorkout = workout('2026-07-22T18:00:00.000Z', null, 'w3');
+    const days = buildWorkoutDays(
+      [firstWorkout, secondWorkout, activeWorkout],
+      [
+        set('s1', 'w1', 'bench', 80, 5),
+        set('s2', 'w1', 'bench', 70, 8, { deleted: true }),
+        set('s3', 'w2', 'bench', 82.5, 5),
+        set('s4', 'w3', 'bench', 90, 3),
+      ],
+      'UTC',
+    );
+
+    expect(days).toEqual([
+      expect.objectContaining({ dateKey: '2026-07-20', setCount: 1, volumeKg: 400 }),
+      expect.objectContaining({ dateKey: '2026-07-21', setCount: 1, volumeKg: 412.5 }),
+    ]);
+    expect(volumeForRecentDays(days, '2026-07-22', 3)).toBe(812.5);
+  });
+
+  it('places a late workout on its local calendar day', () => {
+    const lateWorkout = workout('2026-07-20T20:00:00.000Z', '2026-07-20T20:30:00.000Z', 'late');
+    expect(buildWorkoutDays([lateWorkout], [], 'Asia/Almaty')[0].dateKey).toBe('2026-07-21');
+  });
+
+  it('keeps a current streak alive through yesterday and finds the all-time best', () => {
+    expect(
+      calculateStreaks(
+        ['2026-07-01', '2026-07-02', '2026-07-10', '2026-07-11', '2026-07-12'],
+        '2026-07-13',
+      ),
+    ).toEqual({ current: 3, best: 3 });
+    expect(calculateStreaks(['2026-07-01'], '2026-07-13')).toEqual({ current: 0, best: 1 });
+  });
+
+  it('builds one comparable strength point per workout with its source set', () => {
+    const points = buildExerciseProgress(
+      'bench',
+      [firstWorkout, secondWorkout],
+      [
+        set('s1', 'w1', 'bench', 80, 8, { rir: 2 }),
+        set('s2', 'w1', 'bench', 90, 3, { rir: 0 }),
+        set('s3', 'w2', 'bench', 82.5, 8, { rir: 1 }),
+        set('s4', 'w2', 'squat', 120, 5),
+      ],
+      'UTC',
+    );
+
+    expect(points).toHaveLength(2);
+    expect(points[0]).toMatchObject({
+      topWeightKg: 90,
+      volumeKg: 910,
+      sourceSet: { id: 's1' },
+    });
+    expect(points[0].estimatedOneRepMaxKg).toBeCloseTo(106.67, 2);
+    expect(points[1]).toMatchObject({ topWeightKg: 82.5, setCount: 1 });
+  });
+
+  it('creates a Monday-first six-week calendar grid', () => {
+    const cells = buildCalendarMonth('2026-07', [], '2026-07-22');
+    expect(cells).toHaveLength(42);
+    expect(cells[0].dateKey).toBe('2026-06-29');
+    expect(cells.find((cell) => cell.dateKey === '2026-07-22')).toMatchObject({
+      isToday: true,
+      inMonth: true,
+    });
+  });
+});
+
+function workout(startedAt: string, endedAt: string | null, id: string): LocalWorkout {
+  return {
+    id,
+    startedAt,
+    endedAt,
+    notes: null,
+    locale: 'ru',
+    revision: 1,
+    updatedAt: endedAt ?? startedAt,
+    exercises: [],
+    syncState: 'synced',
+  };
+}
+
+function set(
+  id: string,
+  workoutId: string,
+  exerciseId: string,
+  weightKg: number,
+  reps: number,
+  overrides: Partial<LocalSet> = {},
+): LocalSet {
+  return {
+    id,
+    workoutId,
+    exerciseId,
+    weightKg,
+    reps,
+    rir: null,
+    comment: null,
+    entrySource: 'manual',
+    performedAt: '2026-07-20T18:30:00.000Z',
+    position: 0,
+    revision: 1,
+    updatedAt: '2026-07-20T18:30:00.000Z',
+    syncState: 'synced',
+    deleted: false,
+    ...overrides,
+  };
+}

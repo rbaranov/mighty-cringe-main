@@ -7,15 +7,18 @@ COPY apps/worker/package.json apps/worker/package.json
 COPY apps/web/package.json apps/web/package.json
 COPY packages/contracts/package.json packages/contracts/package.json
 COPY packages/db/package.json packages/db/package.json
+COPY packages/push/package.json packages/push/package.json
+COPY packages/voice/package.json packages/voice/package.json
 RUN pnpm install --frozen-lockfile
 COPY apps/api apps/api
 COPY packages/contracts packages/contracts
 COPY packages/db packages/db
-RUN pnpm --filter @mighty-cringe/contracts build && pnpm --filter @mighty-cringe/db build && pnpm --filter @mighty-cringe/api build
+COPY packages/push packages/push
+COPY packages/voice packages/voice
+RUN pnpm --filter @mighty-cringe/contracts build && pnpm --filter @mighty-cringe/db build && pnpm --filter @mighty-cringe/voice build && pnpm --filter @mighty-cringe/push build && pnpm --filter @mighty-cringe/api build
 
 FROM node:22-alpine
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app /app
 CMD ["node", "apps/api/dist/server.js"]
-

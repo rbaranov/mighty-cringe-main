@@ -16,6 +16,22 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      DATABASE_URL: postgresql://mightycringe:integration-test@localhost:5432/mightycringe_test
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: mightycringe_test
+          POSTGRES_USER: mightycringe
+          POSTGRES_PASSWORD: integration-test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mightycringe -d mightycringe_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - name: Check out the revision
         uses: actions/checkout@v4
@@ -41,8 +57,21 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      - name: Verify the PWA secret boundary
+        run: pnpm test:client-boundary
+
+      - name: Validate production environment rules
+        run: pnpm test:production-env
+
       - name: Test
-        run: pnpm --filter @mighty-cringe/api test
+        run: |
+          pnpm --filter @mighty-cringe/db db:migrate
+          pnpm --filter @mighty-cringe/voice test
+          pnpm --filter @mighty-cringe/push test
+          pnpm --filter @mighty-cringe/api test
+          pnpm --filter @mighty-cringe/worker test
+          pnpm --filter @mighty-cringe/web test
+          pnpm --filter @mighty-cringe/web test:pwa
 
       - name: Test encrypted backup and isolated restore
         run: infra/production/scripts/test-backup-restore.sh
