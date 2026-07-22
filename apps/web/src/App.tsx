@@ -178,6 +178,7 @@ function AuthenticatedAppContent({
   const [exercisePicker, setExercisePicker] = useState<ExercisePickerMode | null>(null);
   const [confirmation, setConfirmation] = useState<PendingConfirmation | null>(null);
   const [explainContext, setExplainContext] = useState<{ exercise: Exercise | null } | null>(null);
+  const finishingWorkoutId = useRef<string | null>(null);
   const [inviteNotice, setInviteNotice] = useState<string | null>(null);
   const [relationshipRefreshKey, setRelationshipRefreshKey] = useState(0);
   const inviteHandled = useRef(false);
@@ -406,18 +407,38 @@ function AuthenticatedAppContent({
 
   async function finishWorkout() {
     if (!activeWorkout) return;
+    if (finishingWorkoutId.current === activeWorkout.id) return;
+    finishingWorkoutId.current = activeWorkout.id;
     const endedAt = new Date().toISOString();
-    await db.workouts.update(activeWorkout.id, { endedAt, syncState: 'pending' });
-    await queueMutation({
-      type: 'workout.update',
-      payload: {
-        clientMutationId: crypto.randomUUID(),
-        workoutId: activeWorkout.id,
-        baseRevision: activeWorkout.revision,
-        changes: { endedAt },
-      },
+    try {
+      await db.workouts.update(activeWorkout.id, { endedAt, syncState: 'pending' });
+      await queueMutation({
+        type: 'workout.update',
+        payload: {
+          clientMutationId: crypto.randomUUID(),
+          workoutId: activeWorkout.id,
+          baseRevision: activeWorkout.revision,
+          changes: { endedAt },
+        },
+      });
+      await flushOutbox();
+    } finally {
+      finishingWorkoutId.current = null;
+    }
+  }
+
+  function requestFinishWorkout() {
+    if (!activeWorkout) return;
+    setConfirmation({
+      title: tr(locale, 'Завершить тренировку?', 'Finish this workout?'),
+      message: tr(
+        locale,
+        'Тренировка перестанет быть активной и появится в истории прогресса.',
+        'The workout will stop being active and appear in your progress history.',
+      ),
+      confirmLabel: tr(locale, 'Да, завершить', 'Yes, finish'),
+      action: finishWorkout,
     });
-    await flushOutbox();
   }
 
   async function updateWorkoutPlan(nextPlan: WorkoutExercise[]) {
@@ -760,7 +781,7 @@ function AuthenticatedAppContent({
           onAddExercise={() => setExercisePicker({ mode: 'add' })}
           onDeleteSet={requestDeleteSet}
           onEditSet={(exercise, set) => setSheet({ exercise, set })}
-          onFinish={finishWorkout}
+          onFinish={requestFinishWorkout}
           onMoveExercise={moveExercise}
           onMoveSet={moveSet}
           onRemoveExercise={requestRemoveExercise}
