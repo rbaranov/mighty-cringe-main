@@ -796,12 +796,26 @@ function AuthenticatedAppContent({
 
       {view !== 'trainer' && (
         <button
+          aria-label={tr(
+            locale,
+            'Пояснить подход или изменить тренировку',
+            'Describe a set or change the workout',
+          )}
           className="explain-button"
           onClick={() => setExplainContext({ exercise: null })}
           type="button"
         >
-          <span>🎙️✏️</span>
-          {tr(locale, 'Пояснить', 'Describe')}
+          <span aria-hidden="true" className="explain-button-icons">
+            <svg viewBox="0 0 24 24">
+              <path d="M12 15.25a3.5 3.5 0 0 0 3.5-3.5v-5a3.5 3.5 0 1 0-7 0v5a3.5 3.5 0 0 0 3.5 3.5Z" />
+              <path d="M5.75 11.25v.5a6.25 6.25 0 0 0 12.5 0v-.5M12 18v3M9.25 21h5.5" />
+            </svg>
+            <svg viewBox="0 0 24 24">
+              <path d="m14.75 5.25 4 4M5.5 18.5l2.1-5.1L16.8 4.2a1.4 1.4 0 0 1 2 0l1 1a1.4 1.4 0 0 1 0 2l-9.2 9.2-5.1 2.1Z" />
+              <path d="m7.6 13.4 3 3" />
+            </svg>
+          </span>
+          <span className="explain-button-label">{tr(locale, 'Пояснить', 'Describe')}</span>
         </button>
       )}
       <nav aria-label={tr(locale, 'Основная навигация', 'Primary navigation')} className="tabs">
