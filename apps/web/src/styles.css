@@ -1395,6 +1395,160 @@ small,
 .sheet h2 {
   font-size: 28px;
 }
+.explain-sheet {
+  max-height: 94dvh;
+  overflow-y: auto;
+}
+.explain-context {
+  margin: 6px 0 14px;
+  color: #8f9a86;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.input-modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  padding: 4px;
+  border-radius: 12px;
+  background: #10140e;
+}
+.input-modes button {
+  border: 0;
+  border-radius: 9px;
+  padding: 10px;
+  background: transparent;
+  color: #8f9987;
+  font-weight: 800;
+}
+.input-modes button.active {
+  background: #29351f;
+  color: #d5ff84;
+}
+.natural-input,
+.voice-boundary,
+.parsed-set {
+  margin: 14px 0 8px;
+}
+.natural-input label {
+  display: block;
+  margin-bottom: 7px;
+  color: #bdc7b3;
+  font-size: 11px;
+  font-weight: 800;
+}
+.natural-input textarea {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid #3d4936;
+  border-radius: 12px;
+  outline: 0;
+  padding: 12px;
+  background: #10140e;
+  color: #edf5e5;
+  font: inherit;
+  line-height: 1.5;
+}
+.natural-input textarea:focus {
+  border-color: #b9f400;
+}
+.voice-boundary,
+.clarification {
+  border: 1px solid #465238;
+  border-radius: 12px;
+  padding: 13px;
+  background: #171e13;
+}
+.clarification.compact {
+  margin: 8px 0;
+  color: #e7c983;
+}
+.voice-boundary strong,
+.clarification strong {
+  color: #dce7d2;
+  font-size: 12px;
+}
+.voice-boundary p,
+.clarification p {
+  margin: 6px 0 12px;
+  color: #96a18d;
+  font-size: 10px;
+  line-height: 1.5;
+}
+.clarification {
+  margin: 8px 0;
+  border-color: #7e6531;
+  background: #211d12;
+}
+.candidate-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.candidate-list button {
+  border: 1px solid #687d48;
+  border-radius: 999px;
+  padding: 7px 9px;
+  background: #27321f;
+  color: #ddf3bb;
+  font-size: 10px;
+}
+.parsed-set > strong {
+  color: #eaf5df;
+  font-size: 13px;
+}
+.parsed-set dl {
+  display: grid;
+  gap: 5px;
+  margin: 10px 0;
+}
+.parsed-set dl > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid #303b2a;
+  border-radius: 9px;
+  padding: 9px 10px;
+  background: #11160f;
+}
+.parsed-set dt {
+  color: #818c78;
+  font-size: 9px;
+}
+.parsed-set dd {
+  margin: 0;
+  color: #e7f0de;
+  font-size: 11px;
+  font-weight: 800;
+  text-align: right;
+}
+.previous-result {
+  margin: 8px 0;
+  border-radius: 9px;
+  padding: 9px 10px;
+  background: #26321d;
+  color: #cce7a5;
+  font-size: 10px;
+}
+.parsed-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+}
+.explain-entry {
+  margin-top: 14px;
+  border: 1px solid #769743;
+  background: #29391e;
+  color: #d9f9a6;
+}
+.form-divider {
+  margin: 12px 0 -8px;
+  color: #707a68;
+  font-size: 9px;
+  text-align: center;
+  text-transform: uppercase;
+}
 .exercise-picker {
   display: flex;
   max-height: min(86dvh, 760px);
