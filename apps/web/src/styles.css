@@ -1,20 +1,20 @@
 :root {
-  --canvas: #f5f6f0;
+  --canvas: #f5f6f8;
   --surface: #ffffff;
-  --surface-soft: #edf2e8;
-  --surface-strong: #e3eadc;
-  --ink: #1d241b;
-  --muted: #667061;
-  --faint: #879182;
-  --line: #d5ddd0;
-  --line-strong: #b8c5ae;
-  --accent: #a9eb19;
-  --accent-soft: #e5f6bd;
-  --accent-deep: #4d7200;
-  --danger: #ad3f2d;
-  --danger-soft: #fff0eb;
-  --warning: #8a6100;
-  --warning-soft: #fff5d9;
+  --surface-soft: #eef1f5;
+  --surface-strong: #e8ebf0;
+  --ink: #14181f;
+  --muted: #737b86;
+  --faint: #9aa1ab;
+  --line: #e6e8ec;
+  --line-strong: #d8dbe0;
+  --accent: #4f46e5;
+  --accent-soft: #eef0fe;
+  --accent-deep: #4f46e5;
+  --danger: #b42318;
+  --danger-soft: #fff1f0;
+  --warning: #b45309;
+  --warning-soft: #fdeccf;
   font-family:
     Inter,
     ui-sans-serif,
@@ -50,7 +50,7 @@ button {
   min-height: 100dvh;
   margin: 0 auto;
   padding: 22px 18px 110px;
-  background: radial-gradient(circle at 85% 0, #e5f4c9 0, transparent 31%), var(--canvas);
+  background: var(--canvas);
 }
 .app-shell-live {
   display: flex;
@@ -61,7 +61,7 @@ button {
   overflow: hidden;
 }
 .app-shell-history-edit {
-  background: radial-gradient(circle at 85% 0, #fff0c4 0, transparent 34%), var(--canvas);
+  background: #faf7f2;
 }
 .app-shell-live .topbar .subtle {
   display: none;
@@ -74,7 +74,7 @@ button {
   padding: 28px 18px;
   align-content: start;
   gap: clamp(70px, 18vh, 150px);
-  background: radial-gradient(circle at 85% 0, #e4f4c4 0, transparent 36%), var(--canvas);
+  background: var(--canvas);
 }
 .auth-card {
   padding: 24px;
@@ -2360,7 +2360,7 @@ small,
   }
 }
 
-/* Light product theme */
+/* Style B · Light minimalism */
 .auth-card,
 .profile-card,
 .stat,
@@ -2376,10 +2376,9 @@ small,
   border-color: var(--line);
   background: var(--surface);
   color: var(--ink);
-  box-shadow: 0 10px 30px rgb(32 47 24 / 5%);
+  box-shadow: 0 1px 2px rgb(20 24 31 / 5%);
 }
 
-.brand,
 .eyebrow,
 .tab.active,
 .push-notice,
@@ -2387,6 +2386,14 @@ small,
 .discovery-sources a,
 .catalog a {
   color: var(--accent-deep);
+}
+
+.brand {
+  color: var(--ink);
+}
+
+.app-shell {
+  border-color: var(--line);
 }
 
 .subtle,
@@ -2460,7 +2467,7 @@ small,
 }
 .sync-state.idle,
 .sync-state.syncing {
-  border-color: #8daf4d;
+  border-color: #c7c9f6;
   color: var(--accent-deep);
 }
 .sync-state.error,
@@ -2487,7 +2494,7 @@ small,
 .button.primary,
 .explain-button {
   background: var(--accent);
-  color: #253400;
+  color: #ffffff;
 }
 .button.danger {
   background: #e85c47;
@@ -2501,24 +2508,31 @@ small,
 
 .profile-card > span,
 .order,
-.tag,
 .superset-label,
 .self-measured,
 .read-only-badge,
 .confidence.high,
 .muscle-filters button.active,
 .previous-result {
-  border-color: #bad28d;
+  border-color: #dcdcfb;
   background: var(--accent-soft);
   color: var(--accent-deep);
 }
+.tag {
+  border-color: #d7dcfa;
+  background: #e5e9fd;
+  color: #3d5bd6;
+}
 .tag.mighty {
-  color: var(--accent-deep);
+  border-color: #f6ddb0;
+  background: #fdeccf;
+  color: #b45309;
 }
 .tag.cringe,
 .confidence.low {
-  background: #fff0e7;
-  color: #9a492b;
+  border-color: #f6d1cd;
+  background: #fff1f0;
+  color: #b42318;
 }
 
 .connectivity-notice,
@@ -2529,9 +2543,9 @@ small,
 .voice-boundary,
 .clarification,
 .exercise-discovery {
-  border-color: #bfd59b;
-  background: #f1f8e5;
-  color: #39551d;
+  border-color: #dcdcfb;
+  background: #eef0fe;
+  color: #3730a3;
 }
 .connectivity-notice.error,
 .auth-error,
@@ -2566,16 +2580,16 @@ small,
 .exercise-options .plan-controls {
   border-color: var(--line);
   background: var(--surface);
-  box-shadow: 0 12px 28px rgb(29 36 27 / 18%);
+  box-shadow: 0 12px 28px rgb(20 24 31 / 14%);
 }
 .sets-line.muted {
   color: var(--faint);
 }
 .set-chip,
 .add-set {
-  border-color: #bfd19e;
-  background: #f0f7e5;
-  color: #385319;
+  border-color: #dcdcfb;
+  background: #f5f5ff;
+  color: #3730a3;
 }
 .add-exercise,
 .empty-plan,
@@ -2616,11 +2630,11 @@ small,
   color: var(--muted);
 }
 .calendar-day.today {
-  border-color: #91a984;
+  border-color: #a5a7ef;
 }
 .calendar-day.trained {
-  background: #dff0bf;
-  color: #365600;
+  background: #e5e9fd;
+  color: #3d5bd6;
 }
 .calendar-day.selected {
   border-color: var(--accent-deep);
@@ -2683,12 +2697,13 @@ small,
   stroke: var(--surface-soft);
 }
 .one-rep-explainer {
-  background: linear-gradient(135deg, #b7ee42, #e4f7b5);
-  color: #223300;
+  border: 1px solid #dcdcfb;
+  background: #eef0fe;
+  color: #312e81;
 }
 .one-rep-explainer span,
 .one-rep-explainer small {
-  color: #465d19;
+  color: #5b5f91;
 }
 
 .measurement-import-sheet pre {
@@ -2725,8 +2740,8 @@ small,
 
 .tabs {
   border-color: var(--line);
-  background: rgb(250 251 247 / 94%);
-  box-shadow: 0 -8px 28px rgb(29 36 27 / 7%);
+  background: rgb(255 255 255 / 96%);
+  box-shadow: 0 -1px 2px rgb(20 24 31 / 5%);
 }
 .tab {
   color: var(--muted);
@@ -2737,23 +2752,23 @@ small,
   outline-offset: -3px;
 }
 .explain-button {
-  border-color: #fafbf7;
+  border-color: #ffffff;
   box-shadow:
-    0 10px 24px rgb(46 66 19 / 24%),
-    inset 0 1px 0 #f3ffce;
+    0 8px 20px rgb(79 70 229 / 24%),
+    inset 0 1px 0 rgb(255 255 255 / 28%);
 }
 .explain-button:hover {
-  background: #b8f331;
+  background: #4338ca;
 }
 .explain-button:focus-visible {
-  outline-color: var(--ink);
+  outline-color: #312e81;
 }
 
 .sheet-backdrop {
-  background: rgb(29 36 27 / 38%);
+  background: rgb(20 24 31 / 32%);
 }
 .sheet-handle {
-  background: #b8c2b2;
+  background: #c4c8cf;
 }
 .input-modes {
   background: var(--surface-soft);
@@ -2764,7 +2779,7 @@ small,
 .input-modes button.active {
   background: var(--surface);
   color: var(--accent-deep);
-  box-shadow: 0 2px 8px rgb(29 36 27 / 8%);
+  box-shadow: 0 1px 2px rgb(20 24 31 / 7%);
 }
 .exercise-discovery-search input {
   background: #ffffff;
@@ -2779,7 +2794,7 @@ small,
   color: var(--muted);
 }
 .explain-entry {
-  border-color: #9bbb61;
+  border-color: #dcdcfb;
   background: var(--accent-soft);
   color: var(--accent-deep);
 }
@@ -2791,91 +2806,103 @@ small,
   color: var(--muted);
 }
 
-/* Screen landmarks: warm preparation, green live work, cool analytics. */
+/* Quiet screen landmarks inside the same neutral design system. */
 .app-shell-workout:not(.app-shell-live) {
-  --screen-marker: #9a5b00;
-  --nav-bg: rgb(255 251 243 / 95%);
-  background:
-    radial-gradient(circle at 88% 2%, #ffe5b8 0, transparent 31%),
-    linear-gradient(180deg, #fbf7ef 0, var(--canvas) 58%);
+  --screen-marker: #4f46e5;
+  --nav-bg: rgb(255 255 255 / 96%);
+  background: #f5f6f8;
 }
 .app-shell-live {
-  --screen-marker: var(--accent-deep);
-  --nav-bg: rgb(246 251 239 / 95%);
-  background:
-    linear-gradient(
-      135deg,
-      rgb(137 188 67 / 7%) 0 16%,
-      transparent 16% 38%,
-      rgb(137 188 67 / 4%) 38% 52%,
-      transparent 52%
-    ),
-    radial-gradient(circle at 88% 0, #dcefc4 0, transparent 34%), #f3f7ee;
+  --screen-marker: #4f46e5;
+  --nav-bg: rgb(255 255 255 / 96%);
+  background: #f2f3fa;
 }
 .app-shell-history-edit {
-  --screen-marker: #936700;
-  --nav-bg: rgb(255 250 237 / 95%);
-  background:
-    linear-gradient(135deg, rgb(211 169 68 / 7%) 0 18%, transparent 18% 42%),
-    radial-gradient(circle at 88% 0, #ffebbd 0, transparent 34%), #faf6eb;
+  --screen-marker: #b45309;
+  --nav-bg: rgb(255 255 255 / 96%);
+  background: #faf7f2;
 }
 .app-shell-progress {
-  --screen-marker: #49689f;
-  --nav-bg: rgb(247 249 254 / 95%);
-  background:
-    radial-gradient(circle at 88% 0, #dfe8fb 0, transparent 34%),
-    linear-gradient(180deg, #f4f6fb 0, var(--canvas) 62%);
+  --screen-marker: #3d5bd6;
+  --nav-bg: rgb(255 255 255 / 96%);
+  background: #f6f7fa;
 }
 .app-shell-catalog {
-  --screen-marker: #68752d;
-  --nav-bg: rgb(249 251 243 / 95%);
-  background: radial-gradient(circle at 88% 0, #e9efc9 0, transparent 32%), var(--canvas);
+  --screen-marker: #4f46e5;
+  --nav-bg: rgb(255 255 255 / 96%);
+  background: #f5f6f8;
 }
 .app-shell-settings {
-  --screen-marker: #59685d;
-  --nav-bg: rgb(249 250 247 / 95%);
-  background: radial-gradient(circle at 88% 0, #e4e9e2 0, transparent 32%), var(--canvas);
+  --screen-marker: #737b86;
+  --nav-bg: rgb(255 255 255 / 96%);
+  background: #f7f7f8;
 }
 .app-shell-trainer {
-  --screen-marker: #6b578d;
-  --nav-bg: rgb(250 248 253 / 95%);
-  background: radial-gradient(circle at 88% 0, #ece3f6 0, transparent 32%), var(--canvas);
+  --screen-marker: #4f46e5;
+  --nav-bg: rgb(255 255 255 / 96%);
+  background: #f5f5fa;
 }
 .app-shell .screen > .eyebrow {
   color: var(--screen-marker, var(--accent-deep));
 }
 .app-shell-workout:not(.app-shell-live) .screen::before {
-  display: block;
-  width: 46px;
-  height: 6px;
-  margin-bottom: 14px;
-  border-radius: 99px;
-  background: linear-gradient(90deg, #f1bb57 0 58%, #d7e4c1 58%);
-  content: '';
+  display: none;
 }
 .app-shell-live .live-head {
   border-left: 4px solid var(--screen-marker);
   padding-left: 10px;
 }
 .app-shell-progress .progress-screen::before {
-  display: block;
-  width: 54px;
-  height: 18px;
-  margin-bottom: 12px;
-  border-bottom: 3px solid #49689f;
-  background: linear-gradient(
-    135deg,
-    transparent 0 30%,
-    #8299c3 31% 38%,
-    transparent 39% 56%,
-    #49689f 57% 65%,
-    transparent 66%
-  );
-  content: '';
+  display: none;
 }
 .tabs {
   background: var(--nav-bg, rgb(250 251 247 / 94%));
 }
 .tab.active {
   color: var(--screen-marker, var(--accent-deep));
+}
+
+/* Exact component treatment from Style B: 15 px geometry, indigo focus, hairline depth. */
+.button,
+.stat,
+.exercise-row,
+.exercise-card,
+.workout-live .exercise-card,
+.progress-section,
+.measurement-detail,
+.push-settings-panel,
+.discovery-candidate,
+.picker-option {
+  border-radius: 15px;
+}
+.button.primary,
+.explain-button {
+  background: #4f46e5;
+  color: #ffffff;
+}
+.exercise-card.superset {
+  border-left-color: #4f46e5;
+}
+.exercise-options[open] summary {
+  border-color: #a5a7ef;
+  color: #4f46e5;
+}
+.calendar-day i,
+.measurement-history-toggle strong,
+.trainer-roster b,
+.push-notice {
+  color: #4f46e5;
+}
+.self-measured-toggle input,
+.voice-consent input {
+  accent-color: #4f46e5;
+}
+.measurement-import-sheet textarea:focus,
+.measurement-form-grid input:focus,
+.natural-input textarea:focus,
+.exercise-discovery-search input:focus,
+.exercise-search:focus,
+.form-grid input:focus {
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 3px rgb(79 70 229 / 10%);
 }
