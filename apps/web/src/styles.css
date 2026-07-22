@@ -35,6 +35,12 @@ button {
   padding: 22px 18px 110px;
   background: radial-gradient(circle at 85% 0, #273416 0, transparent 31%), #10130e;
 }
+.app-shell-live {
+  padding: 14px 12px calc(88px + env(safe-area-inset-bottom));
+}
+.app-shell-live .topbar .subtle {
+  display: none;
+}
 .auth-shell {
   display: grid;
   width: min(100%, 560px);
@@ -330,6 +336,24 @@ small,
 .live-head h1 {
   font-size: 23px;
 }
+.workout-live {
+  margin-top: 14px;
+}
+.live-help {
+  margin: 0 0 8px;
+  color: #a6ad9c;
+  font-size: 11px;
+}
+.live-help summary {
+  width: fit-content;
+  cursor: pointer;
+  color: #b9c5ae;
+  font-weight: 750;
+}
+.live-help p {
+  margin: 6px 0 0;
+  line-height: 1.4;
+}
 .exercise-list {
   display: grid;
   gap: 10px;
@@ -396,6 +420,13 @@ small,
   border-radius: 16px;
   background: #171c14;
 }
+.workout-live .exercise-list {
+  gap: 6px;
+}
+.workout-live .exercise-card {
+  padding: 10px;
+  border-radius: 13px;
+}
 .exercise-card strong,
 .exercise-card small {
   display: block;
@@ -406,6 +437,50 @@ small,
 }
 .exercise-card.superset {
   border-left: 3px solid #b9f400;
+}
+.exercise-card-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+}
+.exercise-options {
+  position: relative;
+}
+.exercise-options summary {
+  display: grid;
+  width: 30px;
+  height: 26px;
+  cursor: pointer;
+  list-style: none;
+  place-items: center;
+  border: 1px solid #3a4732;
+  border-radius: 8px;
+  background: #20271b;
+  color: #cbd4c1;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+}
+.exercise-options summary::-webkit-details-marker {
+  display: none;
+}
+.exercise-options[open] summary {
+  border-color: #78973f;
+  color: #d7ff70;
+}
+.exercise-options .plan-controls {
+  position: absolute;
+  z-index: 3;
+  top: calc(100% + 5px);
+  right: 0;
+  width: min(286px, calc(100vw - 44px));
+  margin: 0;
+  padding: 8px;
+  border: 1px solid #46553d;
+  border-radius: 11px;
+  background: #171d14;
+  box-shadow: 0 12px 28px #000b;
 }
 .superset-label {
   display: inline-block;
@@ -448,12 +523,29 @@ small,
   color: #deead1;
   font-size: 13px;
 }
+.workout-live .sets-line {
+  min-height: 20px;
+  margin: 7px 0 6px;
+}
 .sets-line.muted {
   color: #838d7a;
 }
 .set-list {
   display: grid;
   gap: 6px;
+}
+.workout-live .set-list {
+  display: flex;
+  overflow-x: auto;
+  gap: 5px;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+.workout-live .set-list::-webkit-scrollbar {
+  display: none;
+}
+.workout-live .set-list .set-row {
+  flex: 0 0 auto;
 }
 .set-row {
   display: grid;
@@ -489,8 +581,17 @@ small,
   font-weight: 800;
   font-size: 13px;
 }
+.workout-live .add-set {
+  min-height: 36px;
+  padding: 7px 10px;
+}
 .add-exercise {
   border: 1px dashed #52683f;
+}
+.workout-live .add-exercise {
+  min-height: 38px;
+  margin-top: 0;
+  padding: 8px 12px;
 }
 .empty-plan,
 .removed-sets {

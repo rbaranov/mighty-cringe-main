@@ -690,7 +690,9 @@ function AuthenticatedAppContent({
   }
 
   return (
-    <main className="app-shell">
+    <main
+      className={view === 'workout' && activeWorkout ? 'app-shell app-shell-live' : 'app-shell'}
+    >
       <header className="topbar">
         <div>
           <p className="brand">Mighty &amp; Cringe</p>
@@ -1059,13 +1061,16 @@ function WorkoutView({
           {tr(locale, 'Завершить', 'Finish')}
         </button>
       </div>
-      <p className="intro">
-        {tr(
-          locale,
-          'План можно менять в любой момент. Удаление упражнения не стирает уже записанные подходы.',
-          'You can change the plan at any time. Removing an exercise does not erase logged sets.',
-        )}
-      </p>
+      <details className="live-help">
+        <summary>{tr(locale, 'План можно менять', 'The plan is editable')}</summary>
+        <p>
+          {tr(
+            locale,
+            'Переставляй, заменяй и убирай упражнения. Уже записанные подходы останутся в истории.',
+            'Move, replace, or remove exercises. Logged sets will remain in your history.',
+          )}
+        </p>
+      </details>
       {recovered && (
         <div className="recovery-notice" role="status">
           <div>
@@ -1110,51 +1115,60 @@ function WorkoutView({
                   <strong>{exerciseName(exercise, locale)}</strong>
                   <small>{muscleLabel(exercise.primaryMuscles[0], locale)}</small>
                 </div>
-                <Tag tag={exercise.tag} />
+                <div className="exercise-card-actions">
+                  <Tag tag={exercise.tag} />
+                  <details className="exercise-options">
+                    <summary
+                      aria-label={`${tr(locale, 'Настроить упражнение', 'Exercise options')}: ${exerciseName(exercise, locale)}`}
+                    >
+                      •••
+                    </summary>
+                    <div
+                      className="plan-controls"
+                      aria-label={`${tr(locale, 'План', 'Plan')}: ${exerciseName(exercise, locale)}`}
+                    >
+                      <button
+                        aria-label={tr(locale, 'Поднять упражнение', 'Move exercise up')}
+                        disabled={index === 0}
+                        onClick={() => onMoveExercise(item.id, -1)}
+                        type="button"
+                      >
+                        ↑
+                      </button>
+                      <button
+                        aria-label={tr(locale, 'Опустить упражнение', 'Move exercise down')}
+                        disabled={index === plan.length - 1}
+                        onClick={() => onMoveExercise(item.id, 1)}
+                        type="button"
+                      >
+                        ↓
+                      </button>
+                      <button onClick={() => onReplaceExercise(item.id)} type="button">
+                        {tr(locale, 'Заменить', 'Replace')}
+                      </button>
+                      {index < plan.length - 1 && (
+                        <button onClick={() => onToggleSuperset(item.id)} type="button">
+                          {linkedWithNext
+                            ? tr(locale, 'Разъединить', 'Unlink')
+                            : `${tr(locale, 'Суперсет', 'Superset')} ↓`}
+                        </button>
+                      )}
+                      <button
+                        className="danger-text"
+                        onClick={() => onRemoveExercise(item.id, logged.length > 0)}
+                        type="button"
+                      >
+                        {tr(locale, 'Убрать', 'Remove')}
+                      </button>
+                    </div>
+                  </details>
+                </div>
               </div>
               {item.supersetGroup !== null && (
                 <span className="superset-label">
                   {tr(locale, 'Суперсет', 'Superset')} {item.supersetGroup}
                 </span>
               )}
-              <div
-                className="plan-controls"
-                aria-label={`${tr(locale, 'План', 'Plan')}: ${exerciseName(exercise, locale)}`}
-              >
-                <button
-                  aria-label={tr(locale, 'Поднять упражнение', 'Move exercise up')}
-                  disabled={index === 0}
-                  onClick={() => onMoveExercise(item.id, -1)}
-                  type="button"
-                >
-                  ↑
-                </button>
-                <button
-                  aria-label={tr(locale, 'Опустить упражнение', 'Move exercise down')}
-                  disabled={index === plan.length - 1}
-                  onClick={() => onMoveExercise(item.id, 1)}
-                  type="button"
-                >
-                  ↓
-                </button>
-                <button onClick={() => onReplaceExercise(item.id)} type="button">
-                  {tr(locale, 'Заменить', 'Replace')}
-                </button>
-                {index < plan.length - 1 && (
-                  <button onClick={() => onToggleSuperset(item.id)} type="button">
-                    {linkedWithNext
-                      ? tr(locale, 'Разъединить', 'Unlink')
-                      : `${tr(locale, 'Суперсет', 'Superset')} ↓`}
-                  </button>
-                )}
-                <button
-                  className="danger-text"
-                  onClick={() => onRemoveExercise(item.id, logged.length > 0)}
-                  type="button"
-                >
-                  {tr(locale, 'Убрать', 'Remove')}
-                </button>
-              </div>
               {logged.length ? (
                 <div className="sets-line set-list">
                   {logged.map((set, setIndex) => (
