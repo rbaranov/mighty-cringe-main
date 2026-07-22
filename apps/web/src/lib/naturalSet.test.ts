@@ -51,6 +51,26 @@ describe('natural set parsing', () => {
     });
   });
 
+  it('uses English clarification copy and converts an imperial set to canonical kilograms', () => {
+    expect(
+      parseNaturalSet({
+        text: 'Romanian deadlift 220 pounds for 6, 2 reps in reserve, smooth tempo',
+        catalog: fallbackCatalog,
+        locale: 'en',
+        unitSystem: 'imperial',
+      }),
+    ).toMatchObject({
+      status: 'ready',
+      exercise: { nameEn: 'Romanian deadlift' },
+      draft: { weightKg: 99.79, reps: 6, rir: 2, comment: 'smooth tempo' },
+    });
+
+    expect(parseNaturalSet({ text: '', catalog: fallbackCatalog, locale: 'en' })).toMatchObject({
+      status: 'needs_clarification',
+      question: 'Describe a set, for example: “bench press 175 for 8, RIR 2”.',
+    });
+  });
+
   it('asks for the missing values instead of guessing', () => {
     expect(parseNaturalSet({ text: 'жим лёжа было тяжело', catalog: fallbackCatalog })).toEqual({
       status: 'needs_clarification',

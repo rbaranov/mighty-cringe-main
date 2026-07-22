@@ -20,6 +20,7 @@ const athlete: CurrentUser = {
   avatarUrl: null,
   role: 'athlete',
   locale: 'ru',
+  unitSystem: 'metric',
 };
 
 describe('local user boundary', () => {

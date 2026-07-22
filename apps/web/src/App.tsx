@@ -30,6 +30,14 @@ import {
 import { fallbackCatalog } from './lib/fallbackCatalog';
 import { hasPendingRemoteLogout, requestRemoteLogout } from './lib/logout';
 import { parseNaturalSet, type NaturalSetDraft, type NaturalSetResult } from './lib/naturalSet';
+import {
+  exerciseName,
+  formatWeight,
+  PreferencesProvider,
+  tr,
+  updateProfilePreferences,
+  usePreferences,
+} from './lib/preferences';
 import { setEntrySourceSuffix } from './lib/setEntrySource';
 import { resolveSession } from './lib/session';
 import { acceptTrainerInviteFromUrl, currentLoginReturnTo } from './lib/trainer';
@@ -111,26 +119,48 @@ export default function App() {
     setAuth({ status: 'anonymous', googleEnabled: true });
   }
 
+  async function updateUser(user: CurrentUser) {
+    await cacheCurrentUser(user);
+    setAuth({ status: 'authenticated', user, restoredFromCache: false });
+  }
+
   if (auth.status === 'loading') return <AuthLoading />;
   if (auth.status === 'anonymous') return <LoginScreen googleEnabled={auth.googleEnabled} />;
   return (
     <AuthenticatedApp
       onLogout={logout}
+      onUserUpdated={updateUser}
       restoredFromCache={auth.restoredFromCache}
       user={auth.user}
     />
   );
 }
 
-function AuthenticatedApp({
-  user,
-  restoredFromCache,
-  onLogout,
-}: {
+type AuthenticatedAppProps = {
   user: CurrentUser;
   restoredFromCache: boolean;
   onLogout: () => void;
-}) {
+  onUserUpdated: (user: CurrentUser) => Promise<void>;
+};
+
+function AuthenticatedApp(props: AuthenticatedAppProps) {
+  useEffect(() => {
+    document.documentElement.lang = props.user.locale;
+  }, [props.user.locale]);
+  return (
+    <PreferencesProvider locale={props.user.locale} unitSystem={props.user.unitSystem}>
+      <AuthenticatedAppContent {...props} />
+    </PreferencesProvider>
+  );
+}
+
+function AuthenticatedAppContent({
+  user,
+  restoredFromCache,
+  onLogout,
+  onUserUpdated,
+}: AuthenticatedAppProps) {
+  const { locale, unitSystem } = usePreferences();
   const [view, setView] = useState<View>('workout');
   const [sheet, setSheet] = useState<{ exercise: Exercise; set: LocalSet | null } | null>(null);
   const [exercisePicker, setExercisePicker] = useState<ExercisePickerMode | null>(null);
@@ -176,7 +206,11 @@ function AuthenticatedApp({
         if (!result) return;
         window.history.replaceState({}, '', result.cleanUrl);
         setInviteNotice(
-          `Тренер ${result.trainer.displayName} подключён. Доступ можно отозвать здесь.`,
+          tr(
+            locale,
+            `Тренер ${result.trainer.displayName} подключён. Доступ можно отозвать здесь.`,
+            `Coach ${result.trainer.displayName} is connected. You can revoke access here.`,
+          ),
         );
         setRelationshipRefreshKey((value) => value + 1);
         setView('settings');
@@ -184,7 +218,13 @@ function AuthenticatedApp({
       .catch((error) => {
         inviteHandled.current = false;
         setInviteNotice(
-          error instanceof Error ? error.message : 'Не удалось принять приглашение тренера.',
+          error instanceof Error
+            ? error.message
+            : tr(
+                locale,
+                'Не удалось принять приглашение тренера.',
+                'Could not accept the coach invitation.',
+              ),
         );
       });
   }, [restoredFromCache]);
@@ -250,7 +290,7 @@ function AuthenticatedApp({
       startedAt,
       endedAt: null,
       notes: null,
-      locale: 'ru',
+      locale,
       exercises: workoutExercises,
       revision: 0,
       updatedAt: startedAt,
@@ -264,7 +304,7 @@ function AuthenticatedApp({
         startedAt,
         endedAt: null,
         notes: null,
-        locale: 'ru',
+        locale,
         exercises: workoutExercises,
       },
     });
@@ -483,9 +523,13 @@ function AuthenticatedApp({
 
   function requestDeleteSet(set: LocalSet) {
     setConfirmation({
-      title: 'Удалить подход?',
-      message: `${set.weightKg} кг × ${set.reps}. Подход исчезнет из истории после синхронизации.`,
-      confirmLabel: 'Удалить подход',
+      title: tr(locale, 'Удалить подход?', 'Delete set?'),
+      message: tr(
+        locale,
+        `${formatWeight(set.weightKg, locale, unitSystem)} × ${set.reps}. Подход исчезнет из истории после синхронизации.`,
+        `${formatWeight(set.weightKg, locale, unitSystem)} × ${set.reps}. The set will disappear from history after syncing.`,
+      ),
+      confirmLabel: tr(locale, 'Удалить подход', 'Delete set'),
       action: () => deleteSet(set),
     });
   }
@@ -556,9 +600,13 @@ function AuthenticatedApp({
 
   function requestDeleteMeasurement(measurement: LocalMeasurement) {
     setConfirmation({
-      title: 'Удалить замер?',
-      message: `Запись за ${new Intl.DateTimeFormat('ru-RU', { dateStyle: 'long' }).format(new Date(measurement.measuredOn))} исчезнет из истории после синхронизации.`,
-      confirmLabel: 'Удалить замер',
+      title: tr(locale, 'Удалить замер?', 'Delete measurement?'),
+      message: tr(
+        locale,
+        `Запись за ${new Intl.DateTimeFormat('ru-RU', { dateStyle: 'long' }).format(new Date(measurement.measuredOn))} исчезнет из истории после синхронизации.`,
+        `The entry for ${new Intl.DateTimeFormat('en-US', { dateStyle: 'long' }).format(new Date(measurement.measuredOn))} will disappear from history after syncing.`,
+      ),
+      confirmLabel: tr(locale, 'Удалить замер', 'Delete measurement'),
       action: () => deleteMeasurement(measurement),
     });
   }
@@ -569,9 +617,13 @@ function AuthenticatedApp({
       return;
     }
     setConfirmation({
-      title: 'Убрать упражнение из плана?',
-      message: 'Уже записанные подходы сохранятся в тренировке вне текущего плана.',
-      confirmLabel: 'Убрать из плана',
+      title: tr(locale, 'Убрать упражнение из плана?', 'Remove exercise from plan?'),
+      message: tr(
+        locale,
+        'Уже записанные подходы сохранятся в тренировке вне текущего плана.',
+        'Logged sets will stay in the workout outside the current plan.',
+      ),
+      confirmLabel: tr(locale, 'Убрать из плана', 'Remove from plan'),
       action: () => removeExercise(itemId),
     });
   }
@@ -621,23 +673,25 @@ function AuthenticatedApp({
       <header className="topbar">
         <div>
           <p className="brand">Mighty &amp; Cringe</p>
-          <p className="subtle">Привет, {firstName(user.displayName)} 👋</p>
+          <p className="subtle">
+            {tr(locale, 'Привет', 'Hi')}, {firstName(user.displayName, locale)} 👋
+          </p>
         </div>
         <button
           aria-live="polite"
           className={conflicts.length ? 'sync-state conflict' : `sync-state ${syncStatus.phase}`}
           disabled={syncStatus.phase === 'syncing'}
           onClick={() => void syncAll()}
-          title={lastSyncTitle(lastSuccessfulSyncAt)}
+          title={lastSyncTitle(lastSuccessfulSyncAt, locale)}
           type="button"
         >
-          {syncStatusLabel(syncStatus.phase, outboxCount, conflicts.length)}
+          {syncStatusLabel(syncStatus.phase, outboxCount, conflicts.length, locale)}
         </button>
       </header>
 
       {canUseTrainerConsole(user.role) && view !== 'trainer' && (
         <button className="trainer-console-link" onClick={() => setView('trainer')} type="button">
-          🧑‍🏫 Подопечные
+          🧑‍🏫 {tr(locale, 'Подопечные', 'Athletes')}
         </button>
       )}
 
@@ -649,16 +703,28 @@ function AuthenticatedApp({
 
       {restoredFromCache ? (
         <p className="connectivity-notice" role="status">
-          Открыта сохранённая копия. Можно продолжать тренировку — изменения останутся на этом
-          устройстве и уйдут на сервер после восстановления связи.
+          {tr(
+            locale,
+            'Открыта сохранённая копия. Можно продолжать тренировку — изменения останутся на этом устройстве и уйдут на сервер после восстановления связи.',
+            'A saved copy is open. You can keep training — changes will stay on this device and sync when the connection returns.',
+          )}
         </p>
       ) : syncStatus.phase === 'offline' ? (
         <p className="connectivity-notice" role="status">
-          Нет сети. Все действия сохраняются на этом устройстве и синхронизируются позже.
+          {tr(
+            locale,
+            'Нет сети. Все действия сохраняются на этом устройстве и синхронизируются позже.',
+            'You are offline. Every action is saved on this device and will sync later.',
+          )}
         </p>
       ) : syncStatus.phase === 'error' ? (
         <p className="connectivity-notice error" role="status">
-          {syncStatus.message} Нажми статус справа вверху, чтобы повторить сейчас.
+          {syncStatus.message}{' '}
+          {tr(
+            locale,
+            'Нажми статус справа вверху, чтобы повторить сейчас.',
+            'Tap the status above to retry now.',
+          )}
         </p>
       ) : null}
 
@@ -700,6 +766,7 @@ function AuthenticatedApp({
         <SettingsView
           conflicts={conflicts}
           onLogout={onLogout}
+          onUserUpdated={onUserUpdated}
           relationshipRefreshKey={relationshipRefreshKey}
           user={user}
         />
@@ -713,33 +780,33 @@ function AuthenticatedApp({
           type="button"
         >
           <span>🎙️✏️</span>
-          Пояснить
+          {tr(locale, 'Пояснить', 'Describe')}
         </button>
       )}
-      <nav aria-label="Основная навигация" className="tabs">
+      <nav aria-label={tr(locale, 'Основная навигация', 'Primary navigation')} className="tabs">
         <Tab
           active={view === 'workout'}
           icon="🏋️"
-          label="Тренировка"
+          label={tr(locale, 'Тренировка', 'Workout')}
           onClick={() => setView('workout')}
         />
         <Tab
           active={view === 'progress'}
           icon="📈"
-          label="Прогресс"
+          label={tr(locale, 'Прогресс', 'Progress')}
           onClick={() => setView('progress')}
         />
         <span className="tab-spacer" />
         <Tab
           active={view === 'catalog'}
           icon="📚"
-          label="Каталог"
+          label={tr(locale, 'Каталог', 'Catalog')}
           onClick={() => setView('catalog')}
         />
         <Tab
           active={view === 'settings'}
           icon="⚙️"
-          label="Настройки"
+          label={tr(locale, 'Настройки', 'Settings')}
           onClick={() => setView('settings')}
         />
       </nav>
@@ -782,42 +849,63 @@ function AuthenticatedApp({
 }
 
 function AuthLoading() {
+  const locale = publicLocale();
   return (
     <main className="auth-shell">
       <p className="brand">Mighty &amp; Cringe</p>
       <div className="auth-card" aria-live="polite">
-        <p className="eyebrow">Безопасный вход</p>
-        <h1>Проверяем сессию…</h1>
+        <p className="eyebrow">{tr(locale, 'Безопасный вход', 'Secure sign-in')}</p>
+        <h1>{tr(locale, 'Проверяем сессию…', 'Checking your session…')}</h1>
       </div>
     </main>
   );
 }
 
 function LoginScreen({ googleEnabled }: { googleEnabled: boolean }) {
+  const locale = publicLocale();
   const authError = new URLSearchParams(window.location.search).get('authError');
   const loginHref = `/api/v1/auth/google?returnTo=${encodeURIComponent(currentLoginReturnTo(window.location))}`;
   return (
     <main className="auth-shell">
       <p className="brand">Mighty &amp; Cringe</p>
       <section className="auth-card">
-        <p className="eyebrow">Личный журнал</p>
-        <h1>Твои тренировки — только твои</h1>
+        <p className="eyebrow">{tr(locale, 'Личный журнал', 'Private log')}</p>
+        <h1>{tr(locale, 'Твои тренировки — только твои', 'Your workouts stay yours')}</h1>
         <p className="intro">
-          Войди через Google. Приложение получит только подтверждённый email, имя и аватар для
-          профиля.
+          {tr(
+            locale,
+            'Войди через Google. Приложение получит только подтверждённый email, имя и аватар для профиля.',
+            'Sign in with Google. The app receives only your verified email, name, and profile picture.',
+          )}
         </p>
-        {authError && <p className="auth-error">Вход не завершён. Попробуй ещё раз.</p>}
+        {authError && (
+          <p className="auth-error">
+            {tr(
+              locale,
+              'Вход не завершён. Попробуй ещё раз.',
+              'Sign-in was not completed. Try again.',
+            )}
+          </p>
+        )}
         {googleEnabled ? (
           <a className="button primary action login-button" href={loginHref}>
-            Войти через Google
+            {tr(locale, 'Войти через Google', 'Sign in with Google')}
           </a>
         ) : (
           <button className="button primary action" disabled type="button">
-            Google OAuth ещё не настроен владельцем
+            {tr(
+              locale,
+              'Google OAuth ещё не настроен владельцем',
+              'Google OAuth has not been configured by the owner yet',
+            )}
           </button>
         )}
         <p className="privacy-note">
-          Сессия хранится в защищённой HttpOnly cookie. Токены Google не сохраняются в браузере.
+          {tr(
+            locale,
+            'Сессия хранится в защищённой HttpOnly cookie. Токены Google не сохраняются в браузере.',
+            'Your session uses a protected HttpOnly cookie. Google tokens are not stored in the browser.',
+          )}
         </p>
       </section>
     </main>
@@ -863,36 +951,41 @@ function WorkoutView({
   recovered: boolean;
   onDismissRecovery: () => void;
 }) {
+  const { locale, unitSystem } = usePreferences();
   if (!activeWorkout) {
     return (
       <section className="screen">
-        <p className="eyebrow">Сегодня</p>
-        <h1>Готов к сильному дню?</h1>
+        <p className="eyebrow">{tr(locale, 'Сегодня', 'Today')}</p>
+        <h1>{tr(locale, 'Готов к сильному дню?', 'Ready for a strong day?')}</h1>
         <p className="intro">
-          Свободная full-body тренировка. Меняй всё по ходу — приложение подстроится.
+          {tr(
+            locale,
+            'Свободная full-body тренировка. Меняй всё по ходу — приложение подстроится.',
+            'A flexible full-body workout. Change anything as you go — the app will adapt.',
+          )}
         </p>
         <div className="stat-row">
           <Stat
-            label="Тренировок"
+            label={tr(locale, 'Тренировок', 'Workouts')}
             value={String(workouts.filter((workout) => workout.endedAt).length)}
           />
-          <Stat label="Серия" value="1 день" />
-          <Stat label="Режим" value="Full body" />
+          <Stat label={tr(locale, 'Серия', 'Streak')} value={tr(locale, '1 день', '1 day')} />
+          <Stat label={tr(locale, 'Режим', 'Mode')} value="Full body" />
         </div>
         <button className="button primary action" onClick={onStart} type="button">
-          Начать тренировку
+          {tr(locale, 'Начать тренировку', 'Start workout')}
         </button>
         <div className="section-head">
-          <h2>План на сегодня</h2>
-          <span>можно менять</span>
+          <h2>{tr(locale, 'План на сегодня', "Today's plan")}</h2>
+          <span>{tr(locale, 'можно менять', 'editable')}</span>
         </div>
         <div className="exercise-list compact">
           {exercises.map((exercise, index) => (
             <div className="exercise-row" key={exercise.id}>
               <span className="order">{index + 1}</span>
               <div>
-                <strong>{exercise.nameRu}</strong>
-                <small>{muscleLabel(exercise.primaryMuscles[0])}</small>
+                <strong>{exerciseName(exercise, locale)}</strong>
+                <small>{muscleLabel(exercise.primaryMuscles[0], locale)}</small>
               </div>
               <Tag tag={exercise.tag} />
             </div>
@@ -918,27 +1011,44 @@ function WorkoutView({
     <section className="screen workout-live">
       <div className="section-head live-head">
         <div>
-          <p className="eyebrow">Тренировка идёт</p>
+          <p className="eyebrow">{tr(locale, 'Тренировка идёт', 'Workout in progress')}</p>
           <h1>
-            {new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' }).format(
-              new Date(activeWorkout.startedAt),
-            )}
+            {new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'ru-RU', {
+              hour: '2-digit',
+              minute: '2-digit',
+            }).format(new Date(activeWorkout.startedAt))}
           </h1>
         </div>
         <button className="button ghost small" onClick={onFinish} type="button">
-          Завершить
+          {tr(locale, 'Завершить', 'Finish')}
         </button>
       </div>
       <p className="intro">
-        План можно менять в любой момент. Удаление упражнения не стирает уже записанные подходы.
+        {tr(
+          locale,
+          'План можно менять в любой момент. Удаление упражнения не стирает уже записанные подходы.',
+          'You can change the plan at any time. Removing an exercise does not erase logged sets.',
+        )}
       </p>
       {recovered && (
         <div className="recovery-notice" role="status">
           <div>
-            <strong>Незавершённая тренировка восстановлена</strong>
-            <span>План и все записанные подходы загружены с этого устройства.</span>
+            <strong>
+              {tr(locale, 'Незавершённая тренировка восстановлена', 'Unfinished workout restored')}
+            </strong>
+            <span>
+              {tr(
+                locale,
+                'План и все записанные подходы загружены с этого устройства.',
+                'The plan and all logged sets were restored from this device.',
+              )}
+            </span>
           </div>
-          <button aria-label="Скрыть уведомление" onClick={onDismissRecovery} type="button">
+          <button
+            aria-label={tr(locale, 'Скрыть уведомление', 'Dismiss notice')}
+            onClick={onDismissRecovery}
+            type="button"
+          >
             ×
           </button>
         </div>
@@ -961,17 +1071,22 @@ function WorkoutView({
             >
               <div className="exercise-card-head">
                 <div>
-                  <strong>{exercise.nameRu}</strong>
-                  <small>{muscleLabel(exercise.primaryMuscles[0])}</small>
+                  <strong>{exerciseName(exercise, locale)}</strong>
+                  <small>{muscleLabel(exercise.primaryMuscles[0], locale)}</small>
                 </div>
                 <Tag tag={exercise.tag} />
               </div>
               {item.supersetGroup !== null && (
-                <span className="superset-label">Суперсет {item.supersetGroup}</span>
+                <span className="superset-label">
+                  {tr(locale, 'Суперсет', 'Superset')} {item.supersetGroup}
+                </span>
               )}
-              <div className="plan-controls" aria-label={`План: ${exercise.nameRu}`}>
+              <div
+                className="plan-controls"
+                aria-label={`${tr(locale, 'План', 'Plan')}: ${exerciseName(exercise, locale)}`}
+              >
                 <button
-                  aria-label="Поднять упражнение"
+                  aria-label={tr(locale, 'Поднять упражнение', 'Move exercise up')}
                   disabled={index === 0}
                   onClick={() => onMoveExercise(item.id, -1)}
                   type="button"
@@ -979,7 +1094,7 @@ function WorkoutView({
                   ↑
                 </button>
                 <button
-                  aria-label="Опустить упражнение"
+                  aria-label={tr(locale, 'Опустить упражнение', 'Move exercise down')}
                   disabled={index === plan.length - 1}
                   onClick={() => onMoveExercise(item.id, 1)}
                   type="button"
@@ -987,11 +1102,13 @@ function WorkoutView({
                   ↓
                 </button>
                 <button onClick={() => onReplaceExercise(item.id)} type="button">
-                  Заменить
+                  {tr(locale, 'Заменить', 'Replace')}
                 </button>
                 {index < plan.length - 1 && (
                   <button onClick={() => onToggleSuperset(item.id)} type="button">
-                    {linkedWithNext ? 'Разъединить' : 'Суперсет ↓'}
+                    {linkedWithNext
+                      ? tr(locale, 'Разъединить', 'Unlink')
+                      : `${tr(locale, 'Суперсет', 'Superset')} ↓`}
                   </button>
                 )}
                 <button
@@ -999,7 +1116,7 @@ function WorkoutView({
                   onClick={() => onRemoveExercise(item.id, logged.length > 0)}
                   type="button"
                 >
-                  Убрать
+                  {tr(locale, 'Убрать', 'Remove')}
                 </button>
               </div>
               {logged.length ? (
@@ -1011,15 +1128,18 @@ function WorkoutView({
                         onClick={() => onEditSet(exercise, set)}
                         type="button"
                       >
-                        {setIndex + 1}. {set.weightKg}×{set.reps}
+                        {setIndex + 1}. {formatWeight(set.weightKg, locale, unitSystem)} ×{' '}
+                        {set.reps}
                         {set.rir === null ? '' : ` RIR${set.rir}`}
-                        {setEntrySourceSuffix(set.entrySource)}
-                        {set.syncState === 'pending' ? ' · ждёт' : ''}
-                        {set.syncState === 'conflict' ? ' · конфликт' : ''}
+                        {setEntrySourceSuffix(set.entrySource, locale)}
+                        {set.syncState === 'pending' ? tr(locale, ' · ждёт', ' · pending') : ''}
+                        {set.syncState === 'conflict'
+                          ? tr(locale, ' · конфликт', ' · conflict')
+                          : ''}
                       </button>
                       <div className="set-controls">
                         <button
-                          aria-label="Переместить подход влево"
+                          aria-label={tr(locale, 'Переместить подход влево', 'Move set left')}
                           disabled={setIndex === 0}
                           onClick={() => onMoveSet(set, -1)}
                           type="button"
@@ -1027,7 +1147,7 @@ function WorkoutView({
                           ←
                         </button>
                         <button
-                          aria-label="Переместить подход вправо"
+                          aria-label={tr(locale, 'Переместить подход вправо', 'Move set right')}
                           disabled={setIndex === logged.length - 1}
                           onClick={() => onMoveSet(set, 1)}
                           type="button"
@@ -1035,7 +1155,7 @@ function WorkoutView({
                           →
                         </button>
                         <button
-                          aria-label="Удалить подход"
+                          aria-label={tr(locale, 'Удалить подход', 'Delete set')}
                           className="danger-text"
                           onClick={() => onDeleteSet(set)}
                           type="button"
@@ -1047,26 +1167,34 @@ function WorkoutView({
                   ))}
                 </div>
               ) : (
-                <p className="sets-line muted">Ещё нет подходов</p>
+                <p className="sets-line muted">{tr(locale, 'Ещё нет подходов', 'No sets yet')}</p>
               )}
               <button className="add-set" onClick={() => onAddSet(exercise)} type="button">
-                ＋ Подход
+                ＋ {tr(locale, 'Подход', 'Set')}
               </button>
             </article>
           );
         })}
         {!plan.length && (
           <div className="empty-plan">
-            <strong>План пока пуст</strong>
-            <span>Добавь первое упражнение — подходы сохраняются и офлайн.</span>
+            <strong>{tr(locale, 'План пока пуст', 'The plan is empty')}</strong>
+            <span>
+              {tr(
+                locale,
+                'Добавь первое упражнение — подходы сохраняются и офлайн.',
+                'Add the first exercise — sets are saved offline too.',
+              )}
+            </span>
           </div>
         )}
         <button className="button ghost full add-exercise" onClick={onAddExercise} type="button">
-          ＋ Добавить упражнение
+          ＋ {tr(locale, 'Добавить упражнение', 'Add exercise')}
         </button>
         {removedExerciseIds.length > 0 && (
           <div className="removed-sets">
-            <p className="eyebrow">Выполнено вне текущего плана</p>
+            <p className="eyebrow">
+              {tr(locale, 'Выполнено вне текущего плана', 'Completed outside the current plan')}
+            </p>
             {removedExerciseIds.map((exerciseId) => {
               const exercise = catalog.find((candidate) => candidate.id === exerciseId);
               const logged = visibleSets
@@ -1075,7 +1203,7 @@ function WorkoutView({
               if (!exercise) return null;
               return (
                 <div className="removed-set-summary" key={exerciseId}>
-                  <strong>{exercise.nameRu}</strong>
+                  <strong>{exerciseName(exercise, locale)}</strong>
                   {logged.map((set, index) => (
                     <div className="set-row" key={set.id}>
                       <button
@@ -1083,12 +1211,12 @@ function WorkoutView({
                         onClick={() => onEditSet(exercise, set)}
                         type="button"
                       >
-                        {index + 1}. {set.weightKg}×{set.reps}
-                        {setEntrySourceSuffix(set.entrySource)}
+                        {index + 1}. {formatWeight(set.weightKg, locale, unitSystem)} × {set.reps}
+                        {setEntrySourceSuffix(set.entrySource, locale)}
                       </button>
                       <div className="set-controls">
                         <button
-                          aria-label="Переместить подход влево"
+                          aria-label={tr(locale, 'Переместить подход влево', 'Move set left')}
                           disabled={index === 0}
                           onClick={() => onMoveSet(set, -1)}
                           type="button"
@@ -1096,7 +1224,7 @@ function WorkoutView({
                           ←
                         </button>
                         <button
-                          aria-label="Переместить подход вправо"
+                          aria-label={tr(locale, 'Переместить подход вправо', 'Move set right')}
                           disabled={index === logged.length - 1}
                           onClick={() => onMoveSet(set, 1)}
                           type="button"
@@ -1104,7 +1232,7 @@ function WorkoutView({
                           →
                         </button>
                         <button
-                          aria-label="Удалить подход"
+                          aria-label={tr(locale, 'Удалить подход', 'Delete set')}
                           className="danger-text"
                           onClick={() => onDeleteSet(set)}
                           type="button"
@@ -1125,10 +1253,11 @@ function WorkoutView({
 }
 
 function CatalogView({ exercises }: { exercises: Exercise[] }) {
+  const { locale } = usePreferences();
   return (
     <section className="screen">
-      <p className="eyebrow">Общий + личный</p>
-      <h1>Каталог упражнений</h1>
+      <p className="eyebrow">{tr(locale, 'Общий + личный', 'Shared + personal')}</p>
+      <h1>{tr(locale, 'Каталог упражнений', 'Exercise catalog')}</h1>
       <div className="exercise-list catalog-list">
         {exercises.map((exercise) => (
           <article className="exercise-row catalog" key={exercise.id}>
@@ -1136,9 +1265,10 @@ function CatalogView({ exercises }: { exercises: Exercise[] }) {
               {exercise.tag === 'mighty' ? '⚡' : exercise.tag === 'cringe' ? '😬' : '•'}
             </div>
             <div>
-              <strong>{exercise.nameRu}</strong>
+              <strong>{exerciseName(exercise, locale)}</strong>
               <small>
-                {exercise.nameEn} · {muscleLabel(exercise.primaryMuscles[0])}
+                {locale === 'en' ? exercise.nameRu : exercise.nameEn} ·{' '}
+                {muscleLabel(exercise.primaryMuscles[0], locale)}
               </small>
             </div>
             <Tag tag={exercise.tag} />
@@ -1153,40 +1283,70 @@ function SettingsView({
   user,
   conflicts,
   onLogout,
+  onUserUpdated,
   relationshipRefreshKey,
 }: {
   user: CurrentUser;
   conflicts: SyncConflict[];
   onLogout: () => void;
+  onUserUpdated: (user: CurrentUser) => Promise<void>;
   relationshipRefreshKey: number;
 }) {
+  const { locale, unitSystem } = usePreferences();
+  const [preferencesError, setPreferencesError] = useState<string | null>(null);
+  const [savingPreferences, setSavingPreferences] = useState(false);
+
+  async function savePreferences(next: {
+    locale: CurrentUser['locale'];
+    unitSystem: CurrentUser['unitSystem'];
+  }) {
+    setPreferencesError(null);
+    setSavingPreferences(true);
+    try {
+      const result = await updateProfilePreferences(next);
+      await onUserUpdated(result.user);
+    } catch (error) {
+      setPreferencesError(
+        error instanceof Error
+          ? error.message
+          : tr(locale, 'Не удалось сохранить настройки.', 'Could not save preferences.'),
+      );
+    } finally {
+      setSavingPreferences(false);
+    }
+  }
+
   return (
     <section className="screen">
-      <p className="eyebrow">Профиль</p>
-      <h1>Настройки</h1>
+      <p className="eyebrow">{tr(locale, 'Профиль', 'Profile')}</p>
+      <h1>{tr(locale, 'Настройки', 'Settings')}</h1>
       <div className="profile-card">
         {user.avatarUrl && <img alt="" referrerPolicy="no-referrer" src={user.avatarUrl} />}
         <div>
           <strong>{user.displayName}</strong>
           <small>{user.email}</small>
         </div>
-        <span>{roleLabel(user.role)}</span>
+        <span>{roleLabel(user.role, locale)}</span>
       </div>
       {conflicts.length > 0 && (
         <section className="conflict-panel" aria-live="polite">
-          <p className="eyebrow">Нужен выбор</p>
-          <h2>Изменения с двух устройств</h2>
+          <p className="eyebrow">{tr(locale, 'Нужен выбор', 'Choose a version')}</p>
+          <h2>{tr(locale, 'Изменения с двух устройств', 'Changes from two devices')}</h2>
           <p className="intro">
-            Ничего не перезаписано автоматически. Выбери версию для каждой записи.
+            {tr(
+              locale,
+              'Ничего не перезаписано автоматически. Выбери версию для каждой записи.',
+              'Nothing was overwritten automatically. Choose a version for each entry.',
+            )}
           </p>
           {conflicts.map((conflict) => (
             <article className="conflict-card" key={conflict.id}>
               <strong>
                 {conflict.entityType === 'workout'
-                  ? 'Тренировка'
+                  ? tr(locale, 'Тренировка', 'Workout')
                   : conflict.entityType === 'set'
-                    ? 'Подход'
-                    : 'Замер тела'}
+                    ? tr(locale, 'Подход', 'Set')
+                    : tr(locale, 'Замер тела', 'Body measurement')}
               </strong>
               <small>{conflict.message}</small>
               <div>
@@ -1195,7 +1355,9 @@ function SettingsView({
                   onClick={() => void resolveConflict(conflict.id, 'server')}
                   type="button"
                 >
-                  {conflict.current ? 'Оставить серверную' : 'Удалить локальную'}
+                  {conflict.current
+                    ? tr(locale, 'Оставить серверную', 'Keep server version')
+                    : tr(locale, 'Удалить локальную', 'Delete local version')}
                 </button>
                 <button
                   className="button primary small"
@@ -1203,7 +1365,7 @@ function SettingsView({
                   onClick={() => void resolveConflict(conflict.id, 'mine')}
                   type="button"
                 >
-                  Сохранить мою
+                  {tr(locale, 'Сохранить мою', 'Keep mine')}
                 </button>
               </div>
             </article>
@@ -1211,21 +1373,51 @@ function SettingsView({
         </section>
       )}
       <div className="setting">
-        <span>Язык</span>
-        <strong>Русский</strong>
+        <label htmlFor="profile-locale">{tr(locale, 'Язык', 'Language')}</label>
+        <select
+          disabled={savingPreferences}
+          id="profile-locale"
+          onChange={(event) =>
+            void savePreferences({
+              locale: event.target.value as CurrentUser['locale'],
+              unitSystem,
+            })
+          }
+          value={locale}
+        >
+          <option value="ru">Русский</option>
+          <option value="en">English</option>
+        </select>
       </div>
       <div className="setting">
-        <span>Единицы веса</span>
-        <strong>кг</strong>
+        <label htmlFor="profile-units">{tr(locale, 'Единицы измерения', 'Units')}</label>
+        <select
+          disabled={savingPreferences}
+          id="profile-units"
+          onChange={(event) =>
+            void savePreferences({
+              locale,
+              unitSystem: event.target.value as CurrentUser['unitSystem'],
+            })
+          }
+          value={unitSystem}
+        >
+          <option value="metric">{tr(locale, 'кг / см', 'kg / cm')}</option>
+          <option value="imperial">lb / in</option>
+        </select>
       </div>
+      {preferencesError && <p className="auth-error">{preferencesError}</p>}
       <PushReminderSettings />
       <TrainerRelationshipCard refreshKey={relationshipRefreshKey} />
       <p className="privacy-note">
-        Перед включением голоса приложение покажет, какие данные будут переданы провайдеру
-        распознавания.
+        {tr(
+          locale,
+          'Перед включением голоса приложение покажет, какие данные будут переданы провайдеру распознавания.',
+          'Before voice input is enabled, the app will show which data is sent to the transcription provider.',
+        )}
       </p>
       <button className="button ghost full" onClick={onLogout} type="button">
-        Выйти и удалить локальные данные
+        {tr(locale, 'Выйти и удалить локальные данные', 'Sign out and delete local data')}
       </button>
     </section>
   );
@@ -1244,6 +1436,7 @@ function ExercisePickerSheet({
   onChoose: (exercise: Exercise) => void;
   onClose: () => void;
 }) {
+  const { locale } = usePreferences();
   const [query, setQuery] = useState('');
 
   useEffect(() => setQuery(''), [mode]);
@@ -1266,20 +1459,28 @@ function ExercisePickerSheet({
   return (
     <div className="sheet-backdrop" role="presentation" onMouseDown={onClose}>
       <section
-        aria-label={mode.mode === 'add' ? 'Добавить упражнение' : 'Заменить упражнение'}
+        aria-label={
+          mode.mode === 'add'
+            ? tr(locale, 'Добавить упражнение', 'Add exercise')
+            : tr(locale, 'Заменить упражнение', 'Replace exercise')
+        }
         aria-modal="true"
         className="sheet exercise-picker"
         onMouseDown={(event) => event.stopPropagation()}
         role="dialog"
       >
         <div className="sheet-handle" />
-        <p className="eyebrow">Каталог</p>
-        <h2>{mode.mode === 'add' ? 'Добавить упражнение' : 'Чем заменить?'}</h2>
+        <p className="eyebrow">{tr(locale, 'Каталог', 'Catalog')}</p>
+        <h2>
+          {mode.mode === 'add'
+            ? tr(locale, 'Добавить упражнение', 'Add exercise')
+            : tr(locale, 'Чем заменить?', 'Choose a replacement')}
+        </h2>
         <input
           autoFocus
           className="exercise-search"
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Название или синоним"
+          placeholder={tr(locale, 'Название или синоним', 'Name or alias')}
           type="search"
           value={query}
         />
@@ -1292,18 +1493,21 @@ function ExercisePickerSheet({
               type="button"
             >
               <span>
-                <strong>{exercise.nameRu}</strong>
+                <strong>{exerciseName(exercise, locale)}</strong>
                 <small>
-                  {exercise.nameEn} · {muscleLabel(exercise.primaryMuscles[0])}
+                  {locale === 'en' ? exercise.nameRu : exercise.nameEn} ·{' '}
+                  {muscleLabel(exercise.primaryMuscles[0], locale)}
                 </small>
               </span>
               <Tag tag={exercise.tag} />
             </button>
           ))}
-          {!options.length && <p className="sets-line muted">Ничего не найдено</p>}
+          {!options.length && (
+            <p className="sets-line muted">{tr(locale, 'Ничего не найдено', 'Nothing found')}</p>
+          )}
         </div>
         <button className="button ghost full" onClick={onClose} type="button">
-          Отмена
+          {tr(locale, 'Отмена', 'Cancel')}
         </button>
       </section>
     </div>
@@ -1319,6 +1523,7 @@ function ConfirmationSheet({
   onClose: () => void;
   onConfirm: () => void;
 }) {
+  const { locale } = usePreferences();
   if (!confirmation) return null;
 
   return (
@@ -1331,14 +1536,14 @@ function ConfirmationSheet({
         role="dialog"
       >
         <div className="sheet-handle" />
-        <p className="eyebrow">Подтверждение</p>
+        <p className="eyebrow">{tr(locale, 'Подтверждение', 'Confirmation')}</p>
         <h2>{confirmation.title}</h2>
         <p className="confirmation-message">{confirmation.message}</p>
         <button className="button danger full" onClick={onConfirm} type="button">
           {confirmation.confirmLabel}
         </button>
         <button className="button ghost full" onClick={onClose} type="button">
-          Отмена
+          {tr(locale, 'Отмена', 'Cancel')}
         </button>
       </section>
     </div>
@@ -1364,6 +1569,7 @@ function ExplainSheet({
     entrySource: Extract<SetEntrySource, 'natural_text' | 'voice_ai'>,
   ) => Promise<void>;
 }) {
+  const { locale, unitSystem } = usePreferences();
   const [mode, setMode] = useState<'text' | 'voice'>(() => loadInputMode());
   const [text, setText] = useState('');
   const [result, setResult] = useState<NaturalSetResult | null>(null);
@@ -1379,7 +1585,9 @@ function ExplainSheet({
   }
 
   function interpret(exerciseOverride: Exercise | null = null) {
-    setResult(parseNaturalSet({ text, catalog, scopedExercise, exerciseOverride }));
+    setResult(
+      parseNaturalSet({ text, catalog, scopedExercise, exerciseOverride, locale, unitSystem }),
+    );
   }
 
   async function confirmParsed(exercise: Exercise, draft: NaturalSetDraft) {
@@ -1389,7 +1597,13 @@ function ExplainSheet({
     try {
       await onSave(exercise, draft, entrySource);
     } catch {
-      setSaveError('Не удалось записать подход. Фраза сохранена в форме — попробуй ещё раз.');
+      setSaveError(
+        tr(
+          locale,
+          'Не удалось записать подход. Фраза сохранена в форме — попробуй ещё раз.',
+          'Could not save the set. The phrase is still in the form — try again.',
+        ),
+      );
       setSaving(false);
     }
   }
@@ -1410,16 +1624,28 @@ function ExplainSheet({
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="sheet-handle" />
-        <p className="eyebrow">Пояснить</p>
-        <h2>{scopedExercise ? scopedExercise.nameRu : 'Записать подход'}</h2>
+        <p className="eyebrow">{tr(locale, 'Пояснить', 'Describe')}</p>
+        <h2>
+          {scopedExercise
+            ? exerciseName(scopedExercise, locale)
+            : tr(locale, 'Записать подход', 'Log a set')}
+        </h2>
         <p className="explain-context">
           {activeWorkout
             ? scopedExercise
-              ? `Контекст: ${scopedExercise.nameRu}`
-              : 'Контекст: текущая тренировка'
-            : 'Сначала начни тренировку — подход привязывается к активной сессии.'}
+              ? `${tr(locale, 'Контекст', 'Context')}: ${exerciseName(scopedExercise, locale)}`
+              : tr(locale, 'Контекст: текущая тренировка', 'Context: current workout')
+            : tr(
+                locale,
+                'Сначала начни тренировку — подход привязывается к активной сессии.',
+                'Start a workout first — the set is linked to the active session.',
+              )}
         </p>
-        <div aria-label="Способ ввода" className="input-modes" role="tablist">
+        <div
+          aria-label={tr(locale, 'Способ ввода', 'Input method')}
+          className="input-modes"
+          role="tablist"
+        >
           <button
             aria-selected={mode === 'text'}
             className={mode === 'text' ? 'active' : ''}
@@ -1427,7 +1653,7 @@ function ExplainSheet({
             role="tab"
             type="button"
           >
-            ⌨️ Текст
+            ⌨️ {tr(locale, 'Текст', 'Text')}
           </button>
           <button
             aria-selected={mode === 'voice'}
@@ -1436,10 +1662,16 @@ function ExplainSheet({
             role="tab"
             type="button"
           >
-            🎙️ Голос
+            🎙️ {tr(locale, 'Голос', 'Voice')}
           </button>
         </div>
-        <p className="manual-entry-note">Ручной «＋ Подход» всегда доступен в тренировке.</p>
+        <p className="manual-entry-note">
+          {tr(
+            locale,
+            'Ручной «＋ Подход» всегда доступен в тренировке.',
+            'Manual “＋ Set” is always available in the workout.',
+          )}
+        </p>
 
         {mode === 'voice' ? (
           <VoicePanel
@@ -1449,35 +1681,46 @@ function ExplainSheet({
               setEntrySource('voice_ai');
               setMode('text');
               saveInputMode('text');
-              setResult(parseNaturalSet({ text: transcript, catalog, scopedExercise }));
+              setResult(
+                parseNaturalSet({
+                  text: transcript,
+                  catalog,
+                  scopedExercise,
+                  locale,
+                  unitSystem,
+                }),
+              );
             }}
           />
         ) : result?.status === 'ready' ? (
           <div className="parsed-set" aria-live="polite">
-            <strong>Понял так — верно?</strong>
+            <strong>
+              {tr(locale, 'Понял так — верно?', 'Here is what I understood — correct?')}
+            </strong>
             <dl>
               <div>
-                <dt>Упражнение</dt>
-                <dd>{result.exercise.nameRu}</dd>
+                <dt>{tr(locale, 'Упражнение', 'Exercise')}</dt>
+                <dd>{exerciseName(result.exercise, locale)}</dd>
               </div>
               <div>
-                <dt>Подход</dt>
+                <dt>{tr(locale, 'Подход', 'Set')}</dt>
                 <dd>
-                  {result.draft.weightKg} кг × {result.draft.reps}
+                  {formatWeight(result.draft.weightKg, locale, unitSystem)} × {result.draft.reps}
                 </dd>
               </div>
               <div>
                 <dt>RIR</dt>
-                <dd>{result.draft.rir ?? 'не указан'}</dd>
+                <dd>{result.draft.rir ?? tr(locale, 'не указан', 'not specified')}</dd>
               </div>
               <div>
-                <dt>Комментарий</dt>
+                <dt>{tr(locale, 'Комментарий', 'Comment')}</dt>
                 <dd>{result.draft.comment ?? '—'}</dd>
               </div>
             </dl>
             {previousSet && (
               <p className="previous-result">
-                Прошлый результат: {previousSet.weightKg} кг × {previousSet.reps}
+                {tr(locale, 'Прошлый результат', 'Previous result')}:{' '}
+                {formatWeight(previousSet.weightKg, locale, unitSystem)} × {previousSet.reps}
                 {previousSet.rir === null ? '' : `, RIR ${previousSet.rir}`}
               </p>
             )}
@@ -1488,7 +1731,7 @@ function ExplainSheet({
             )}
             <div className="parsed-actions">
               <button className="button ghost" onClick={() => setResult(null)} type="button">
-                Исправить фразу
+                {tr(locale, 'Исправить фразу', 'Edit phrase')}
               </button>
               <button
                 className="button primary"
@@ -1496,13 +1739,17 @@ function ExplainSheet({
                 onClick={() => void confirmParsed(result.exercise, result.draft)}
                 type="button"
               >
-                {saving ? 'Записываю…' : 'Подтвердить'}
+                {saving
+                  ? tr(locale, 'Записываю…', 'Saving…')
+                  : tr(locale, 'Подтвердить', 'Confirm')}
               </button>
             </div>
           </div>
         ) : (
           <div className="natural-input">
-            <label htmlFor="natural-set-input">Опиши подход свободной фразой</label>
+            <label htmlFor="natural-set-input">
+              {tr(locale, 'Опиши подход свободной фразой', 'Describe the set naturally')}
+            </label>
             <textarea
               autoFocus
               id="natural-set-input"
@@ -1514,21 +1761,29 @@ function ExplainSheet({
               }}
               placeholder={
                 scopedExercise
-                  ? 'Например: сорок на двенадцать, один в запасе, техника чистая'
-                  : 'Например: румынка 80 на 8, RIR 2, техника чистая'
+                  ? tr(
+                      locale,
+                      'Например: сорок на двенадцать, один в запасе, техника чистая',
+                      'For example: 90 for 12, RIR 1, clean technique',
+                    )
+                  : tr(
+                      locale,
+                      'Например: румынка 80 на 8, RIR 2, техника чистая',
+                      'For example: Romanian deadlift 175 for 8, RIR 2, clean technique',
+                    )
               }
               rows={4}
               value={text}
             />
             {result?.status === 'needs_clarification' && (
               <div className="clarification" role="alert">
-                <strong>Нужно уточнение</strong>
+                <strong>{tr(locale, 'Нужно уточнение', 'One detail is missing')}</strong>
                 <p>{result.question}</p>
                 {result.candidates.length > 0 && (
                   <div className="candidate-list">
                     {result.candidates.map((exercise) => (
                       <button onClick={() => interpret(exercise)} key={exercise.id} type="button">
-                        {exercise.nameRu}
+                        {exerciseName(exercise, locale)}
                       </button>
                     ))}
                   </div>
@@ -1541,12 +1796,12 @@ function ExplainSheet({
               onClick={() => interpret()}
               type="button"
             >
-              Разобрать фразу
+              {tr(locale, 'Разобрать фразу', 'Parse phrase')}
             </button>
           </div>
         )}
         <button className="button ghost full" onClick={onClose} type="button">
-          Закрыть
+          {tr(locale, 'Закрыть', 'Close')}
         </button>
       </section>
     </div>
@@ -1602,33 +1857,37 @@ function Tag({ tag }: { tag: Exercise['tag'] }) {
   return <span className={`tag ${tag}`}>{labels[tag]}</span>;
 }
 
-function muscleLabel(muscle: Exercise['primaryMuscles'][number] | undefined) {
-  const labels: Record<string, string> = {
-    back: 'Спина',
-    middle_delt: 'Средняя дельта',
-    chest: 'Грудь',
-    biceps: 'Бицепс',
-    quadriceps: 'Квадрицепс',
-    triceps: 'Трицепс',
-    front_delt: 'Передняя дельта',
-    rear_delt: 'Задняя дельта',
-    hamstrings: 'Бицепс бедра',
-    calves: 'Икры',
-    core: 'Кор',
+function muscleLabel(
+  muscle: Exercise['primaryMuscles'][number] | undefined,
+  locale: CurrentUser['locale'],
+) {
+  const labels: Record<string, [string, string]> = {
+    back: ['Спина', 'Back'],
+    middle_delt: ['Средняя дельта', 'Middle delts'],
+    chest: ['Грудь', 'Chest'],
+    biceps: ['Бицепс', 'Biceps'],
+    quadriceps: ['Квадрицепс', 'Quadriceps'],
+    triceps: ['Трицепс', 'Triceps'],
+    front_delt: ['Передняя дельта', 'Front delts'],
+    rear_delt: ['Задняя дельта', 'Rear delts'],
+    hamstrings: ['Бицепс бедра', 'Hamstrings'],
+    calves: ['Икры', 'Calves'],
+    core: ['Кор', 'Core'],
   };
-  return labels[muscle ?? ''] ?? 'Упражнение';
+  const label = labels[muscle ?? ''];
+  return label ? label[locale === 'en' ? 1 : 0] : tr(locale, 'Упражнение', 'Exercise');
 }
 
-function firstName(displayName: string) {
-  return displayName.trim().split(/\s+/)[0] || 'спортсмен';
+function firstName(displayName: string, locale: CurrentUser['locale']) {
+  return displayName.trim().split(/\s+/)[0] || tr(locale, 'спортсмен', 'athlete');
 }
 
 function canUseTrainerConsole(role: CurrentUser['role']) {
   return role === 'trainer' || role === 'admin' || role === 'superadmin';
 }
 
-function roleLabel(role: CurrentUser['role']) {
-  if (role === 'trainer') return 'Тренер';
+function roleLabel(role: CurrentUser['role'], locale: CurrentUser['locale']) {
+  if (role === 'trainer') return tr(locale, 'Тренер', 'Coach');
   if (role === 'admin' || role === 'superadmin') return 'Admin';
   return 'Athlete';
 }
@@ -1647,20 +1906,47 @@ function syncStatusLabel(
   phase: ReturnType<typeof getSyncStatus>['phase'],
   pending: number,
   conflicts: number,
+  locale: CurrentUser['locale'],
 ) {
-  if (conflicts) return `Конфликтов: ${conflicts}`;
-  if (phase === 'offline') return `Офлайн · ждёт ${pending}`;
-  if (phase === 'error') return pending ? `Не отправлено: ${pending}` : 'Сервер недоступен';
-  if (phase === 'syncing') return pending ? `Отправляю: ${pending}` : 'Проверяю сервер…';
-  return pending ? `Ожидает отправки: ${pending}` : 'Синхронизировано';
+  if (conflicts) return tr(locale, `Конфликтов: ${conflicts}`, `Conflicts: ${conflicts}`);
+  if (phase === 'offline')
+    return tr(locale, `Офлайн · ждёт ${pending}`, `Offline · ${pending} pending`);
+  if (phase === 'error') {
+    return pending
+      ? tr(locale, `Не отправлено: ${pending}`, `Not sent: ${pending}`)
+      : tr(locale, 'Сервер недоступен', 'Server unavailable');
+  }
+  if (phase === 'syncing') {
+    return pending
+      ? tr(locale, `Отправляю: ${pending}`, `Sending: ${pending}`)
+      : tr(locale, 'Проверяю сервер…', 'Checking server…');
+  }
+  return pending
+    ? tr(locale, `Ожидает отправки: ${pending}`, `Pending: ${pending}`)
+    : tr(locale, 'Синхронизировано', 'Synced');
 }
 
-function lastSyncTitle(value: string | null) {
-  if (!value) return 'Успешной синхронизации на этом устройстве ещё не было';
-  return `Последняя успешная синхронизация: ${new Intl.DateTimeFormat('ru-RU', {
+function lastSyncTitle(value: string | null, locale: CurrentUser['locale']) {
+  if (!value) {
+    return tr(
+      locale,
+      'Успешной синхронизации на этом устройстве ещё не было',
+      'This device has not completed a sync yet',
+    );
+  }
+  const date = new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'ru-RU', {
     dateStyle: 'short',
     timeStyle: 'short',
-  }).format(new Date(value))}`;
+  }).format(new Date(value));
+  return tr(locale, `Последняя успешная синхронизация: ${date}`, `Last successful sync: ${date}`);
+}
+
+function publicLocale(): CurrentUser['locale'] {
+  try {
+    return navigator.language.toLocaleLowerCase().startsWith('en') ? 'en' : 'ru';
+  } catch {
+    return 'ru';
+  }
 }
 
 function normalizePlan(plan: WorkoutExercise[]) {

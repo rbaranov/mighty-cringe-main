@@ -19,6 +19,7 @@ import type {
   UpdateMeasurementInput,
   UpdateNotificationPreferences,
   UpdateSetInput,
+  UpdateUserPreferences,
   UpdateWorkoutInput,
   UserRole,
   VoiceEntryRecord,
@@ -183,6 +184,7 @@ export interface WorkoutRepository {
   getSessionUser(tokenHash: string, now: Date): Promise<CurrentUser | null>;
   revokeSession(tokenHash: string, now: Date): Promise<void>;
   listUsers(): Promise<CurrentUser[]>;
+  updateUserPreferences(userId: string, input: UpdateUserPreferences): Promise<CurrentUser>;
   createTrainerInvite(input: TrainerInviteCreateInput, now: Date): Promise<TrainerInviteRecord>;
   listTrainerInvites(trainerId: string, now: Date): Promise<TrainerInviteRecord[]>;
   acceptTrainerInvite(
@@ -620,6 +622,7 @@ export class MemoryRepository implements WorkoutRepository {
       avatarUrl: identity.avatarUrl,
       role: resolvedRole(existing?.role, requestedRole),
       locale: existing?.locale ?? 'ru',
+      unitSystem: existing?.unitSystem ?? 'metric',
     };
     this.users.set(user.id, user);
     return toCurrentUser(user);
@@ -645,6 +648,14 @@ export class MemoryRepository implements WorkoutRepository {
     return [...this.users.values()]
       .map(toCurrentUser)
       .sort((left, right) => left.email.localeCompare(right.email));
+  }
+
+  async updateUserPreferences(userId: string, input: UpdateUserPreferences) {
+    const user = this.users.get(userId);
+    if (!user) throw new RepositoryNotFoundError();
+    user.locale = input.locale;
+    user.unitSystem = input.unitSystem;
+    return toCurrentUser(user);
   }
 
   async createTrainerInvite(input: TrainerInviteCreateInput, now: Date) {
@@ -1509,6 +1520,7 @@ export class PostgresRepository implements WorkoutRepository {
         avatarUrl: users.avatarUrl,
         role: users.role,
         locale: users.locale,
+        unitSystem: users.unitSystem,
       })
       .from(sessions)
       .innerJoin(users, eq(sessions.userId, users.id))
@@ -1539,10 +1551,21 @@ export class PostgresRepository implements WorkoutRepository {
         avatarUrl: users.avatarUrl,
         role: users.role,
         locale: users.locale,
+        unitSystem: users.unitSystem,
       })
       .from(users)
       .orderBy(asc(users.email));
     return records.map(toCurrentUser);
+  }
+
+  async updateUserPreferences(userId: string, input: UpdateUserPreferences) {
+    const records = await this.db
+      .update(users)
+      .set({ ...input, updatedAt: new Date() })
+      .where(eq(users.id, userId))
+      .returning();
+    if (!records[0]) throw new RepositoryNotFoundError();
+    return toCurrentUser(records[0]);
   }
 
   async createTrainerInvite(input: TrainerInviteCreateInput, now: Date) {
@@ -2069,6 +2092,7 @@ function toCurrentUser(user: {
   avatarUrl: string | null;
   role: UserRole;
   locale: string;
+  unitSystem: string;
 }): CurrentUser {
   return {
     id: user.id,
@@ -2077,6 +2101,7 @@ function toCurrentUser(user: {
     avatarUrl: user.avatarUrl,
     role: user.role,
     locale: user.locale === 'en' ? 'en' : 'ru',
+    unitSystem: user.unitSystem === 'imperial' ? 'imperial' : 'metric',
   };
 }
 

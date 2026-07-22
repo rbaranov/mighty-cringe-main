@@ -11,6 +11,7 @@ const user: CurrentUser = {
   avatarUrl: null,
   role: 'athlete',
   locale: 'ru',
+  unitSystem: 'metric',
 };
 
 describe('offline session resolution', () => {

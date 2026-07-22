@@ -1,4 +1,6 @@
-import type { Exercise } from '@mighty-cringe/contracts';
+import type { CurrentUser, Exercise, UnitSystem } from '@mighty-cringe/contracts';
+
+import { canonicalWeight } from './preferences';
 
 export type NaturalSetDraft = {
   weightKg: number;
@@ -63,23 +65,45 @@ const numberWords: Record<string, number> = {
   девятьсот: 900,
 };
 
-const weightUnits = new Set(['кг', 'килограмм', 'килограмма', 'килограммов', 'kg', 'kgs']);
-const volumeSeparators = new Set(['на', 'x']);
+const weightUnits = new Set([
+  'кг',
+  'килограмм',
+  'килограмма',
+  'килограммов',
+  'kg',
+  'kgs',
+  'lb',
+  'lbs',
+  'pound',
+  'pounds',
+]);
+const imperialWeightUnits = new Set(['lb', 'lbs', 'pound', 'pounds']);
+const volumeSeparators = new Set(['на', 'x', 'for']);
 
 export function parseNaturalSet({
   text,
   catalog,
   scopedExercise = null,
   exerciseOverride = null,
+  locale = 'ru',
+  unitSystem = 'metric',
 }: {
   text: string;
   catalog: Exercise[];
   scopedExercise?: Exercise | null;
   exerciseOverride?: Exercise | null;
+  locale?: CurrentUser['locale'];
+  unitSystem?: UnitSystem;
 }): NaturalSetResult {
   const normalized = normalize(text);
   if (!normalized) {
-    return clarification('Напиши подход, например: «жим лёжа 80 на 8, RIR 2».');
+    return clarification(
+      tr(
+        locale,
+        'Напиши подход, например: «жим лёжа 80 на 8, RIR 2».',
+        'Describe a set, for example: “bench press 175 for 8, RIR 2”.',
+      ),
+    );
   }
 
   const exerciseMatch = exerciseOverride
@@ -88,29 +112,63 @@ export function parseNaturalSet({
   if (exerciseMatch && 'candidates' in exerciseMatch) {
     return {
       status: 'needs_clarification',
-      question: 'Какое именно упражнение ты имеешь в виду?',
+      question: tr(
+        locale,
+        'Какое именно упражнение ты имеешь в виду?',
+        'Which exercise do you mean?',
+      ),
       candidates: exerciseMatch.candidates,
     };
   }
   const exercise = exerciseMatch?.exercise ?? scopedExercise;
   if (!exercise) {
-    return clarification('Какое упражнение записать? Добавь название или его псевдоним.');
+    return clarification(
+      tr(
+        locale,
+        'Какое упражнение записать? Добавь название или его псевдоним.',
+        'Which exercise should be logged? Add its name or alias.',
+      ),
+    );
   }
 
-  const volume = findVolume(normalized);
+  const volume = findVolume(normalized, unitSystem);
   if (!volume) {
-    return clarification('Уточни вес и повторы, например: «40 на 12».');
+    return clarification(
+      tr(
+        locale,
+        'Уточни вес и повторы, например: «40 на 12».',
+        'Add weight and reps, for example: “90 for 12”.',
+      ),
+    );
   }
   if (volume.weightKg < 0 || volume.weightKg > 1000) {
-    return clarification('Вес должен быть от 0 до 1000 кг. Уточни вес подхода.');
+    return clarification(
+      tr(
+        locale,
+        'Вес должен быть от 0 до 1000 кг. Уточни вес подхода.',
+        'Weight must be between 0 and 1,000 kg. Check the set weight.',
+      ),
+    );
   }
   if (!Number.isInteger(volume.reps) || volume.reps < 1 || volume.reps > 100) {
-    return clarification('Повторы должны быть целым числом от 1 до 100. Уточни количество.');
+    return clarification(
+      tr(
+        locale,
+        'Повторы должны быть целым числом от 1 до 100. Уточни количество.',
+        'Reps must be a whole number from 1 to 100.',
+      ),
+    );
   }
 
   const rirMatch = findRir(normalized);
   if (rirMatch && (rirMatch.value < 0 || rirMatch.value > 20)) {
-    return clarification('RIR должен быть от 0 до 20. Уточни запас повторов.');
+    return clarification(
+      tr(
+        locale,
+        'RIR должен быть от 0 до 20. Уточни запас повторов.',
+        'RIR must be between 0 and 20.',
+      ),
+    );
   }
 
   const comment = extractComment(text, normalized, [
@@ -150,14 +208,19 @@ function matchExercise(normalized: string, catalog: Exercise[]) {
   return { exercise: top[0].exercise, matchedPhrase: top[0].matchedPhrase };
 }
 
-function findVolume(normalized: string) {
+function findVolume(normalized: string, unitSystem: UnitSystem) {
   const direct = normalized.match(
-    /(?:^|\s)(\d+(?:\.\d+)?)\s*(?:кг|килограмм(?:а|ов)?|kg|kgs)?\s*(?:на|x)\s*(\d+)(?:\s|$)/,
+    /(?:^|\s)(\d+(?:\.\d+)?)\s*(кг|килограмм(?:а|ов)?|kg|kgs|lb|lbs|pound|pounds)?\s*(?:на|x|for)\s*(\d+)(?:\s|$)/,
   );
   if (direct) {
+    const inputUnitSystem = direct[2]
+      ? imperialWeightUnits.has(direct[2])
+        ? 'imperial'
+        : 'metric'
+      : unitSystem;
     return {
-      weightKg: Number(direct[1]),
-      reps: Number(direct[2]),
+      weightKg: canonicalWeight(Number(direct[1]), inputUnitSystem),
+      reps: Number(direct[3]),
       matchedPhrase: direct[0].trim(),
     };
   }
@@ -166,6 +229,7 @@ function findVolume(normalized: string) {
   for (let separator = 0; separator < tokens.length; separator += 1) {
     if (!volumeSeparators.has(tokens[separator])) continue;
     let leftEnd = separator - 1;
+    const explicitUnit = weightUnits.has(tokens[leftEnd]) ? tokens[leftEnd] : null;
     while (leftEnd >= 0 && weightUnits.has(tokens[leftEnd])) leftEnd -= 1;
     const leftStart = numberStart(tokens, leftEnd);
     const rightEnd = numberEnd(tokens, separator + 1);
@@ -174,7 +238,10 @@ function findVolume(normalized: string) {
     const reps = parseNumber(tokens.slice(separator + 1, rightEnd + 1));
     if (weightKg === null || reps === null) continue;
     return {
-      weightKg,
+      weightKg: canonicalWeight(
+        weightKg,
+        explicitUnit ? (imperialWeightUnits.has(explicitUnit) ? 'imperial' : 'metric') : unitSystem,
+      ),
       reps,
       matchedPhrase: tokens.slice(leftStart, rightEnd + 1).join(' '),
     };
@@ -183,10 +250,18 @@ function findVolume(normalized: string) {
 }
 
 function findRir(normalized: string) {
-  if (containsPhrase(normalized, 'до отказа') || containsPhrase(normalized, 'без запаса')) {
+  if (
+    containsPhrase(normalized, 'до отказа') ||
+    containsPhrase(normalized, 'без запаса') ||
+    containsPhrase(normalized, 'to failure')
+  ) {
     return {
       value: 0,
-      matchedPhrase: containsPhrase(normalized, 'до отказа') ? 'до отказа' : 'без запаса',
+      matchedPhrase: containsPhrase(normalized, 'до отказа')
+        ? 'до отказа'
+        : containsPhrase(normalized, 'без запаса')
+          ? 'без запаса'
+          : 'to failure',
     };
   }
 
@@ -201,7 +276,15 @@ function findRir(normalized: string) {
     const value = parseNumber([reserve[1]]);
     if (value !== null) return { value, matchedPhrase: reserve[0] };
   }
+  const englishReserve = normalized.match(/(\d+)\s+(?:reps?\s+)?in\s+reserve/);
+  if (englishReserve) {
+    return { value: Number(englishReserve[1]), matchedPhrase: englishReserve[0] };
+  }
   return null;
+}
+
+function tr(locale: CurrentUser['locale'], russian: string, english: string) {
+  return locale === 'en' ? english : russian;
 }
 
 function extractComment(original: string, normalized: string, phrases: string[]) {

@@ -22,9 +22,9 @@ For the full setup procedure, see
    GitHub's short-lived workflow token, so no GitHub deploy key or personal access token is stored
    on the server.
 6. Create `/etc/mighty-cringe/production.env` with a unique database password, Google OAuth Web
-   client credentials, optional comma-separated `TRAINER_EMAILS`, the voice secrets, and the VAPID
-   values listed in
-   `.env.example`; never commit it. Authorize
+   client credentials and optional comma-separated `TRAINER_EMAILS`. Copy the optional voice and
+   VAPID groups from `.env.example` only when every value in the corresponding group is ready;
+   otherwise leave the whole group empty. Never commit this file. Authorize
    the exact redirect URI
    `https://mightycringe.com/api/v1/auth/google/callback` in Google Cloud Console.
 
@@ -36,6 +36,12 @@ the current head of `main` calls **Deploy production**. The production runner ch
 exact revision, validates the private environment file at `/etc/mighty-cringe/production.env`,
 applies migrations through Docker Compose, starts the services, and verifies the public HTTPS
 health endpoint. Deployments are serialized and a stale revision is skipped.
+
+The configuration preflight requires the core database and Google OAuth settings. Voice storage plus
+OpenRouter transcription form one optional all-or-nothing capability, and the three VAPID values form
+another. A completely empty optional capability stays disabled without blocking unrelated releases;
+a partial group or an invalid 32-byte voice encryption key stops deployment before any containers are
+changed. Validation reports setting names only and never prints their values.
 
 The **Deploy production** workflow can also be started manually on `main` to repeat a controlled
 deployment of its current revision. A failed Compose operation or health check keeps the Actions

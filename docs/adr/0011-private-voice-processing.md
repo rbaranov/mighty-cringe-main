@@ -71,3 +71,8 @@ stores the SSE-C recovery key outside the VPS, creates a spend-limited OpenRoute
 controls, and selects an STT model. Losing or rotating the SSE-C key without re-encrypting retained
 objects makes those recordings unreadable. A provider may have no compatible ZDR endpoint for a chosen
 model; that produces a visible failed job rather than silently weakening the privacy boundary.
+
+An unrelated production release may proceed with every voice setting empty; in that state the API and
+worker keep voice disabled. Deployment preflight rejects a partially configured storage/transcription
+pair and requires both complete groups together, including a valid 32-byte base64 SSE-C key, before
+voice can be enabled.

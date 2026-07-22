@@ -12,7 +12,7 @@ describe('cached user validation', () => {
       role: 'athlete',
       locale: 'ru',
     };
-    expect(parseCurrentUser(user)).toEqual(user);
+    expect(parseCurrentUser(user)).toEqual({ ...user, unitSystem: 'metric' });
     expect(parseCurrentUser({ ...user, role: 'owner' })).toBeNull();
     expect(parseCurrentUser({ ...user, avatarUrl: 'javascript:alert(1)' })).toBeNull();
     expect(parseCurrentUser({ ...user, id: 'not-a-user-id' })).toBeNull();

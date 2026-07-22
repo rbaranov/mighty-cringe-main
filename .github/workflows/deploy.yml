@@ -65,6 +65,7 @@ jobs:
             exit 1
           fi
 
+          node ../../scripts/check-production-env.mjs "$PRODUCTION_ENV_FILE"
           docker compose --env-file "$PRODUCTION_ENV_FILE" config --quiet
 
       - name: Build, migrate and start production

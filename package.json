@@ -8,8 +8,9 @@
     "build": "pnpm --filter @mighty-cringe/contracts build && pnpm --filter @mighty-cringe/db build && pnpm --filter @mighty-cringe/voice build && pnpm --filter @mighty-cringe/push build && pnpm --filter @mighty-cringe/api build && pnpm --filter @mighty-cringe/worker build && pnpm --filter @mighty-cringe/web build",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",
-    "test": "pnpm build && pnpm --filter @mighty-cringe/voice test && pnpm --filter @mighty-cringe/push test && pnpm --filter @mighty-cringe/api test && pnpm --filter @mighty-cringe/worker test && pnpm --filter @mighty-cringe/web test && pnpm --filter @mighty-cringe/web test:pwa && pnpm test:client-boundary",
+    "test": "pnpm build && pnpm --filter @mighty-cringe/voice test && pnpm --filter @mighty-cringe/push test && pnpm --filter @mighty-cringe/api test && pnpm --filter @mighty-cringe/worker test && pnpm --filter @mighty-cringe/web test && pnpm --filter @mighty-cringe/web test:pwa && pnpm test:production-env && pnpm test:client-boundary",
     "test:client-boundary": "node scripts/check-client-secret-boundary.mjs",
+    "test:production-env": "node --test scripts/check-production-env.test.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

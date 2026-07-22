@@ -36,6 +36,7 @@ type DuePreference = {
   quietEnd: string;
   timeZone: string;
   scheduledFor: Date;
+  locale: 'ru' | 'en';
 };
 
 type ClaimedJobRow = {
@@ -58,18 +59,20 @@ export class PostgresNotificationJobStore implements NotificationJobStore {
       const created = await this.sql.begin(async (transaction) => {
         const rows = await transaction<DuePreference[]>`
           select
-            user_id as "userId",
-            frequency,
-            weekday,
-            reminder_time as "reminderTime",
-            quiet_start as "quietStart",
-            quiet_end as "quietEnd",
-            time_zone as "timeZone",
-            next_reminder_at as "scheduledFor"
-          from notification_preferences
-          where enabled = true and next_reminder_at <= ${now}
-          order by next_reminder_at
-          for update skip locked
+            preferences.user_id as "userId",
+            preferences.frequency,
+            preferences.weekday,
+            preferences.reminder_time as "reminderTime",
+            preferences.quiet_start as "quietStart",
+            preferences.quiet_end as "quietEnd",
+            preferences.time_zone as "timeZone",
+            preferences.next_reminder_at as "scheduledFor",
+            users.locale
+          from notification_preferences as preferences
+          inner join users on users.id = preferences.user_id
+          where preferences.enabled = true and preferences.next_reminder_at <= ${now}
+          order by preferences.next_reminder_at
+          for update of preferences skip locked
           limit 1
         `;
         const preference = rows[0];
@@ -83,7 +86,10 @@ export class PostgresNotificationJobStore implements NotificationJobStore {
             ${preference.scheduledFor},
             ${transaction.json({
               title: 'Mighty & Cringe',
-              body: 'Время тренировки. Открой план и зафиксируй результат.',
+              body:
+                preference.locale === 'en'
+                  ? 'Time to train. Open your plan and log the result.'
+                  : 'Время тренировки. Открой план и зафиксируй результат.',
               url: '/',
             })}
           )

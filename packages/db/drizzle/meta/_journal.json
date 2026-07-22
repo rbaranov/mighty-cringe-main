@@ -64,6 +64,13 @@
       "when": 1784674346094,
       "tag": "0008_low_onslaught",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784675743130,
+      "tag": "0009_hesitant_squadron_supreme",
+      "breakpoints": true
     }
   ]
 }
