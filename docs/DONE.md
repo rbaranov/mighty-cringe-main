@@ -1,6 +1,27 @@
 # Mighty & Cringe — сделано
 
-**Обновлён:** 2026-07-21
+**Обновлён:** 2026-07-22
+
+## 2026-07-22 — релиз продуктового бэклога
+
+- В `main` последовательно влиты PR #6, #8 и #12—#18; все соответствующие feature-ветки удалены
+  локально и в GitHub.
+- В production развёрнуты offline-восстановление критичных экранов, natural-text ввод, приватный
+  голосовой pipeline, неизменяемые источники manual/text/voice, read-only кабинет тренера, opt-in
+  push и локализация RU/EN с metric/imperial.
+- Добавлены зашифрованные PostgreSQL backup→restore и production monitoring. Пока credentials не
+  настроены, backup и monitoring timers безопасно выключены; CI проверяет их Docker recovery и
+  success/failure сигналы перед каждым релизом.
+- Production preflight получил собственный Node.js 22 и all-or-nothing проверку необязательных
+  backup, monitoring, voice и push-групп без вывода секретов.
+- GitHub Actions run
+  [#29891045849](https://github.com/mighty-cringe/mighty-cringe-main/actions/runs/29891045849)
+  успешно выполнил полный CI, миграции, production deploy и публичный HTTPS healthcheck для
+  ревизии `5623b78306d3661da6686d8a5b93893c69a7c8e9`.
+- После релиза `https://mightycringe.com/health` отвечает `{"status":"ok"}`, Google OAuth включён,
+  callback совпадает с production URL, а анонимный API отвечает `401`.
+- Реализации зафиксированы здесь как выпущенные; пункты остаются в `BACKLOG.md`, пока владелец не
+  выполнит отмеченные credential- и acceptance-действия на реальных аккаунтах и телефоне.
 
 ## 2026-07-20—21 — фундамент продукта и первый production-запуск
 
