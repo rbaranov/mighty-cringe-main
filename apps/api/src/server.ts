@@ -1,7 +1,7 @@
 import 'dotenv/config';
 
 import { buildApp } from './app.js';
-import { authOptionsFromEnvironment } from './auth.js';
+import { authOptionsFromEnvironment, localDemoIdentityFromEnvironment } from './auth.js';
 import { MemoryRepository, PostgresRepository } from './repository.js';
 import { voiceStorageFromEnvironment, voiceTranscriberFromEnvironment } from '@mighty-cringe/voice';
 import { pushPublicKeyFromEnvironment } from '@mighty-cringe/push';
@@ -13,8 +13,15 @@ const repository = databaseUrl ? new PostgresRepository(databaseUrl) : new Memor
 
 if (repository instanceof PostgresRepository) await repository.initialize();
 
+const auth = authOptionsFromEnvironment();
+const localDemoIdentity = auth ? undefined : localDemoIdentityFromEnvironment();
+const developmentUser = localDemoIdentity
+  ? await repository.upsertGoogleUser(localDemoIdentity, 'athlete')
+  : undefined;
+
 const app = buildApp(repository, {
-  auth: authOptionsFromEnvironment(),
+  auth,
+  developmentUser,
   voiceStorage: voiceStorageFromEnvironment(process.env),
   voiceProcessingEnabled,
   pushPublicKey: pushPublicKeyFromEnvironment(process.env),

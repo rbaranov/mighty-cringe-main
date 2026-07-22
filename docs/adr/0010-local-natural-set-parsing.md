@@ -38,6 +38,7 @@ text input or AI voice transcription. No AI or transcription key is added to the
 - Core typed logging works without connectivity and has no provider cost or disclosure.
 - Common gym phrasing is fast and explainable, but the deterministic grammar intentionally asks for
   clarification rather than pretending to understand arbitrary conversational commands.
-- Workout commands such as replacing or reordering exercises remain outside this first parser.
+- Workout commands were outside this first parser; ADR 0016 supersedes that limitation with a
+  deterministic command layer that runs before set parsing.
 - Voice remains dependent on the privacy pipeline and a production provider credential, while typed
   and manual logging keep working without either dependency.

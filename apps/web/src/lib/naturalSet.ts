@@ -188,7 +188,10 @@ export function parseNaturalSet({
   };
 }
 
-function matchExercise(normalized: string, catalog: Exercise[]) {
+export type ExerciseTextMatch =
+  { exercise: Exercise; matchedPhrase: string; score: number } | { candidates: Exercise[] } | null;
+
+function matchExercise(normalized: string, catalog: Exercise[]): ExerciseTextMatch {
   const matches = catalog.flatMap((exercise) => {
     const variants = [exercise.nameRu, exercise.nameEn, ...exercise.aliases]
       .map(normalize)
@@ -205,7 +208,15 @@ function matchExercise(normalized: string, catalog: Exercise[]) {
   const topScore = Math.max(...matches.map((match) => match.score));
   const top = matches.filter((match) => match.score === topScore);
   if (top.length > 1) return { candidates: top.map((match) => match.exercise) };
-  return { exercise: top[0].exercise, matchedPhrase: top[0].matchedPhrase };
+  return {
+    exercise: top[0].exercise,
+    matchedPhrase: top[0].matchedPhrase,
+    score: top[0].score,
+  };
+}
+
+export function matchExerciseText(text: string, catalog: Exercise[]): ExerciseTextMatch {
+  return matchExercise(normalize(text), catalog);
 }
 
 function findVolume(normalized: string, unitSystem: UnitSystem) {

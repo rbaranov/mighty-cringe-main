@@ -21,6 +21,7 @@ import {
   updateUserPreferencesSchema,
   updateWorkoutSchema,
   voiceEntryIdSchema,
+  type CurrentUser,
 } from '@mighty-cringe/contracts';
 import {
   audioFormatFromMimeType,
@@ -49,6 +50,7 @@ const trainerInviteTtlMs = 7 * 24 * 60 * 60 * 1_000;
 type AppOptions = {
   logger?: FastifyBaseLogger;
   auth?: AuthOptions;
+  developmentUser?: CurrentUser;
   voiceStorage?: VoiceStorage;
   voiceProcessingEnabled?: boolean;
   pushPublicKey?: string | null;
@@ -58,6 +60,7 @@ type AppOptions = {
 export function buildApp(repository: WorkoutRepository, options: AppOptions = {}) {
   const app = Fastify({ logger: options.logger ?? true, bodyLimit: maximumVoiceBytes });
   const now = options.now ?? (() => new Date());
+  app.decorate('developmentUser', options.developmentUser ?? null);
 
   app.addContentTypeParser(
     /^audio\/[a-z0-9.+-]+(?:\s*;.*)?$/i,
@@ -707,8 +710,17 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
 
 async function getCurrentUser(request: FastifyRequest, repository: WorkoutRepository, now: Date) {
   const sessionToken = request.cookies[sessionCookieName];
-  if (!sessionToken) return null;
-  return repository.getSessionUser(hashToken(sessionToken), now);
+  if (!sessionToken) return developmentUserFor(request);
+  return (
+    (await repository.getSessionUser(hashToken(sessionToken), now)) ?? developmentUserFor(request)
+  );
+}
+
+function developmentUserFor(request: FastifyRequest) {
+  return (
+    (request.server as typeof request.server & { developmentUser?: CurrentUser | null })
+      .developmentUser ?? null
+  );
 }
 
 function safeReturnTo(value: unknown) {

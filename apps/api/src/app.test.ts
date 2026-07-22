@@ -29,6 +29,27 @@ class FakeIdentityProvider implements IdentityProvider {
   }
 }
 
+test('an explicit development user can use the local API without an OAuth session', async () => {
+  const repository = new MemoryRepository();
+  const developmentUser = await repository.upsertGoogleUser(
+    {
+      subject: 'local-demo-athlete',
+      email: 'local-athlete@mightycringe.test',
+      displayName: 'Local Athlete',
+      avatarUrl: null,
+    },
+    'athlete',
+  );
+  const app = buildApp(repository, { developmentUser });
+  await app.ready();
+
+  const profile = await app.inject({ method: 'GET', url: '/api/v1/me' });
+
+  assert.equal(profile.statusCode, 200);
+  assert.deepEqual(profile.json(), { user: developmentUser });
+  await app.close();
+});
+
 test('OAuth sessions isolate athlete data, support logout, and enforce admin role', async () => {
   const repository = new MemoryRepository();
   const provider = new FakeIdentityProvider();
