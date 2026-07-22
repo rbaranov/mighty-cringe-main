@@ -41,6 +41,9 @@ describe('natural set parsing', () => {
   it.each([
     ['40 х 20 х 0', 40, 20, 0],
     ['40x20x0', 40, 20, 0],
+    ['30х10х0', 30, 10, 0],
+    ['30 x 10 x 0', 30, 10, 0],
+    ['30 на 10 на 0', 30, 10, 0],
     ['72,5 × 8 × 2, техника чистая', 72.5, 8, 2],
   ])('parses compact weight × reps × RIR notation: %s', (text, weightKg, reps, rir) => {
     expect(
