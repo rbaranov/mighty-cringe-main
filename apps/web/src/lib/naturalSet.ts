@@ -193,7 +193,7 @@ export function parseNaturalSet({
 
 function findCompactSet(normalized: string, unitSystem: UnitSystem) {
   const match = normalized.match(
-    /(?:^|\s)(\d+(?:\.\d+)?)\s*(кг|килограмм(?:а|ов)?|kg|kgs|lb|lbs|pound|pounds)?\s*x\s*(\d+)\s*x\s*(\d+)(?:\s|$)/,
+    /(?:^|\s)(\d+(?:\.\d+)?)\s*(кг|килограмм(?:а|ов)?|kg|kgs|lb|lbs|pound|pounds)?\s*(?:x|на)\s*(\d+)\s*(?:x|на)\s*(\d+)(?:\s|$)/,
   );
   if (!match) return null;
 

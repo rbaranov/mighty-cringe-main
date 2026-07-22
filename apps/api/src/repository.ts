@@ -869,7 +869,19 @@ export class PostgresRepository implements WorkoutRepository {
           sources: [],
           notes: null,
         })
-        .onConflictDoNothing({ target: exercises.id });
+        .onConflictDoUpdate({
+          target: exercises.id,
+          set: {
+            nameRu: exercise.nameRu,
+            nameEn: exercise.nameEn,
+            aliases: exercise.aliases,
+            tag: exercise.tag,
+            primaryMuscles: exercise.primaryMuscles,
+            secondaryMuscles: exercise.secondaryMuscles,
+            equipment: exercise.equipment,
+            updatedAt: new Date(),
+          },
+        });
     }
   }
 

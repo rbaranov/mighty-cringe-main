@@ -28,7 +28,7 @@ import {
   type LocalWorkout,
   type SyncConflict,
 } from './lib/db';
-import { fallbackCatalog } from './lib/fallbackCatalog';
+import { fallbackCatalog, retiredGlobalExerciseIds } from './lib/fallbackCatalog';
 import { hasPendingRemoteLogout, requestRemoteLogout } from './lib/logout';
 import { parseNaturalSet, type NaturalSetDraft, type NaturalSetResult } from './lib/naturalSet';
 import {
@@ -176,6 +176,7 @@ function AuthenticatedAppContent({
   const [view, setView] = useState<View>('workout');
   const [sheet, setSheet] = useState<{ exercise: Exercise; set: LocalSet | null } | null>(null);
   const [exercisePicker, setExercisePicker] = useState<ExercisePickerMode | null>(null);
+  const [exerciseDetailId, setExerciseDetailId] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<PendingConfirmation | null>(null);
   const [explainContext, setExplainContext] = useState<{ exercise: Exercise | null } | null>(null);
   const [editingWorkoutId, setEditingWorkoutId] = useState<string | null>(null);
@@ -192,6 +193,10 @@ function AuthenticatedAppContent({
   const workouts = storedWorkouts ?? [];
   const sets = useLiveQuery(() => db.sets.toArray(), [], []);
   const exercises = useLiveQuery(() => db.exercises.toArray(), [], []);
+  const availableExercises = useMemo(
+    () => exercises.filter((exercise) => !retiredGlobalExerciseIds.has(exercise.id)),
+    [exercises],
+  );
   const measurements = useLiveQuery(
     () => db.measurements.orderBy('measuredOn').reverse().toArray(),
     [],
@@ -257,10 +262,13 @@ function AuthenticatedAppContent({
   const suggested = useMemo(
     () =>
       suggestedIds
-        .map((id) => exercises.find((exercise) => exercise.id === id))
+        .map((id) => availableExercises.find((exercise) => exercise.id === id))
         .filter(Boolean) as Exercise[],
-    [exercises],
+    [availableExercises],
   );
+  const exerciseDetail = exerciseDetailId
+    ? (exercises.find((exercise) => exercise.id === exerciseDetailId) ?? null)
+    : null;
 
   useEffect(() => {
     const populateCatalog = async () => {
@@ -770,7 +778,7 @@ function AuthenticatedAppContent({
       className={[
         'app-shell',
         `app-shell-${view}`,
-        view === 'workout' && workoutContext && 'app-shell-live',
+        view === 'workout' && workoutContext && !exerciseDetail && 'app-shell-live',
         editingWorkout && 'app-shell-history-edit',
       ]
         .filter(Boolean)
@@ -794,12 +802,6 @@ function AuthenticatedAppContent({
           {syncStatusLabel(syncStatus.phase, outboxCount, conflicts.length, locale)}
         </button>
       </header>
-
-      {canUseTrainerConsole(user.role) && view !== 'trainer' && (
-        <button className="trainer-console-link" onClick={() => setView('trainer')} type="button">
-          🧑‍🏫 {tr(locale, 'Подопечные', 'Athletes')}
-        </button>
-      )}
 
       {inviteNotice && (
         <p className="connectivity-notice" role="status">
@@ -834,57 +836,87 @@ function AuthenticatedAppContent({
         </p>
       ) : null}
 
-      {view === 'workout' && (
-        <WorkoutView
+      {exerciseDetail ? (
+        <ExerciseDetailView
           activeWorkout={workoutContext}
-          catalog={exercises}
-          editingHistory={Boolean(editingWorkout)}
-          exercises={suggested}
+          exercise={exerciseDetail}
           onAddSet={(exercise) => setSheet({ exercise, set: null })}
-          onAddExercise={() => setExercisePicker({ mode: 'add' })}
+          onBack={() => setExerciseDetailId(null)}
           onDeleteSet={requestDeleteSet}
           onEditSet={(exercise, set) => setSheet({ exercise, set })}
-          onFinish={requestFinishWorkout}
-          onFinishEditing={() => {
-            setEditingWorkoutId(null);
-            setView('progress');
-          }}
-          onMoveExercise={moveExercise}
           onMoveSet={moveSet}
-          onRemoveExercise={requestRemoveExercise}
-          onReplaceExercise={(itemId) => setExercisePicker({ mode: 'replace', itemId })}
-          onStart={startWorkout}
-          onToggleSuperset={toggleSuperset}
-          onDismissRecovery={() => setRecoveredWorkoutId(null)}
-          recovered={activeWorkout?.id === recoveredWorkoutId}
           sets={sets}
           workouts={workouts}
         />
+      ) : (
+        <>
+          {view === 'workout' && (
+            <WorkoutView
+              activeWorkout={workoutContext}
+              catalog={exercises}
+              editingHistory={Boolean(editingWorkout)}
+              exercises={suggested}
+              onAddSet={(exercise) => setSheet({ exercise, set: null })}
+              onAddExercise={() => setExercisePicker({ mode: 'add' })}
+              onDeleteSet={requestDeleteSet}
+              onEditSet={(exercise, set) => setSheet({ exercise, set })}
+              onFinish={requestFinishWorkout}
+              onFinishEditing={() => {
+                setEditingWorkoutId(null);
+                setView('progress');
+              }}
+              onMoveExercise={moveExercise}
+              onMoveSet={moveSet}
+              onOpenExercise={(exercise) => setExerciseDetailId(exercise.id)}
+              onRemoveExercise={requestRemoveExercise}
+              onReplaceExercise={(itemId) => setExercisePicker({ mode: 'replace', itemId })}
+              onStart={startWorkout}
+              onToggleSuperset={toggleSuperset}
+              onDismissRecovery={() => setRecoveredWorkoutId(null)}
+              recovered={activeWorkout?.id === recoveredWorkoutId}
+              sets={sets}
+              workouts={workouts}
+            />
+          )}
+          {view === 'catalog' && (
+            <CatalogView
+              exercises={availableExercises}
+              onOpenExercise={(exercise) => setExerciseDetailId(exercise.id)}
+            />
+          )}
+          {view === 'progress' && (
+            <ProgressView
+              exercises={exercises}
+              measurements={measurements}
+              onDeleteMeasurement={requestDeleteMeasurement}
+              onEditWorkout={editCompletedWorkout}
+              onImportMeasurements={importMeasurements}
+              onResumeWorkout={requestResumeWorkout}
+              onSaveMeasurement={saveMeasurement}
+              sets={sets}
+              workouts={workouts}
+            />
+          )}
+          {view === 'settings' && (
+            <SettingsView
+              conflicts={conflicts}
+              onLogout={onLogout}
+              onOpenTrainer={
+                canUseTrainerConsole(user.role)
+                  ? () => {
+                      setExerciseDetailId(null);
+                      setView('trainer');
+                    }
+                  : undefined
+              }
+              onUserUpdated={onUserUpdated}
+              relationshipRefreshKey={relationshipRefreshKey}
+              user={user}
+            />
+          )}
+          {view === 'trainer' && <TrainerDashboard onBack={() => setView('settings')} />}
+        </>
       )}
-      {view === 'catalog' && <CatalogView exercises={exercises} />}
-      {view === 'progress' && (
-        <ProgressView
-          exercises={exercises}
-          measurements={measurements}
-          onDeleteMeasurement={requestDeleteMeasurement}
-          onEditWorkout={editCompletedWorkout}
-          onImportMeasurements={importMeasurements}
-          onResumeWorkout={requestResumeWorkout}
-          onSaveMeasurement={saveMeasurement}
-          sets={sets}
-          workouts={workouts}
-        />
-      )}
-      {view === 'settings' && (
-        <SettingsView
-          conflicts={conflicts}
-          onLogout={onLogout}
-          onUserUpdated={onUserUpdated}
-          relationshipRefreshKey={relationshipRefreshKey}
-          user={user}
-        />
-      )}
-      {view === 'trainer' && <TrainerDashboard onBack={() => setView('workout')} />}
 
       {view !== 'trainer' && (
         <button
@@ -894,7 +926,7 @@ function AuthenticatedAppContent({
             'Describe a set or change the workout',
           )}
           className="explain-button"
-          onClick={() => setExplainContext({ exercise: null })}
+          onClick={() => setExplainContext({ exercise: exerciseDetail })}
           type="button"
         >
           <span aria-hidden="true" className="explain-button-icons">
@@ -915,26 +947,38 @@ function AuthenticatedAppContent({
           active={view === 'workout'}
           icon="🏋️"
           label={tr(locale, 'Тренировка', 'Workout')}
-          onClick={() => setView('workout')}
+          onClick={() => {
+            setExerciseDetailId(null);
+            setView('workout');
+          }}
         />
         <Tab
           active={view === 'progress'}
           icon="📈"
           label={tr(locale, 'Прогресс', 'Progress')}
-          onClick={() => setView('progress')}
+          onClick={() => {
+            setExerciseDetailId(null);
+            setView('progress');
+          }}
         />
         <span className="tab-spacer" />
         <Tab
           active={view === 'catalog'}
           icon="📚"
           label={tr(locale, 'Каталог', 'Catalog')}
-          onClick={() => setView('catalog')}
+          onClick={() => {
+            setExerciseDetailId(null);
+            setView('catalog');
+          }}
         />
         <Tab
           active={view === 'settings'}
           icon="⚙️"
           label={tr(locale, 'Настройки', 'Settings')}
-          onClick={() => setView('settings')}
+          onClick={() => {
+            setExerciseDetailId(null);
+            setView('settings');
+          }}
         />
       </nav>
 
@@ -950,7 +994,7 @@ function AuthenticatedAppContent({
         onSave={saveSet}
       />
       <ExercisePickerSheet
-        catalog={exercises}
+        catalog={availableExercises}
         currentPlan={workoutContext?.exercises ?? []}
         mode={exercisePicker}
         onChoose={chooseExercise}
@@ -964,7 +1008,7 @@ function AuthenticatedAppContent({
       {explainContext && (
         <ExplainSheet
           activeWorkout={workoutContext}
-          catalog={exercises}
+          catalog={availableExercises}
           onApplyCommand={executeWorkoutCommand}
           onClose={() => setExplainContext(null)}
           onSave={saveNaturalSet}
@@ -1056,6 +1100,7 @@ function WorkoutView({
   onFinishEditing,
   onMoveExercise,
   onMoveSet,
+  onOpenExercise,
   onRemoveExercise,
   onReplaceExercise,
   onToggleSuperset,
@@ -1077,6 +1122,7 @@ function WorkoutView({
   onFinishEditing: () => void;
   onMoveExercise: (itemId: string, direction: -1 | 1) => void;
   onMoveSet: (set: LocalSet, direction: -1 | 1) => void;
+  onOpenExercise: (exercise: Exercise) => void;
   onRemoveExercise: (itemId: string, hasLoggedSets: boolean) => void;
   onReplaceExercise: (itemId: string) => void;
   onToggleSuperset: (itemId: string) => void;
@@ -1084,6 +1130,15 @@ function WorkoutView({
   onDismissRecovery: () => void;
 }) {
   const { locale, unitSystem } = usePreferences();
+  const [elapsedAt, setElapsedAt] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!activeWorkout || editingHistory) return;
+    setElapsedAt(Date.now());
+    const interval = window.setInterval(() => setElapsedAt(Date.now()), 30_000);
+    return () => window.clearInterval(interval);
+  }, [activeWorkout?.id, editingHistory]);
+
   if (!activeWorkout) {
     return (
       <section className="screen">
@@ -1113,14 +1168,19 @@ function WorkoutView({
         </div>
         <div className="exercise-list compact">
           {exercises.map((exercise, index) => (
-            <div className="exercise-row" key={exercise.id}>
+            <button
+              className="exercise-row exercise-row-button"
+              key={exercise.id}
+              onClick={() => onOpenExercise(exercise)}
+              type="button"
+            >
               <span className="order">{index + 1}</span>
               <div>
                 <strong>{exerciseName(exercise, locale)}</strong>
                 <small>{muscleLabel(exercise.primaryMuscles[0], locale)}</small>
               </div>
               <Tag tag={exercise.tag} />
-            </div>
+            </button>
           ))}
         </div>
       </section>
@@ -1160,10 +1220,7 @@ function WorkoutView({
                   hour: '2-digit',
                   minute: '2-digit',
                 }).format(new Date(activeWorkout.startedAt))
-              : new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'ru-RU', {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                }).format(new Date(activeWorkout.startedAt))}
+              : formatWorkoutDuration(activeWorkout.startedAt, elapsedAt, locale)}
           </h1>
         </div>
         <button
@@ -1240,10 +1297,14 @@ function WorkoutView({
               key={item.id}
             >
               <div className="exercise-card-head">
-                <div>
+                <button
+                  className="exercise-title-button"
+                  onClick={() => onOpenExercise(exercise)}
+                  type="button"
+                >
                   <strong>{exerciseName(exercise, locale)}</strong>
                   <small>{muscleLabel(exercise.primaryMuscles[0], locale)}</small>
-                </div>
+                </button>
                 <div className="exercise-card-actions">
                   <Tag tag={exercise.tag} />
                   <details className="exercise-options">
@@ -1291,6 +1352,9 @@ function WorkoutView({
                       </button>
                     </div>
                   </details>
+                  <button className="add-set" onClick={() => onAddSet(exercise)} type="button">
+                    ＋ {tr(locale, 'Подход', 'Set')}
+                  </button>
                 </div>
               </div>
               {item.supersetGroup !== null && (
@@ -1299,58 +1363,23 @@ function WorkoutView({
                 </span>
               )}
               {logged.length ? (
-                <div className="sets-line set-list">
+                <div className="sets-line compact-set-list">
                   {logged.map((set, setIndex) => (
-                    <div className="set-row" key={set.id}>
-                      <button
-                        className={set.syncState === 'conflict' ? 'set-chip conflict' : 'set-chip'}
-                        onClick={() => onEditSet(exercise, set)}
-                        type="button"
-                      >
-                        {setIndex + 1}. {formatWeight(set.weightKg, locale, unitSystem)} ×{' '}
-                        {set.reps}
-                        {set.rir === null ? '' : ` RIR${set.rir}`}
-                        {setEntrySourceSuffix(set.entrySource, locale)}
-                        {set.syncState === 'pending' ? tr(locale, ' · ждёт', ' · pending') : ''}
-                        {set.syncState === 'conflict'
-                          ? tr(locale, ' · конфликт', ' · conflict')
-                          : ''}
-                      </button>
-                      <div className="set-controls">
-                        <button
-                          aria-label={tr(locale, 'Переместить подход влево', 'Move set left')}
-                          disabled={setIndex === 0}
-                          onClick={() => onMoveSet(set, -1)}
-                          type="button"
-                        >
-                          ←
-                        </button>
-                        <button
-                          aria-label={tr(locale, 'Переместить подход вправо', 'Move set right')}
-                          disabled={setIndex === logged.length - 1}
-                          onClick={() => onMoveSet(set, 1)}
-                          type="button"
-                        >
-                          →
-                        </button>
-                        <button
-                          aria-label={tr(locale, 'Удалить подход', 'Delete set')}
-                          className="danger-text"
-                          onClick={() => onDeleteSet(set)}
-                          type="button"
-                        >
-                          ×
-                        </button>
-                      </div>
-                    </div>
+                    <button
+                      aria-label={`${tr(locale, 'Подход', 'Set')} ${setIndex + 1}: ${formatWeight(set.weightKg, locale, unitSystem)}, ${set.reps}, RIR ${set.rir ?? '—'}`}
+                      className={set.syncState === 'conflict' ? 'set-chip conflict' : 'set-chip'}
+                      key={set.id}
+                      onClick={() => onEditSet(exercise, set)}
+                      type="button"
+                    >
+                      {setIndex + 1}. {formatWeight(set.weightKg, locale, unitSystem)} × {set.reps}
+                      {set.rir === null ? '' : ` · R${set.rir}`}
+                    </button>
                   ))}
                 </div>
               ) : (
                 <p className="sets-line muted">{tr(locale, 'Ещё нет подходов', 'No sets yet')}</p>
               )}
-              <button className="add-set" onClick={() => onAddSet(exercise)} type="button">
-                ＋ {tr(locale, 'Подход', 'Set')}
-              </button>
             </article>
           );
         })}
@@ -1431,7 +1460,195 @@ function WorkoutView({
   );
 }
 
-function CatalogView({ exercises }: { exercises: Exercise[] }) {
+function ExerciseDetailView({
+  exercise,
+  activeWorkout,
+  sets,
+  workouts,
+  onBack,
+  onAddSet,
+  onEditSet,
+  onMoveSet,
+  onDeleteSet,
+}: {
+  exercise: Exercise;
+  activeWorkout: LocalWorkout | undefined;
+  sets: LocalSet[];
+  workouts: LocalWorkout[];
+  onBack: () => void;
+  onAddSet: (exercise: Exercise) => void;
+  onEditSet: (exercise: Exercise, set: LocalSet) => void;
+  onMoveSet: (set: LocalSet, direction: -1 | 1) => void;
+  onDeleteSet: (set: LocalSet) => void;
+}) {
+  const { locale, unitSystem } = usePreferences();
+  const currentSets = activeWorkout
+    ? sets
+        .filter(
+          (set) =>
+            set.workoutId === activeWorkout.id && set.exerciseId === exercise.id && !set.deleted,
+        )
+        .sort((left, right) => left.position - right.position)
+    : [];
+  const previous = workouts
+    .filter((workout) => workout.id !== activeWorkout?.id && workout.endedAt !== null)
+    .sort((left, right) => right.startedAt.localeCompare(left.startedAt))
+    .flatMap((workout) => {
+      const workoutSets = sets
+        .filter(
+          (set) => set.workoutId === workout.id && set.exerciseId === exercise.id && !set.deleted,
+        )
+        .sort((left, right) => left.position - right.position);
+      return workoutSets.length ? [{ workout, sets: workoutSets }] : [];
+    })
+    .slice(0, 4);
+  const canAddSet = Boolean(
+    activeWorkout?.exercises.some((item) => item.exerciseId === exercise.id),
+  );
+  const techniqueLinks = exercise.videos?.length
+    ? exercise.videos
+    : [
+        {
+          title: tr(locale, 'Найти видео техники', 'Find a technique video'),
+          url: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${exerciseName(exercise, locale)} техника выполнения`)}`,
+        },
+      ];
+
+  return (
+    <section className="screen exercise-detail-screen">
+      <button className="detail-back" onClick={onBack} type="button">
+        ← {tr(locale, 'Назад', 'Back')}
+      </button>
+      <div className="exercise-detail-title">
+        <div>
+          <p className="eyebrow">{tr(locale, 'Упражнение', 'Exercise')}</p>
+          <h1>{exerciseName(exercise, locale)}</h1>
+        </div>
+        <Tag tag={exercise.tag} />
+      </div>
+      <div className="exercise-detail-meta">
+        <span>
+          {exercise.primaryMuscles.map((muscle) => muscleLabel(muscle, locale)).join(', ')}
+        </span>
+        <span>{exercise.equipment.join(', ')}</span>
+      </div>
+
+      <section className="exercise-detail-section technique-section">
+        <div className="section-head">
+          <h2>{tr(locale, 'Техника', 'Technique')}</h2>
+          <span>{tr(locale, 'видео откроется отдельно', 'opens separately')}</span>
+        </div>
+        {exercise.notes && <p>{exercise.notes}</p>}
+        <div className="technique-links">
+          {techniqueLinks.map((video) => (
+            <a href={video.url} key={video.url} rel="noreferrer" target="_blank">
+              <span aria-hidden="true">▶</span>
+              {video.title}
+            </a>
+          ))}
+        </div>
+      </section>
+
+      <section className="exercise-detail-section">
+        <div className="section-head">
+          <h2>{tr(locale, 'Эта тренировка', 'This workout')}</h2>
+          {canAddSet && (
+            <button className="add-set" onClick={() => onAddSet(exercise)} type="button">
+              ＋ {tr(locale, 'Подход', 'Set')}
+            </button>
+          )}
+        </div>
+        {currentSets.length ? (
+          <div className="detail-set-list">
+            {currentSets.map((set, index) => (
+              <article className="detail-set" key={set.id}>
+                <button onClick={() => onEditSet(exercise, set)} type="button">
+                  <strong>
+                    {index + 1}. {formatWeight(set.weightKg, locale, unitSystem)} × {set.reps}
+                    {set.rir === null ? '' : ` · RIR ${set.rir}`}
+                  </strong>
+                  <small>
+                    {set.comment || tr(locale, 'Без комментария', 'No comment')}
+                    {setEntrySourceSuffix(set.entrySource, locale)}
+                  </small>
+                </button>
+                <div className="set-controls">
+                  <button
+                    aria-label={tr(locale, 'Переместить подход вверх', 'Move set up')}
+                    disabled={index === 0}
+                    onClick={() => onMoveSet(set, -1)}
+                    type="button"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    aria-label={tr(locale, 'Переместить подход вниз', 'Move set down')}
+                    disabled={index === currentSets.length - 1}
+                    onClick={() => onMoveSet(set, 1)}
+                    type="button"
+                  >
+                    ↓
+                  </button>
+                  <button
+                    aria-label={tr(locale, 'Удалить подход', 'Delete set')}
+                    className="danger-text"
+                    onClick={() => onDeleteSet(set)}
+                    type="button"
+                  >
+                    ×
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p className="detail-empty">
+            {tr(locale, 'В этой тренировке подходов ещё нет.', 'No sets in this workout yet.')}
+          </p>
+        )}
+      </section>
+
+      <section className="exercise-detail-section">
+        <h2>{tr(locale, 'Предыдущие подходы', 'Previous sets')}</h2>
+        {previous.length ? (
+          <div className="previous-workouts">
+            {previous.map(({ workout, sets: workoutSets }) => (
+              <article key={workout.id}>
+                <time dateTime={workout.startedAt}>
+                  {new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'ru-RU', {
+                    day: 'numeric',
+                    month: 'short',
+                    year: 'numeric',
+                  }).format(new Date(workout.startedAt))}
+                </time>
+                <div>
+                  {workoutSets.map((set) => (
+                    <span key={set.id}>
+                      {formatWeight(set.weightKg, locale, unitSystem)} × {set.reps}
+                      {set.rir === null ? '' : ` · R${set.rir}`}
+                    </span>
+                  ))}
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p className="detail-empty">
+            {tr(locale, 'Предыдущих подходов пока нет.', 'No previous sets yet.')}
+          </p>
+        )}
+      </section>
+    </section>
+  );
+}
+
+function CatalogView({
+  exercises,
+  onOpenExercise,
+}: {
+  exercises: Exercise[];
+  onOpenExercise: (exercise: Exercise) => void;
+}) {
   const { locale } = usePreferences();
   const [adding, setAdding] = useState(false);
   return (
@@ -1458,7 +1675,13 @@ function CatalogView({ exercises }: { exercises: Exercise[] }) {
               {exercise.tag === 'mighty' ? '⚡' : exercise.tag === 'cringe' ? '😬' : '•'}
             </div>
             <div>
-              <strong>{exerciseName(exercise, locale)}</strong>
+              <button
+                className="catalog-exercise-link"
+                onClick={() => onOpenExercise(exercise)}
+                type="button"
+              >
+                <strong>{exerciseName(exercise, locale)}</strong>
+              </button>
               <small>
                 {locale === 'en' ? exercise.nameRu : exercise.nameEn} ·{' '}
                 {muscleLabel(exercise.primaryMuscles[0], locale)}
@@ -1482,12 +1705,14 @@ function SettingsView({
   user,
   conflicts,
   onLogout,
+  onOpenTrainer,
   onUserUpdated,
   relationshipRefreshKey,
 }: {
   user: CurrentUser;
   conflicts: SyncConflict[];
   onLogout: () => void;
+  onOpenTrainer?: () => void;
   onUserUpdated: (user: CurrentUser) => Promise<void>;
   relationshipRefreshKey: number;
 }) {
@@ -1606,6 +1831,16 @@ function SettingsView({
         </select>
       </div>
       {preferencesError && <p className="auth-error">{preferencesError}</p>}
+      {onOpenTrainer && (
+        <button className="trainer-console-link" onClick={onOpenTrainer} type="button">
+          <span aria-hidden="true">🧑‍🏫</span>
+          <span>
+            <strong>{tr(locale, 'Подопечные', 'Athletes')}</strong>
+            <small>{tr(locale, 'Управление доступом тренера', 'Coach access management')}</small>
+          </span>
+          <span aria-hidden="true">→</span>
+        </button>
+      )}
       <PushReminderSettings />
       <TrainerRelationshipCard refreshKey={relationshipRefreshKey} />
       <p className="privacy-note">
@@ -1616,7 +1851,7 @@ function SettingsView({
         )}
       </p>
       <button className="button ghost full" onClick={onLogout} type="button">
-        {tr(locale, 'Выйти и удалить локальные данные', 'Sign out and delete local data')}
+        {tr(locale, 'Выйти', 'Sign out')}
       </button>
     </section>
   );
@@ -2184,6 +2419,15 @@ function muscleLabel(
 
 function firstName(displayName: string, locale: CurrentUser['locale']) {
   return displayName.trim().split(/\s+/)[0] || tr(locale, 'спортсмен', 'athlete');
+}
+
+function formatWorkoutDuration(startedAt: string, now: number, locale: CurrentUser['locale']) {
+  const totalMinutes = Math.max(1, Math.floor((now - new Date(startedAt).getTime()) / 60_000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (!hours) return locale === 'en' ? `${minutes} min` : `${minutes} мин`;
+  if (!minutes) return locale === 'en' ? `${hours} hr` : `${hours} ч`;
+  return locale === 'en' ? `${hours} hr ${minutes} min` : `${hours} ч ${minutes} мин`;
 }
 
 function canUseTrainerConsole(role: CurrentUser['role']) {
