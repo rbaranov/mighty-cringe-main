@@ -20,8 +20,23 @@
   ревизии `5623b78306d3661da6686d8a5b93893c69a7c8e9`.
 - После релиза `https://mightycringe.com/health` отвечает `{"status":"ok"}`, Google OAuth включён,
   callback совпадает с production URL, а анонимный API отвечает `401`.
-- Реализации зафиксированы здесь как выпущенные; пункты остаются в `BACKLOG.md`, пока владелец не
-  выполнит отмеченные credential- и acceptance-действия на реальных аккаунтах и телефоне.
+- Реализации зафиксированы здесь как выпущенные; в разделе «Ждёт владельца» файла `BACKLOG.md`
+  остаются только credential- и acceptance-действия на реальных аккаунтах и телефоне.
+
+Карта релиза: [OAuth #5](https://github.com/mighty-cringe/mighty-cringe-main/pull/5),
+[backup #6](https://github.com/mighty-cringe/mighty-cringe-main/pull/6),
+[sync #7](https://github.com/mighty-cringe/mighty-cringe-main/pull/7),
+[monitoring #8](https://github.com/mighty-cringe/mighty-cringe-main/pull/8),
+[workout editing #9](https://github.com/mighty-cringe/mighty-cringe-main/pull/9),
+[progress #10](https://github.com/mighty-cringe/mighty-cringe-main/pull/10),
+[measurements #11](https://github.com/mighty-cringe/mighty-cringe-main/pull/11),
+[offline recovery #12](https://github.com/mighty-cringe/mighty-cringe-main/pull/12),
+[natural text #13](https://github.com/mighty-cringe/mighty-cringe-main/pull/13),
+[voice #14](https://github.com/mighty-cringe/mighty-cringe-main/pull/14),
+[AI provenance #15](https://github.com/mighty-cringe/mighty-cringe-main/pull/15),
+[trainer access #16](https://github.com/mighty-cringe/mighty-cringe-main/pull/16),
+[push #17](https://github.com/mighty-cringe/mighty-cringe-main/pull/17) и
+[localization #18](https://github.com/mighty-cringe/mighty-cringe-main/pull/18).
 
 ## 2026-07-20—21 — фундамент продукта и первый production-запуск
 
