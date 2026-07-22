@@ -214,6 +214,7 @@ DATABASE_URL=postgresql://mightycringe:<DB_PASSWORD>@postgres:5432/mightycringe
 GOOGLE_CLIENT_ID=<GOOGLE_OAUTH_WEB_CLIENT_ID>
 GOOGLE_CLIENT_SECRET=<GOOGLE_OAUTH_WEB_CLIENT_SECRET>
 ADMIN_EMAILS=<OWNER_GOOGLE_EMAIL>
+TRAINER_EMAILS=
 SESSION_TTL_DAYS=30
 
 OPENROUTER_API_KEY=<SPEND_LIMITED_SERVER_KEY>
@@ -239,7 +240,8 @@ https://mightycringe.com/api/v1/auth/google/callback
 Настройте OAuth consent screen и добавьте аккаунты-тестировщики, пока приложение находится в
 режиме Testing. Значения client ID и secret внесите только в серверный файл. `ADMIN_EMAILS` —
 список email через запятую; совпавшие подтверждённые Google-аккаунты получают роль `admin` при
-входе. Права на `/etc/mighty-cringe/production.env` уже заданы предыдущей командой.
+входе. `TRAINER_EMAILS` таким же образом включает тренерский кабинет только для заранее
+разрешённых аккаунтов. Права на `/etc/mighty-cringe/production.env` уже заданы предыдущей командой.
 
 ### Приватный голос: Hetzner Object Storage
 

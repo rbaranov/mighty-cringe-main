@@ -25,8 +25,9 @@ cannot choose the owner. A set can only be added to a workout owned by the same 
 application endpoints return `401`; only health and authentication bootstrap endpoints are public.
 
 The default role is `athlete`. Emails listed in the server-only `ADMIN_EMAILS` setting receive the
-`admin` role at sign-in. The existing `trainer` and legacy `superadmin` enum values remain compatible,
-while admin-only endpoints accept `admin` and `superadmin`.
+`admin` role at sign-in, while `TRAINER_EMAILS` enables the trainer console described in ADR 0013. The
+legacy `superadmin` enum value remains compatible, while admin-only endpoints accept `admin` and
+`superadmin`.
 
 IndexedDB stores the active user ID. On account change or logout, local workouts, sets, and pending
 mutations are deleted before the next account can use the application. The public exercise catalog

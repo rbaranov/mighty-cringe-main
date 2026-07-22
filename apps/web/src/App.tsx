@@ -12,6 +12,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { SetSheet } from './components/SetSheet';
 import type { MeasurementDraft } from './components/BodyMeasurementsSection';
 import { ProgressView } from './components/ProgressView';
+import { TrainerDashboard, TrainerRelationshipCard } from './components/TrainerAccess';
 import { VoicePanel } from './components/VoicePanel';
 import {
   activateLocalUser,
@@ -30,6 +31,7 @@ import { hasPendingRemoteLogout, requestRemoteLogout } from './lib/logout';
 import { parseNaturalSet, type NaturalSetDraft, type NaturalSetResult } from './lib/naturalSet';
 import { setEntrySourceSuffix } from './lib/setEntrySource';
 import { resolveSession } from './lib/session';
+import { acceptTrainerInviteFromUrl, currentLoginReturnTo } from './lib/trainer';
 import {
   flushOutbox,
   getSyncStatus,
@@ -39,7 +41,7 @@ import {
   syncAll,
 } from './lib/sync';
 
-type View = 'workout' | 'progress' | 'catalog' | 'settings';
+type View = 'workout' | 'progress' | 'catalog' | 'settings' | 'trainer';
 
 const suggestedIds = [
   '10000000-0000-4000-8000-000000000001',
@@ -133,6 +135,9 @@ function AuthenticatedApp({
   const [exercisePicker, setExercisePicker] = useState<ExercisePickerMode | null>(null);
   const [confirmation, setConfirmation] = useState<PendingConfirmation | null>(null);
   const [explainContext, setExplainContext] = useState<{ exercise: Exercise | null } | null>(null);
+  const [inviteNotice, setInviteNotice] = useState<string | null>(null);
+  const [relationshipRefreshKey, setRelationshipRefreshKey] = useState(0);
+  const inviteHandled = useRef(false);
   const syncStatus = useSyncExternalStore(subscribeSyncStatus, getSyncStatus, getSyncStatus);
 
   const storedWorkouts = useLiveQuery(
@@ -160,6 +165,28 @@ function AuthenticatedApp({
   );
   const hydrationChecked = useRef(false);
   const [recoveredWorkoutId, setRecoveredWorkoutId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (inviteHandled.current || restoredFromCache || !navigator.onLine) return;
+    if (!new URLSearchParams(window.location.search).has('trainerInvite')) return;
+    inviteHandled.current = true;
+    void acceptTrainerInviteFromUrl(window.location.href)
+      .then((result) => {
+        if (!result) return;
+        window.history.replaceState({}, '', result.cleanUrl);
+        setInviteNotice(
+          `Тренер ${result.trainer.displayName} подключён. Доступ можно отозвать здесь.`,
+        );
+        setRelationshipRefreshKey((value) => value + 1);
+        setView('settings');
+      })
+      .catch((error) => {
+        inviteHandled.current = false;
+        setInviteNotice(
+          error instanceof Error ? error.message : 'Не удалось принять приглашение тренера.',
+        );
+      });
+  }, [restoredFromCache]);
 
   useEffect(() => {
     if (hydrationChecked.current || storedWorkouts === undefined) return;
@@ -607,6 +634,18 @@ function AuthenticatedApp({
         </button>
       </header>
 
+      {canUseTrainerConsole(user.role) && view !== 'trainer' && (
+        <button className="trainer-console-link" onClick={() => setView('trainer')} type="button">
+          🧑‍🏫 Подопечные
+        </button>
+      )}
+
+      {inviteNotice && (
+        <p className="connectivity-notice" role="status">
+          {inviteNotice}
+        </p>
+      )}
+
       {restoredFromCache ? (
         <p className="connectivity-notice" role="status">
           Открыта сохранённая копия. Можно продолжать тренировку — изменения останутся на этом
@@ -657,17 +696,25 @@ function AuthenticatedApp({
         />
       )}
       {view === 'settings' && (
-        <SettingsView conflicts={conflicts} onLogout={onLogout} user={user} />
+        <SettingsView
+          conflicts={conflicts}
+          onLogout={onLogout}
+          relationshipRefreshKey={relationshipRefreshKey}
+          user={user}
+        />
       )}
+      {view === 'trainer' && <TrainerDashboard onBack={() => setView('workout')} />}
 
-      <button
-        className="explain-button"
-        onClick={() => setExplainContext({ exercise: null })}
-        type="button"
-      >
-        <span>🎙️✏️</span>
-        Пояснить
-      </button>
+      {view !== 'trainer' && (
+        <button
+          className="explain-button"
+          onClick={() => setExplainContext({ exercise: null })}
+          type="button"
+        >
+          <span>🎙️✏️</span>
+          Пояснить
+        </button>
+      )}
       <nav aria-label="Основная навигация" className="tabs">
         <Tab
           active={view === 'workout'}
@@ -747,6 +794,7 @@ function AuthLoading() {
 
 function LoginScreen({ googleEnabled }: { googleEnabled: boolean }) {
   const authError = new URLSearchParams(window.location.search).get('authError');
+  const loginHref = `/api/v1/auth/google?returnTo=${encodeURIComponent(currentLoginReturnTo(window.location))}`;
   return (
     <main className="auth-shell">
       <p className="brand">Mighty &amp; Cringe</p>
@@ -759,7 +807,7 @@ function LoginScreen({ googleEnabled }: { googleEnabled: boolean }) {
         </p>
         {authError && <p className="auth-error">Вход не завершён. Попробуй ещё раз.</p>}
         {googleEnabled ? (
-          <a className="button primary action login-button" href="/api/v1/auth/google?returnTo=/">
+          <a className="button primary action login-button" href={loginHref}>
             Войти через Google
           </a>
         ) : (
@@ -1104,10 +1152,12 @@ function SettingsView({
   user,
   conflicts,
   onLogout,
+  relationshipRefreshKey,
 }: {
   user: CurrentUser;
   conflicts: SyncConflict[];
   onLogout: () => void;
+  relationshipRefreshKey: number;
 }) {
   return (
     <section className="screen">
@@ -1119,7 +1169,7 @@ function SettingsView({
           <strong>{user.displayName}</strong>
           <small>{user.email}</small>
         </div>
-        <span>{user.role === 'admin' ? 'Admin' : 'Athlete'}</span>
+        <span>{roleLabel(user.role)}</span>
       </div>
       {conflicts.length > 0 && (
         <section className="conflict-panel" aria-live="polite">
@@ -1171,10 +1221,7 @@ function SettingsView({
         <span>Напоминания</span>
         <strong>В разработке</strong>
       </div>
-      <div className="setting">
-        <span>Тренер</span>
-        <strong>Не подключён</strong>
-      </div>
+      <TrainerRelationshipCard refreshKey={relationshipRefreshKey} />
       <p className="privacy-note">
         Перед включением голоса приложение покажет, какие данные будут переданы провайдеру
         распознавания.
@@ -1576,6 +1623,16 @@ function muscleLabel(muscle: Exercise['primaryMuscles'][number] | undefined) {
 
 function firstName(displayName: string) {
   return displayName.trim().split(/\s+/)[0] || 'спортсмен';
+}
+
+function canUseTrainerConsole(role: CurrentUser['role']) {
+  return role === 'trainer' || role === 'admin' || role === 'superadmin';
+}
+
+function roleLabel(role: CurrentUser['role']) {
+  if (role === 'trainer') return 'Тренер';
+  if (role === 'admin' || role === 'superadmin') return 'Admin';
+  return 'Athlete';
 }
 
 function canKeepMine(conflict: SyncConflict) {

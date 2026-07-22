@@ -254,5 +254,40 @@ test(
     });
     assert.equal(repeatedMeasurementDelete.duplicate, true);
     assert.equal((await repository.listMeasurements(user.id)).length, 1);
+
+    const trainer = await repository.upsertGoogleUser(
+      {
+        subject: `integration-${randomUUID()}`,
+        email: `${randomUUID()}@example.test`,
+        displayName: 'Integration Trainer',
+        avatarUrl: null,
+      },
+      'trainer',
+    );
+    const inviteNow = new Date('2026-07-22T00:00:00.000Z');
+    const tokenHash = `${randomUUID().replaceAll('-', '')}${randomUUID().replaceAll('-', '')}`;
+    const invite = await repository.createTrainerInvite(
+      {
+        id: randomUUID(),
+        trainerId: trainer.id,
+        email: user.email,
+        tokenHash,
+        expiresAt: new Date('2026-07-29T00:00:00.000Z'),
+      },
+      inviteNow,
+    );
+    assert.equal(invite.status, 'pending');
+    const acceptedTrainer = await repository.acceptTrainerInvite(
+      tokenHash,
+      user.id,
+      user.email,
+      inviteNow,
+    );
+    assert.equal(acceptedTrainer.id, trainer.id);
+    assert.equal((await repository.listTrainerAthletes(trainer.id))[0].id, user.id);
+    assert.equal((await repository.listSharedWorkouts(trainer.id, user.id)).length, 1);
+    assert.equal((await repository.listSharedMeasurements(trainer.id, user.id)).length, 1);
+    assert.equal(await repository.revokeAthleteTrainer(user.id, inviteNow), true);
+    await assert.rejects(repository.listSharedWorkouts(trainer.id, user.id), /Record not found/);
   },
 );

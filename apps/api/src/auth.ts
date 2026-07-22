@@ -21,6 +21,7 @@ export type IdentityProvider = {
 export type AuthOptions = {
   provider: IdentityProvider;
   adminEmails: ReadonlySet<string>;
+  trainerEmails: ReadonlySet<string>;
   secureCookies: boolean;
   sessionTtlMs: number;
 };
@@ -111,6 +112,12 @@ export function authOptionsFromEnvironment(): AuthOptions | undefined {
       .map((email) => email.trim().toLowerCase())
       .filter(Boolean),
   );
+  const trainerEmails = new Set(
+    (process.env.TRAINER_EMAILS ?? '')
+      .split(',')
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean),
+  );
   return {
     provider: new GoogleIdentityProvider(
       clientId,
@@ -118,6 +125,7 @@ export function authOptionsFromEnvironment(): AuthOptions | undefined {
       `${origin}/api/v1/auth/google/callback`,
     ),
     adminEmails,
+    trainerEmails,
     secureCookies: origin.startsWith('https://'),
     sessionTtlMs: ttlDays * 24 * 60 * 60 * 1_000,
   };

@@ -22,7 +22,8 @@ For the full setup procedure, see
    GitHub's short-lived workflow token, so no GitHub deploy key or personal access token is stored
    on the server.
 6. Create `/etc/mighty-cringe/production.env` with a unique database password, Google OAuth Web
-   client credentials, and the voice secrets listed in `.env.example`; never commit it. Authorize
+   client credentials, optional comma-separated `TRAINER_EMAILS`, and the voice secrets listed in
+   `.env.example`; never commit it. Authorize
    the exact redirect URI
    `https://mightycringe.com/api/v1/auth/google/callback` in Google Cloud Console.
 

@@ -88,13 +88,38 @@ export const trainerAthleteLinks = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     active: boolean('active').notNull().default(true),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     uniqueIndex('one_active_trainer_per_athlete')
       .on(table.athleteId)
       .where(sql`${table.active} = true`),
     index('trainer_athlete_trainer_idx').on(table.trainerId),
+  ],
+);
+
+export const trainerInvites = pgTable(
+  'trainer_invites',
+  {
+    id: uuid('id').primaryKey(),
+    trainerId: uuid('trainer_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    email: varchar('email', { length: 320 }),
+    tokenHash: varchar('token_hash', { length: 64 }).notNull().unique(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    acceptedByUserId: uuid('accepted_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('trainer_invite_trainer_idx').on(table.trainerId, table.createdAt),
+    index('trainer_invite_expiry_idx').on(table.expiresAt),
   ],
 );
 
