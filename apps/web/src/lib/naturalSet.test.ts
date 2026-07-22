@@ -38,6 +38,37 @@ describe('natural set parsing', () => {
     });
   });
 
+  it.each([
+    ['40 х 20 х 0', 40, 20, 0],
+    ['40x20x0', 40, 20, 0],
+    ['72,5 × 8 × 2, техника чистая', 72.5, 8, 2],
+  ])('parses compact weight × reps × RIR notation: %s', (text, weightKg, reps, rir) => {
+    expect(
+      parseNaturalSet({
+        text,
+        catalog: fallbackCatalog,
+        scopedExercise: fallbackCatalog[2],
+      }),
+    ).toMatchObject({
+      status: 'ready',
+      exercise: fallbackCatalog[2],
+      draft: {
+        weightKg,
+        reps,
+        rir,
+        comment: text.includes('техника') ? 'техника чистая' : null,
+      },
+    });
+  });
+
+  it('does not guess an exercise from a compact set without exercise context', () => {
+    expect(parseNaturalSet({ text: '40 х 20 х 0', catalog: fallbackCatalog })).toEqual({
+      status: 'needs_clarification',
+      question: 'Какое упражнение записать? Добавь название или его псевдоним.',
+      candidates: [],
+    });
+  });
+
   it('recognizes an English catalog name and an all-out set', () => {
     expect(
       parseNaturalSet({

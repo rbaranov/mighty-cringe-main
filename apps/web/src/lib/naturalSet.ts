@@ -131,7 +131,8 @@ export function parseNaturalSet({
     );
   }
 
-  const volume = findVolume(normalized, unitSystem);
+  const compactSet = findCompactSet(normalized, unitSystem);
+  const volume = compactSet ?? findVolume(normalized, unitSystem);
   if (!volume) {
     return clarification(
       tr(
@@ -160,7 +161,9 @@ export function parseNaturalSet({
     );
   }
 
-  const rirMatch = findRir(normalized);
+  const rirMatch = compactSet
+    ? { value: compactSet.rir, matchedPhrase: compactSet.matchedPhrase }
+    : findRir(normalized);
   if (rirMatch && (rirMatch.value < 0 || rirMatch.value > 20)) {
     return clarification(
       tr(
@@ -185,6 +188,25 @@ export function parseNaturalSet({
       rir: rirMatch?.value ?? null,
       comment,
     },
+  };
+}
+
+function findCompactSet(normalized: string, unitSystem: UnitSystem) {
+  const match = normalized.match(
+    /(?:^|\s)(\d+(?:\.\d+)?)\s*(кг|килограмм(?:а|ов)?|kg|kgs|lb|lbs|pound|pounds)?\s*x\s*(\d+)\s*x\s*(\d+)(?:\s|$)/,
+  );
+  if (!match) return null;
+
+  const inputUnitSystem = match[2]
+    ? imperialWeightUnits.has(match[2])
+      ? 'imperial'
+      : 'metric'
+    : unitSystem;
+  return {
+    weightKg: canonicalWeight(Number(match[1]), inputUnitSystem),
+    reps: Number(match[3]),
+    rir: Number(match[4]),
+    matchedPhrase: match[0].trim(),
   };
 }
 
@@ -363,6 +385,7 @@ function normalize(value: string) {
     .replaceAll('ё', 'е')
     .replace(/(\d)[,.](\d)/g, '$1decsep$2')
     .replace(/[×*]/g, ' x ')
+    .replace(/(\d)\s*[xх]\s*(?=\d)/giu, '$1 x ')
     .replace(/[.,:;!?]+/g, ' | ')
     .replaceAll('decsep', '.')
     .replace(/[^a-zа-я0-9.|]+/gi, ' ')
