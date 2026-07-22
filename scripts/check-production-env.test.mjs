@@ -27,6 +27,7 @@ const voice = {
 test('accepts a core production environment with optional integrations disabled', () => {
   assert.deepEqual(validateProductionEnvironment(core), {
     backupEnabled: false,
+    monitoringEnabled: false,
     pushEnabled: false,
     voiceEnabled: false,
   });
@@ -47,7 +48,7 @@ test('accepts complete voice and VAPID groups', () => {
       S3_SECRET_KEY: 'backup-secret-key',
       RESTIC_PASSWORD: 'a'.repeat(32),
     }),
-    { backupEnabled: true, pushEnabled: true, voiceEnabled: true },
+    { backupEnabled: true, monitoringEnabled: false, pushEnabled: true, voiceEnabled: true },
   );
 });
 
@@ -93,6 +94,55 @@ test('validates complete encrypted backup settings', () => {
   assert.throws(
     () => validateProductionEnvironment({ ...core, ...backup, RESTIC_CHECK_SUBSET: '0%' }),
     /from 1% to 100%/u,
+  );
+});
+
+test('enables monitoring only with a valid URL and encrypted backups', () => {
+  const backup = {
+    S3_ENDPOINT: 'https://hel1.your-objectstorage.com',
+    S3_REGION: 'hel1',
+    S3_BUCKET: 'private-backups',
+    S3_ACCESS_KEY: 'backup-access-key',
+    S3_SECRET_KEY: 'backup-secret-key',
+    RESTIC_PASSWORD: 'a'.repeat(32),
+  };
+  assert.equal(
+    validateProductionEnvironment({
+      ...core,
+      ...backup,
+      HEALTHCHECKS_PING_URL: 'https://hc-ping.com/check-id',
+      MONITOR_DISK_CRITICAL_PERCENT: '90',
+      MONITOR_BACKUP_MAX_AGE_SECONDS: '129600',
+      MONITOR_RESTORE_MAX_AGE_SECONDS: '3456000',
+    }).monitoringEnabled,
+    true,
+  );
+  assert.throws(
+    () =>
+      validateProductionEnvironment({
+        ...core,
+        HEALTHCHECKS_PING_URL: 'https://hc-ping.com/check-id',
+      }),
+    /requires encrypted backups/u,
+  );
+  assert.throws(
+    () =>
+      validateProductionEnvironment({
+        ...core,
+        ...backup,
+        HEALTHCHECKS_PING_URL: 'http://hc-ping.com/check-id',
+      }),
+    /must use https/u,
+  );
+  assert.throws(
+    () =>
+      validateProductionEnvironment({
+        ...core,
+        ...backup,
+        HEALTHCHECKS_PING_URL: 'https://hc-ping.com/check-id',
+        MONITOR_DISK_CRITICAL_PERCENT: '101',
+      }),
+    /at most 100/u,
   );
 });
 

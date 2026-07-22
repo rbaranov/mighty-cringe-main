@@ -43,10 +43,13 @@
    ошибки и логи, контроль места на диске и уведомление владельцу о критичном сбое.
 
    **Статус:** реализация готова в
-   [stacked draft PR #8](https://github.com/mighty-cringe/mighty-cringe-main/pull/8) поверх backup PR #6.
-   **Требуется участие владельца:** создать Healthchecks.io check с периодом 5 минут и grace time
-   10 минут, подключить личное уведомление, записать секретный `HEALTHCHECKS_PING_URL` в production
-   environment, затем разрешить merge и проверить тестовое аварийное уведомление.
+   [stacked draft PR #8](https://github.com/mighty-cringe/mighty-cringe-main/pull/8) поверх backup PR #6:
+   проверяются HTTPS, контейнеры, PostgreSQL, backup/restore, таймеры и диск; логи
+   ограничены по размеру; внешний heartbeat получает success/failure и диагностический текст.
+   **Требуется участие владельца:** создать check в Healthchecks.io с периодом 5 минут и grace time
+   10 минут, подключить личное email/другое уведомление, записать секретный
+   `HEALTHCHECKS_PING_URL` в production environment и проверить тестовое аварийное уведомление.
+   Пока URL отсутствует, monitoring timer безопасно выключен и не блокирует остальные релизы.
 
 ## Потом
 

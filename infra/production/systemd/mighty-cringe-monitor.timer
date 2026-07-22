@@ -1,0 +1,12 @@
+[Unit]
+Description=Check Mighty & Cringe production every five minutes
+
+[Timer]
+OnBootSec=2m
+OnUnitActiveSec=5m
+AccuracySec=30s
+RandomizedDelaySec=30s
+Unit=mighty-cringe-monitor.service
+
+[Install]
+WantedBy=timers.target

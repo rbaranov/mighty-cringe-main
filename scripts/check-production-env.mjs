@@ -103,8 +103,24 @@ export function validateProductionEnvironment(environment) {
     validatePercentage(environment, 'RESTIC_CHECK_SUBSET');
   }
 
+  const monitoringEnabled = present(environment, 'HEALTHCHECKS_PING_URL');
+  if (monitoringEnabled) {
+    if (!backup.enabled) {
+      throw new Error('Production monitoring requires encrypted backups to be configured');
+    }
+    parseHttpsUrl(environment.HEALTHCHECKS_PING_URL, 'HEALTHCHECKS_PING_URL');
+    validatePositiveInteger(environment, 'MONITOR_DISK_CRITICAL_PERCENT');
+    validatePositiveInteger(environment, 'MONITOR_BACKUP_MAX_AGE_SECONDS');
+    validatePositiveInteger(environment, 'MONITOR_RESTORE_MAX_AGE_SECONDS');
+    const diskThreshold = Number(environment.MONITOR_DISK_CRITICAL_PERCENT ?? 90);
+    if (diskThreshold > 100) {
+      throw new Error('MONITOR_DISK_CRITICAL_PERCENT must be at most 100');
+    }
+  }
+
   return {
     backupEnabled: backup.enabled,
+    monitoringEnabled,
     pushEnabled: vapid.enabled,
     voiceEnabled: storage.enabled,
   };
@@ -162,12 +178,12 @@ async function main(path) {
   const environment = parseEnvironment(await readFile(path, 'utf8'));
   const result = validateProductionEnvironment(environment);
   console.log(
-    `Production environment verified; backup ${result.backupEnabled ? 'enabled' : 'disabled'}; voice ${result.voiceEnabled ? 'enabled' : 'disabled'}; push ${result.pushEnabled ? 'enabled' : 'disabled'}.`,
+    `Production environment verified; backup ${result.backupEnabled ? 'enabled' : 'disabled'}; monitoring ${result.monitoringEnabled ? 'enabled' : 'disabled'}; voice ${result.voiceEnabled ? 'enabled' : 'disabled'}; push ${result.pushEnabled ? 'enabled' : 'disabled'}.`,
   );
   if (process.env.GITHUB_OUTPUT) {
     await appendFile(
       process.env.GITHUB_OUTPUT,
-      `backup_enabled=${String(result.backupEnabled)}\n`,
+      `backup_enabled=${String(result.backupEnabled)}\nmonitoring_enabled=${String(result.monitoringEnabled)}\n`,
       'utf8',
     );
   }

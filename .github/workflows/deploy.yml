@@ -96,10 +96,22 @@ jobs:
         env:
           PRODUCTION_ENV_FILE: /etc/mighty-cringe/production.env
         run: |
+          set -euo pipefail
+
+          sudo install -d -m 0750 -o deploy -g deploy /var/lib/mighty-cringe/monitoring
           docker compose --env-file "$PRODUCTION_ENV_FILE" --profile backup build backup
           PRODUCTION_DIR="$GITHUB_WORKSPACE/infra/production" scripts/run-backup.sh backup
           PRODUCTION_DIR="$GITHUB_WORKSPACE/infra/production" scripts/run-backup.sh verify
           sudo scripts/install-backup-timers.sh "$GITHUB_WORKSPACE/infra/production"
+
+      - name: Install and verify production monitoring
+        if: steps.revision.outputs.deploy == 'true' && steps.configuration.outputs.monitoring_enabled == 'true'
+        working-directory: infra/production
+        run: |
+          set -euo pipefail
+
+          sudo scripts/install-monitoring-timer.sh "$GITHUB_WORKSPACE/infra/production"
+          sudo systemctl start mighty-cringe-monitor.service
 
       - name: Keep unconfigured backup timers disabled
         if: steps.revision.outputs.deploy == 'true' && steps.configuration.outputs.backup_enabled != 'true'
@@ -107,6 +119,13 @@ jobs:
           set -euo pipefail
 
           sudo systemctl disable --now mighty-cringe-backup.timer mighty-cringe-restore-check.timer 2>/dev/null || true
+
+      - name: Keep unconfigured monitoring disabled
+        if: steps.revision.outputs.deploy == 'true' && steps.configuration.outputs.monitoring_enabled != 'true'
+        run: |
+          set -euo pipefail
+
+          sudo systemctl disable --now mighty-cringe-monitor.timer 2>/dev/null || true
 
       - name: Verify public HTTPS healthcheck
         if: steps.revision.outputs.deploy == 'true'

@@ -5,6 +5,8 @@ set -eu
 : "${PRODUCTION_DIR:?PRODUCTION_DIR is required}"
 : "${PRODUCTION_ENV_FILE:?PRODUCTION_ENV_FILE is required}"
 
+monitor_state_dir=${MONITOR_STATE_DIR:-/var/lib/mighty-cringe/monitoring}
+
 cd "$PRODUCTION_DIR"
 
 lock_file=/tmp/mighty-cringe-postgres-backup.lock
@@ -21,6 +23,7 @@ compose() {
 case "${1:-}" in
   backup)
     compose run --rm backup backup
+    touch "$monitor_state_dir/last-backup-success"
     ;;
   verify)
     cleanup_restore_database() {
@@ -30,6 +33,7 @@ case "${1:-}" in
     cleanup_restore_database
     compose up --detach --wait restore-postgres
     compose run --rm --no-deps backup verify
+    touch "$monitor_state_dir/last-restore-check-success"
     ;;
   *)
     echo "Usage: run-backup.sh [backup|verify]" >&2

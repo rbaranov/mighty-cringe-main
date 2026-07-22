@@ -1,5 +1,11 @@
 name: mighty-cringe
 
+x-logging: &default-logging
+  driver: local
+  options:
+    max-size: 10m
+    max-file: '3'
+
 services:
   caddy:
     image: caddy:2.10-alpine
@@ -15,6 +21,7 @@ services:
     depends_on:
       - api
       - web
+    logging: *default-logging
     networks:
       - edge
 
@@ -23,6 +30,7 @@ services:
       context: ../..
       dockerfile: infra/production/Dockerfile.web
     restart: unless-stopped
+    logging: *default-logging
     networks:
       - edge
 
@@ -47,6 +55,7 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+    logging: *default-logging
     networks:
       - edge
       - private
@@ -74,6 +83,7 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+    logging: *default-logging
     networks:
       - private
       - egress
@@ -100,6 +110,7 @@ services:
       retries: 5
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    logging: *default-logging
     networks:
       - private
 
@@ -116,6 +127,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    logging: *default-logging
     networks:
       - private
 
@@ -135,6 +147,7 @@ services:
     tmpfs:
       - /backup:size=512m,mode=0700
       - /restore:size=512m,mode=0700
+    logging: *default-logging
     networks:
       - private
       - egress
@@ -156,6 +169,7 @@ services:
       retries: 15
     tmpfs:
       - /var/lib/postgresql/data:size=512m,mode=0700
+    logging: *default-logging
     networks:
       - private
 

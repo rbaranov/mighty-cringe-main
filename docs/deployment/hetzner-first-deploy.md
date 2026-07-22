@@ -444,6 +444,67 @@ personal access tokens для этого подхода не нужны.
 
 Hetzner server backups — дополнительная защита, а не замена независимому бэкапу БД и медиа.
 
+## 9. Мониторинг и уведомления
+
+Чтобы включить monitoring timer, сначала настройте зашифрованные бэкапы из раздела 8, затем
+создайте в Healthchecks.io отдельный check `mighty-cringe-production`:
+
+1. Установите period **5 minutes** и grace time **10 minutes**.
+2. В Integrations подключите личный email или другой канал и отправьте тестовое уведомление.
+3. Скопируйте UUID Ping URL. Считайте его секретом: любой, кто знает URL, может подменять сигналы.
+4. Добавьте в `/etc/mighty-cringe/production.env` без кавычек:
+
+   ```dotenv
+   HEALTHCHECKS_PING_URL=https://hc-ping.com/<CHECK_UUID>
+   MONITOR_DISK_CRITICAL_PERCENT=90
+   MONITOR_BACKUP_MAX_AGE_SECONDS=129600
+   MONITOR_RESTORE_MAX_AGE_SECONDS=3456000
+   ```
+
+После деплоя workflow сам запускает первую проверку. Убедитесь, что check перешёл в состояние Up:
+
+```bash
+systemctl status mighty-cringe-monitor.timer --no-pager
+sudo systemctl start mighty-cringe-monitor.service
+sudo journalctl -u mighty-cringe-monitor.service -n 100 --no-pager
+```
+
+Проверка каждые пять минут обращается к публичному `/health`, убеждается, что `caddy`, `web`, `api`
+и `postgres` запущены, выполняет `pg_isready`, контролирует таймеры и свежесть успешных backup и
+restore, а также заполнение `/` и `/var/lib/docker`. Явная ошибка отправляется через `/fail` с
+короткой диагностикой. Если VPS выключен или потерял сеть, отсутствие очередного heartbeat приводит
+к уведомлению после grace time.
+
+Для контролируемого end-to-end теста временно остановите API не более чем на одну проверку, затем
+сразу запустите его снова. Не оставляйте production неработающим:
+
+```bash
+cd ~/actions-runner/_work/mighty-cringe-main/mighty-cringe-main/infra/production
+PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose stop api
+sudo systemctl start mighty-cringe-monitor.service || true
+PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose start api
+curl -fsS https://mightycringe.com/health
+```
+
+Должно прийти аварийное уведомление, а следующий успешный запуск мониторинга должен отправить
+recovery. Если уведомления нет, проверяйте интеграцию Healthchecks.io до допуска реальных данных.
+
+Логи контейнеров ротируются Docker `local` driver: максимум три файла по 10 MB на контейнер. Caddy
+пишет структурированный access log, Fastify — application log. Команды диагностики:
+
+```bash
+PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env \
+  docker compose logs --since=30m --tail=300 api caddy postgres
+sudo journalctl -u mighty-cringe-monitor.service -u mighty-cringe-backup.service \
+  --since='1 hour ago' --no-pager
+journalctl --disk-usage
+df -h / /var/lib/docker
+```
+
+Journald хранит persistent-логи до 30 дней, использует не более 256 MB и оставляет минимум 1 GB
+свободного места. Не вставляйте Ping URL, environment или полные пользовательские данные в issue и
+чаты при разборе инцидента.
+
 ## Операционные команды
 
 ```bash
