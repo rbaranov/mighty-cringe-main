@@ -58,7 +58,11 @@
    [ADR 0017](adr/0017-web-grounded-personal-exercise-catalog.md) и
    [production runbook](deployment/hetzner-first-deploy.md).
 
-3. **Принять основной production-сценарий.**
+3. **Восстановить публикацию через GitHub CLI.**
+   Перед созданием PR выполнить `gh auth login -h github.com`: текущий локальный токен пользователя
+   `rbaranov` недействителен. Ветка и все коммиты сохранены локально; это не мешает приёмке.
+
+4. **Принять основной production-сценарий.**
 
 - [ ] Войти и выйти через Google; двумя аккаунтами подтвердить изоляцию данных.
 - [ ] На установленной PWA без сети восстановить тренировку, изменить план, записать подход
@@ -67,14 +71,14 @@
 - [ ] Создать, изменить, удалить и импортировать CSV с замерами тела.
 - [ ] Проверить RU/EN, kg/cm и lb/in после повторного входа и на втором устройстве.
 
-4. **Включить реальные бэкапы и мониторинг.**
+5. **Включить реальные бэкапы и мониторинг.**
    Создать private S3 bucket и отдельные credentials, сохранить `RESTIC_PASSWORD` вне сервера,
    внести backup-группу в production environment и проверить backup → изолированный restore.
    Затем подключить Healthchecks.io, выполнить deploy и проверить аварийное уведомление. Детали:
    [production runbook](../infra/production/README.md), [ADR 0003](adr/0003-encrypted-postgres-backups.md),
    [ADR 0005](adr/0005-production-monitoring.md).
 
-5. **Включить и принять голосовой ввод.**
+6. **Включить и принять голосовой ввод.**
    Создать отдельный private bucket и S3 credentials для голоса, резервно сохранить SSE-C key,
    создать spend-limited OpenRouter key с отключённым logging и ZDR, внести полную `VOICE_*`-группу
    и выполнить deploy. На телефоне проверить согласие, offline-запись, playback, расшифровку,
@@ -82,12 +86,12 @@
    [ADR 0011](adr/0011-private-voice-processing.md) и
    [ADR 0012](adr/0012-set-entry-provenance-and-ai-boundary.md).
 
-6. **Принять доступ тренера.**
+7. **Принять доступ тренера.**
    Внести email тренера в `TRAINER_EMAILS`, выполнить deploy и двумя аккаунтами проверить
    приглашение → read-only просмотр → отзыв доступа. Детали:
    [ADR 0013](adr/0013-trainer-invites-and-read-only-access.md).
 
-7. **Включить и принять push-напоминания.**
+8. **Включить и принять push-напоминания.**
    Создать постоянную VAPID-пару, внести `VAPID_*`-группу, выполнить deploy и на установленной PWA
    проверить opt-in, доставку вне тихих часов и полное отключение. Детали:
    [ADR 0014](adr/0014-opt-in-web-push-delivery.md).
