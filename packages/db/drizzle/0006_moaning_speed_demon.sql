@@ -1,0 +1,2 @@
+CREATE TYPE "public"."set_entry_source" AS ENUM('manual', 'natural_text', 'voice_ai');--> statement-breakpoint
+ALTER TABLE "sets" ADD COLUMN "entry_source" "set_entry_source" DEFAULT 'manual' NOT NULL;

@@ -82,11 +82,13 @@ test(
         reps: 5,
         rir: 1,
         comment: null,
+        entrySource: 'voice_ai',
         performedAt: '2026-07-21T10:10:00.000Z',
         position: 0,
       },
     });
     assert.equal(createdSet.entity.revision, 1);
+    assert.equal(createdSet.entity.entrySource, 'voice_ai');
 
     const updateMutationId = randomUUID();
     const updatedSet = await repository.updateSet(user.id, {

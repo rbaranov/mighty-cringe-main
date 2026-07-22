@@ -29,9 +29,9 @@ repetitions, RIR, comment, and most recent local result. Only explicit confirmat
 local set record and queues the existing idempotent `set.create` mutation. “Исправить фразу” returns to
 the original text, while the manual form remains available at all times.
 
-The voice tab is present but does not request microphone access or send data yet. It explains that voice
-capture requires the separate consent, private storage, retry, and server-side provider boundary. No AI
-or transcription key is added to the browser bundle.
+Voice capture now follows the separate consent, private storage, retry, and server-side provider
+boundary from ADR 0011. ADR 0012 records whether the confirmed phrase originated from deterministic
+text input or AI voice transcription. No AI or transcription key is added to the browser bundle.
 
 ## Consequences
 
@@ -39,5 +39,5 @@ or transcription key is added to the browser bundle.
 - Common gym phrasing is fast and explainable, but the deterministic grammar intentionally asks for
   clarification rather than pretending to understand arbitrary conversational commands.
 - Workout commands such as replacing or reordering exercises remain outside this first parser.
-- Voice completion depends on the privacy pipeline and a production provider credential; that work
-  remains visible in the backlog instead of being hidden behind a non-functional microphone control.
+- Voice remains dependent on the privacy pipeline and a production provider credential, while typed
+  and manual logging keep working without either dependency.

@@ -37,6 +37,7 @@ describe('ProgressView', () => {
       reps: 8,
       rir: 2,
       comment: null,
+      entrySource: 'voice_ai',
       performedAt: '2026-07-21T17:30:00.000Z',
       position: 0,
       revision: 1,
@@ -62,5 +63,6 @@ describe('ProgressView', () => {
     expect(html).toContain('Личный расчётный рекорд');
     expect(html).toContain('80×8');
     expect(html).toContain('Epley');
+    expect(html).toContain('AI: голос');
   });
 });

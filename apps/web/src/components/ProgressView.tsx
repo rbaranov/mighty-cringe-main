@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import type { Exercise } from '@mighty-cringe/contracts';
 
 import type { LocalMeasurement, LocalSet, LocalWorkout } from '../lib/db';
+import { setEntrySourceSuffix } from '../lib/setEntrySource';
 import {
   buildCalendarMonth,
   buildExerciseProgress,
@@ -359,7 +360,7 @@ function DayDetails({
                     {exerciseSets
                       .map(
                         (set) =>
-                          `${formatNumber(set.weightKg)}×${set.reps}${set.rir === null ? '' : ` @${set.rir}`}`,
+                          `${formatNumber(set.weightKg)}×${set.reps}${set.rir === null ? '' : ` @${set.rir}`}${setEntrySourceSuffix(set.entrySource)}`,
                       )
                       .join(' · ')}
                   </span>

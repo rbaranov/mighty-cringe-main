@@ -141,6 +141,20 @@ test('OAuth sessions isolate athlete data, support logout, and enforce admin rol
     payload: set,
   });
   assert.equal(firstSet.statusCode, 201);
+  assert.equal(firstSet.json().entity.entrySource, 'manual');
+
+  const provenanceRewrite = await app.inject({
+    method: 'PATCH',
+    url: `/api/v1/sets/${set.set.id}`,
+    headers: { cookie: athleteOneCookie },
+    payload: {
+      clientMutationId: '40000000-0000-4000-8000-000000000099',
+      workoutId,
+      baseRevision: 1,
+      changes: { entrySource: 'voice_ai' },
+    },
+  });
+  assert.equal(provenanceRewrite.statusCode, 400);
 
   const finishWorkout = await app.inject({
     method: 'POST',

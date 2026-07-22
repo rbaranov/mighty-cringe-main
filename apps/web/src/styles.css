@@ -1405,6 +1405,11 @@ small,
   font-size: 11px;
   line-height: 1.45;
 }
+.manual-entry-note {
+  margin: 8px 0 12px;
+  color: #aab6a0;
+  font-size: 12px;
+}
 .input-modes {
   display: grid;
   grid-template-columns: 1fr 1fr;

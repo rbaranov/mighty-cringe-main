@@ -495,6 +495,7 @@ async function rebaseMutation(conflict: SyncConflict): Promise<SyncMutation | nu
           reps: local.reps,
           rir: local.rir,
           comment: local.comment,
+          entrySource: local.entrySource,
           performedAt: local.performedAt,
           position: local.position,
         },
