@@ -1230,7 +1230,13 @@ function WorkoutView({
             item.supersetGroup === plan[index + 1]?.item.supersetGroup;
           return (
             <article
-              className={item.supersetGroup === null ? 'exercise-card' : 'exercise-card superset'}
+              className={[
+                'exercise-card',
+                item.supersetGroup === null ? '' : 'superset',
+                logged.length ? 'has-sets' : 'no-sets',
+              ]
+                .filter(Boolean)
+                .join(' ')}
               key={item.id}
             >
               <div className="exercise-card-head">
