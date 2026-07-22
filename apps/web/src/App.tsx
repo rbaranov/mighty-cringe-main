@@ -178,6 +178,7 @@ function AuthenticatedAppContent({
   const [exercisePicker, setExercisePicker] = useState<ExercisePickerMode | null>(null);
   const [confirmation, setConfirmation] = useState<PendingConfirmation | null>(null);
   const [explainContext, setExplainContext] = useState<{ exercise: Exercise | null } | null>(null);
+  const [editingWorkoutId, setEditingWorkoutId] = useState<string | null>(null);
   const finishingWorkoutId = useRef<string | null>(null);
   const [inviteNotice, setInviteNotice] = useState<string | null>(null);
   const [relationshipRefreshKey, setRelationshipRefreshKey] = useState(0);
@@ -249,6 +250,10 @@ function AuthenticatedAppContent({
   }, [storedWorkouts]);
 
   const activeWorkout = workouts.find((workout) => workout.endedAt === null);
+  const editingWorkout = editingWorkoutId
+    ? workouts.find((workout) => workout.id === editingWorkoutId && workout.endedAt !== null)
+    : undefined;
+  const workoutContext = editingWorkout ?? activeWorkout;
   const suggested = useMemo(
     () =>
       suggestedIds
@@ -292,6 +297,7 @@ function AuthenticatedAppContent({
   }, []);
 
   async function startWorkout() {
+    setEditingWorkoutId(null);
     const id = crypto.randomUUID();
     const clientMutationId = crypto.randomUUID();
     const startedAt = new Date().toISOString();
@@ -333,14 +339,14 @@ function AuthenticatedAppContent({
     rir: number | null;
     comment: string | null;
   }) {
-    if (!activeWorkout || !sheet) return;
+    if (!workoutContext || !sheet) return;
     if (sheet.set) {
       await db.sets.update(sheet.set.id, { ...input, syncState: 'pending' });
       await queueMutation({
         type: 'set.update',
         payload: {
           clientMutationId: crypto.randomUUID(),
-          workoutId: activeWorkout.id,
+          workoutId: workoutContext.id,
           setId: sheet.set.id,
           baseRevision: sheet.set.revision,
           changes: input,
@@ -360,20 +366,21 @@ function AuthenticatedAppContent({
     input: NaturalSetDraft,
     entrySource: SetEntrySource = 'manual',
   ) {
-    if (!activeWorkout) return;
+    if (!workoutContext) return;
+    const performedAt = editingWorkout?.endedAt ?? new Date().toISOString();
     const set: SetInput = {
       id: crypto.randomUUID(),
       exerciseId: exercise.id,
       ...input,
       entrySource,
-      performedAt: new Date().toISOString(),
+      performedAt,
       position:
         Math.max(
           -1,
           ...sets
             .filter(
               (item) =>
-                item.workoutId === activeWorkout.id &&
+                item.workoutId === workoutContext.id &&
                 item.exerciseId === exercise.id &&
                 !item.deleted,
             )
@@ -383,7 +390,7 @@ function AuthenticatedAppContent({
     const clientMutationId = crypto.randomUUID();
     await db.sets.put({
       ...set,
-      workoutId: activeWorkout.id,
+      workoutId: workoutContext.id,
       revision: 0,
       updatedAt: set.performedAt,
       syncState: 'pending',
@@ -391,7 +398,7 @@ function AuthenticatedAppContent({
     });
     await queueMutation({
       type: 'set.create',
-      payload: { clientMutationId, workoutId: activeWorkout.id, set },
+      payload: { clientMutationId, workoutId: workoutContext.id, set },
     });
     await flushOutbox();
   }
@@ -427,6 +434,19 @@ function AuthenticatedAppContent({
     }
   }
 
+  async function updateWorkoutEndedAt(workout: LocalWorkout, endedAt: string | null) {
+    await db.workouts.update(workout.id, { endedAt, syncState: 'pending' });
+    await queueMutation({
+      type: 'workout.update',
+      payload: {
+        clientMutationId: crypto.randomUUID(),
+        workoutId: workout.id,
+        baseRevision: workout.revision,
+        changes: { endedAt },
+      },
+    });
+  }
+
   function requestFinishWorkout() {
     if (!activeWorkout) return;
     setConfirmation({
@@ -441,16 +461,51 @@ function AuthenticatedAppContent({
     });
   }
 
+  async function resumeWorkout(workout: LocalWorkout) {
+    if (workout.endedAt === null) return;
+    if (activeWorkout && activeWorkout.id !== workout.id) {
+      await updateWorkoutEndedAt(activeWorkout, new Date().toISOString());
+    }
+    await updateWorkoutEndedAt(workout, null);
+    setEditingWorkoutId(null);
+    setView('workout');
+    await flushOutbox();
+  }
+
+  function requestResumeWorkout(workout: LocalWorkout) {
+    if (!activeWorkout || activeWorkout.id === workout.id) {
+      void resumeWorkout(workout);
+      return;
+    }
+    setConfirmation({
+      title: tr(locale, 'Продолжить прошлую тренировку?', 'Continue the past workout?'),
+      message: tr(
+        locale,
+        'Текущая активная тренировка будет завершена сейчас, а выбранная снова станет активной.',
+        'The current active workout will finish now, and the selected workout will become active again.',
+      ),
+      confirmLabel: tr(locale, 'Завершить текущую и продолжить', 'Finish current and continue'),
+      action: () => resumeWorkout(workout),
+    });
+  }
+
+  function editCompletedWorkout(workout: LocalWorkout) {
+    if (workout.endedAt === null) return;
+    setEditingWorkoutId(workout.id);
+    setView('workout');
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  }
+
   async function updateWorkoutPlan(nextPlan: WorkoutExercise[]) {
-    if (!activeWorkout) return;
+    if (!workoutContext) return;
     const exercises = normalizeWorkoutPlan(nextPlan);
-    await db.workouts.update(activeWorkout.id, { exercises, syncState: 'pending' });
+    await db.workouts.update(workoutContext.id, { exercises, syncState: 'pending' });
     await queueMutation({
       type: 'workout.update',
       payload: {
         clientMutationId: crypto.randomUUID(),
-        workoutId: activeWorkout.id,
-        baseRevision: activeWorkout.revision,
+        workoutId: workoutContext.id,
+        baseRevision: workoutContext.revision,
         changes: { exercises },
       },
     });
@@ -458,26 +513,26 @@ function AuthenticatedAppContent({
   }
 
   async function executeWorkoutCommand(command: NaturalWorkoutCommand) {
-    if (!activeWorkout) return;
-    await updateWorkoutPlan(applyWorkoutCommandToPlan(activeWorkout.exercises, command));
+    if (!workoutContext) return;
+    await updateWorkoutPlan(applyWorkoutCommandToPlan(workoutContext.exercises, command));
     setExplainContext(null);
   }
 
   async function chooseExercise(exercise: Exercise) {
-    if (!activeWorkout || !exercisePicker) return;
+    if (!workoutContext || !exercisePicker) return;
     if (exercisePicker.mode === 'add') {
       await updateWorkoutPlan([
-        ...activeWorkout.exercises,
+        ...workoutContext.exercises,
         {
           id: crypto.randomUUID(),
           exerciseId: exercise.id,
-          position: activeWorkout.exercises.length,
+          position: workoutContext.exercises.length,
           supersetGroup: null,
         },
       ]);
     } else {
       await updateWorkoutPlan(
-        activeWorkout.exercises.map((item) =>
+        workoutContext.exercises.map((item) =>
           item.id === exercisePicker.itemId ? { ...item, exerciseId: exercise.id } : item,
         ),
       );
@@ -486,9 +541,9 @@ function AuthenticatedAppContent({
   }
 
   async function removeExercise(itemId: string) {
-    if (!activeWorkout) return;
-    const removed = activeWorkout.exercises.find((item) => item.id === itemId);
-    let nextPlan = activeWorkout.exercises.filter((item) => item.id !== itemId);
+    if (!workoutContext) return;
+    const removed = workoutContext.exercises.find((item) => item.id === itemId);
+    let nextPlan = workoutContext.exercises.filter((item) => item.id !== itemId);
     if (removed?.supersetGroup !== null && removed?.supersetGroup !== undefined) {
       nextPlan = nextPlan.map((item) =>
         item.supersetGroup === removed.supersetGroup ? { ...item, supersetGroup: null } : item,
@@ -498,8 +553,8 @@ function AuthenticatedAppContent({
   }
 
   async function moveExercise(itemId: string, direction: -1 | 1) {
-    if (!activeWorkout) return;
-    const nextPlan = activeWorkout.exercises
+    if (!workoutContext) return;
+    const nextPlan = workoutContext.exercises
       .map((item) => ({ ...item }))
       .sort((left, right) => left.position - right.position);
     const index = nextPlan.findIndex((item) => item.id === itemId);
@@ -516,8 +571,8 @@ function AuthenticatedAppContent({
   }
 
   async function toggleSuperset(itemId: string) {
-    if (!activeWorkout) return;
-    const nextPlan = activeWorkout.exercises
+    if (!workoutContext) return;
+    const nextPlan = workoutContext.exercises
       .map((item) => ({ ...item }))
       .sort((left, right) => left.position - right.position);
     const index = nextPlan.findIndex((item) => item.id === itemId);
@@ -712,7 +767,11 @@ function AuthenticatedAppContent({
 
   return (
     <main
-      className={view === 'workout' && activeWorkout ? 'app-shell app-shell-live' : 'app-shell'}
+      className={
+        view === 'workout' && workoutContext
+          ? `app-shell app-shell-live${editingWorkout ? ' app-shell-history-edit' : ''}`
+          : 'app-shell'
+      }
     >
       <header className="topbar">
         <div>
@@ -774,14 +833,19 @@ function AuthenticatedAppContent({
 
       {view === 'workout' && (
         <WorkoutView
-          activeWorkout={activeWorkout}
+          activeWorkout={workoutContext}
           catalog={exercises}
+          editingHistory={Boolean(editingWorkout)}
           exercises={suggested}
           onAddSet={(exercise) => setSheet({ exercise, set: null })}
           onAddExercise={() => setExercisePicker({ mode: 'add' })}
           onDeleteSet={requestDeleteSet}
           onEditSet={(exercise, set) => setSheet({ exercise, set })}
           onFinish={requestFinishWorkout}
+          onFinishEditing={() => {
+            setEditingWorkoutId(null);
+            setView('progress');
+          }}
           onMoveExercise={moveExercise}
           onMoveSet={moveSet}
           onRemoveExercise={requestRemoveExercise}
@@ -800,7 +864,9 @@ function AuthenticatedAppContent({
           exercises={exercises}
           measurements={measurements}
           onDeleteMeasurement={requestDeleteMeasurement}
+          onEditWorkout={editCompletedWorkout}
           onImportMeasurements={importMeasurements}
+          onResumeWorkout={requestResumeWorkout}
           onSaveMeasurement={saveMeasurement}
           sets={sets}
           workouts={workouts}
@@ -882,7 +948,7 @@ function AuthenticatedAppContent({
       />
       <ExercisePickerSheet
         catalog={exercises}
-        currentPlan={activeWorkout?.exercises ?? []}
+        currentPlan={workoutContext?.exercises ?? []}
         mode={exercisePicker}
         onChoose={chooseExercise}
         onClose={() => setExercisePicker(null)}
@@ -894,7 +960,7 @@ function AuthenticatedAppContent({
       />
       {explainContext && (
         <ExplainSheet
-          activeWorkout={activeWorkout}
+          activeWorkout={workoutContext}
           catalog={exercises}
           onApplyCommand={executeWorkoutCommand}
           onClose={() => setExplainContext(null)}
@@ -974,6 +1040,7 @@ function LoginScreen({ googleEnabled }: { googleEnabled: boolean }) {
 function WorkoutView({
   activeWorkout,
   catalog,
+  editingHistory,
   exercises,
   sets,
   workouts,
@@ -983,6 +1050,7 @@ function WorkoutView({
   onDeleteSet,
   onEditSet,
   onFinish,
+  onFinishEditing,
   onMoveExercise,
   onMoveSet,
   onRemoveExercise,
@@ -993,6 +1061,7 @@ function WorkoutView({
 }: {
   activeWorkout: LocalWorkout | undefined;
   catalog: Exercise[];
+  editingHistory: boolean;
   exercises: Exercise[];
   sets: LocalSet[];
   workouts: LocalWorkout[];
@@ -1002,6 +1071,7 @@ function WorkoutView({
   onDeleteSet: (set: LocalSet) => void;
   onEditSet: (exercise: Exercise, set: LocalSet) => void;
   onFinish: () => void;
+  onFinishEditing: () => void;
   onMoveExercise: (itemId: string, direction: -1 | 1) => void;
   onMoveSet: (set: LocalSet, direction: -1 | 1) => void;
   onRemoveExercise: (itemId: string, hasLoggedSets: boolean) => void;
@@ -1067,32 +1137,61 @@ function WorkoutView({
   );
 
   return (
-    <section className="screen workout-live">
+    <section
+      className={
+        editingHistory ? 'screen workout-live workout-history-edit' : 'screen workout-live'
+      }
+    >
       <div className="section-head live-head">
         <div>
-          <p className="eyebrow">{tr(locale, 'Тренировка идёт', 'Workout in progress')}</p>
+          <p className="eyebrow">
+            {editingHistory
+              ? tr(locale, 'Редактирование истории', 'Editing history')
+              : tr(locale, 'Тренировка идёт', 'Workout in progress')}
+          </p>
           <h1>
-            {new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'ru-RU', {
-              hour: '2-digit',
-              minute: '2-digit',
-            }).format(new Date(activeWorkout.startedAt))}
+            {editingHistory
+              ? new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'ru-RU', {
+                  day: 'numeric',
+                  month: 'short',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                }).format(new Date(activeWorkout.startedAt))
+              : new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'ru-RU', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                }).format(new Date(activeWorkout.startedAt))}
           </h1>
         </div>
-        <button className="button ghost small" onClick={onFinish} type="button">
-          {tr(locale, 'Завершить', 'Finish')}
+        <button
+          className="button ghost small"
+          onClick={editingHistory ? onFinishEditing : onFinish}
+          type="button"
+        >
+          {editingHistory ? tr(locale, 'Готово', 'Done') : tr(locale, 'Завершить', 'Finish')}
         </button>
       </div>
       <details className="live-help">
-        <summary>{tr(locale, 'План можно менять', 'The plan is editable')}</summary>
+        <summary>
+          {editingHistory
+            ? tr(locale, 'Правки не возобновляют тренировку', 'Edits do not resume the workout')
+            : tr(locale, 'План можно менять', 'The plan is editable')}
+        </summary>
         <p>
-          {tr(
-            locale,
-            'Переставляй, заменяй и убирай упражнения. Уже записанные подходы останутся в истории.',
-            'Move, replace, or remove exercises. Logged sets will remain in your history.',
-          )}
+          {editingHistory
+            ? tr(
+                locale,
+                'Можно исправлять план и подходы; дата завершения останется прежней.',
+                'You can correct the plan and sets; the completion date stays unchanged.',
+              )
+            : tr(
+                locale,
+                'Переставляй, заменяй и убирай упражнения. Уже записанные подходы останутся в истории.',
+                'Move, replace, or remove exercises. Logged sets will remain in your history.',
+              )}
         </p>
       </details>
-      {recovered && (
+      {recovered && !editingHistory && (
         <div className="recovery-notice" role="status">
           <div>
             <strong>

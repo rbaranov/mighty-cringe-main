@@ -52,7 +52,9 @@ describe('ProgressView', () => {
         exercises={[exercise]}
         measurements={[]}
         onDeleteMeasurement={() => {}}
+        onEditWorkout={() => {}}
         onImportMeasurements={async () => {}}
+        onResumeWorkout={() => {}}
         onSaveMeasurement={async () => {}}
         sets={[set]}
         workouts={[workout]}
@@ -65,6 +67,8 @@ describe('ProgressView', () => {
     expect(html).toContain('80 кг×8');
     expect(html).toContain('Epley');
     expect(html).toContain('AI: голос');
+    expect(html).toContain('Редактировать');
+    expect(html).toContain('Продолжить');
   });
 
   it('renders English catalog names and imperial weights from profile preferences', () => {
@@ -112,7 +116,9 @@ describe('ProgressView', () => {
           exercises={[exercise]}
           measurements={[]}
           onDeleteMeasurement={() => {}}
+          onEditWorkout={() => {}}
           onImportMeasurements={async () => {}}
+          onResumeWorkout={() => {}}
           onSaveMeasurement={async () => {}}
           sets={[set]}
           workouts={[workout]}
