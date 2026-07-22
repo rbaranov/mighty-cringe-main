@@ -15,16 +15,22 @@ capture and read-only coach access.
 ## Local development
 
 ```bash
-pnpm install
-cp apps/api/.env.example apps/api/.env
-pnpm dev
+corepack enable
+pnpm install --frozen-lockfile
+pnpm local:doctor
+pnpm local:dev
 ```
 
 The frontend is served at `http://localhost:5173`; the API at `http://localhost:3000`.
-Without `DATABASE_URL`, the API runs in deliberately limited in-memory development mode.
-`LOCAL_DEMO_AUTH=true` from the example environment signs in a disposable local athlete so the full
-interface can be tested without production OAuth credentials. The API ignores this flag when
-`NODE_ENV=production`. Production always requires PostgreSQL and configured Google OAuth.
+The local command starts PostgreSQL in an isolated Docker Compose project or native `.local`
+directory, applies migrations, and runs the PWA, API and worker on the host with hot reload. It
+explicitly enables a development athlete without production OAuth credentials; the API ignores this
+flag in production. Data is preserved across restarts. See the
+[local runbook](docs/development/local-environment.md) for stop, status, reset and pre-merge
+acceptance commands.
+
+Plain `pnpm dev` remains available for deliberately limited in-memory development, but it is not the
+pre-merge acceptance path.
 
 ## Production target
 
