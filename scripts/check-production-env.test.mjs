@@ -8,7 +8,7 @@ const core = {
   WEB_ORIGIN: 'https://mightycringe.com',
   POSTGRES_DB: 'mightycringe',
   POSTGRES_USER: 'mightycringe',
-  POSTGRES_PASSWORD: 'database-secret',
+  POSTGRES_PASSWORD: 'a'.repeat(64),
   GOOGLE_CLIENT_ID: 'client-id',
   GOOGLE_CLIENT_SECRET: 'oauth-secret',
 };
@@ -32,6 +32,23 @@ test('accepts a core production environment with optional integrations disabled'
     voiceEnabled: false,
     exerciseDiscoveryEnabled: false,
   });
+});
+
+test('rejects placeholder, short, and URL-unsafe database passwords without exposing them', () => {
+  for (const [password, expectedMessage] of [
+    ['<DB_PASSWORD>', /example placeholder/u],
+    ['replace-with-a-long-random-value', /example placeholder/u],
+    ['too-short', /at least 32 characters/u],
+    [`${'a'.repeat(31)}@`, /URL-safe/u],
+  ]) {
+    assert.throws(
+      () => validateProductionEnvironment({ ...core, POSTGRES_PASSWORD: password }),
+      (error) =>
+        error instanceof Error &&
+        expectedMessage.test(error.message) &&
+        !error.message.includes(password),
+    );
+  }
 });
 
 test('accepts complete voice and VAPID groups', () => {

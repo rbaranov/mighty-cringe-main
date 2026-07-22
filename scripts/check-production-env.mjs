@@ -65,6 +65,8 @@ export function validateProductionEnvironment(environment) {
     throw new Error(`Missing required production settings: ${missingRequired.join(', ')}`);
   }
 
+  validatePostgresPassword(environment.POSTGRES_PASSWORD);
+
   const origin = parseHttpsUrl(environment.WEB_ORIGIN, 'WEB_ORIGIN');
   if (origin.hostname !== environment.DOMAIN.trim()) {
     throw new Error('WEB_ORIGIN hostname must match DOMAIN');
@@ -154,6 +156,22 @@ function requireCompleteGroup(name, state) {
 function validEncryptionKey(value) {
   if (!/^(?:[A-Za-z0-9+/]{4}){10}[A-Za-z0-9+/]{3}=$/u.test(value.trim())) return false;
   return Buffer.from(value.trim(), 'base64').length === 32;
+}
+
+function validatePostgresPassword(value) {
+  const password = value.trim();
+  if (
+    /^<[^>]+>$/u.test(password) ||
+    /^(?:change-?me|placeholder|replace(?:-with)?)/iu.test(password)
+  ) {
+    throw new Error('POSTGRES_PASSWORD must not contain an example placeholder');
+  }
+  if (password.length < 32) {
+    throw new Error('POSTGRES_PASSWORD must contain at least 32 characters');
+  }
+  if (!/^[A-Za-z0-9._~-]+$/u.test(password)) {
+    throw new Error('POSTGRES_PASSWORD must be URL-safe because it is embedded in DATABASE_URL');
+  }
 }
 
 function parseHttpsUrl(value, key) {
