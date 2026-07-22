@@ -1,0 +1,11 @@
+name: mighty-cringe-backup-test
+
+services:
+  backup:
+    environment:
+      RESTIC_REPOSITORY: /repository
+    volumes:
+      - backup_test_repository:/repository
+
+volumes:
+  backup_test_repository:

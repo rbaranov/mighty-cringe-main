@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { appendFile, readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 const requiredKeys = [
@@ -21,6 +21,14 @@ const voiceStorageKeys = [
 ];
 const voiceTranscriberKeys = ['OPENROUTER_API_KEY', 'OPENROUTER_STT_MODEL'];
 const vapidKeys = ['VAPID_SUBJECT', 'VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY'];
+const backupKeys = [
+  'S3_ENDPOINT',
+  'S3_REGION',
+  'S3_BUCKET',
+  'S3_ACCESS_KEY',
+  'S3_SECRET_KEY',
+  'RESTIC_PASSWORD',
+];
 
 export function parseEnvironment(contents) {
   const environment = {};
@@ -82,7 +90,24 @@ export function validateProductionEnvironment(environment) {
     throw new Error('VAPID_SUBJECT must start with mailto: or https://');
   }
 
-  return { pushEnabled: vapid.enabled, voiceEnabled: storage.enabled };
+  const backup = groupState(environment, backupKeys);
+  requireCompleteGroup('encrypted backup', backup);
+  if (backup.enabled) {
+    parseHttpsUrl(environment.S3_ENDPOINT, 'S3_ENDPOINT');
+    if (environment.RESTIC_PASSWORD.trim().length < 32) {
+      throw new Error('RESTIC_PASSWORD must contain at least 32 characters');
+    }
+    validatePositiveInteger(environment, 'BACKUP_KEEP_DAILY');
+    validatePositiveInteger(environment, 'BACKUP_KEEP_WEEKLY');
+    validatePositiveInteger(environment, 'BACKUP_KEEP_MONTHLY');
+    validatePercentage(environment, 'RESTIC_CHECK_SUBSET');
+  }
+
+  return {
+    backupEnabled: backup.enabled,
+    pushEnabled: vapid.enabled,
+    voiceEnabled: storage.enabled,
+  };
 }
 
 function present(environment, key) {
@@ -119,13 +144,33 @@ function parseHttpsUrl(value, key) {
   return url;
 }
 
+function validatePositiveInteger(environment, key) {
+  const value = environment[key]?.trim();
+  if (value === undefined || value === '') return;
+  if (!/^[1-9][0-9]*$/u.test(value)) throw new Error(`${key} must be a positive integer`);
+}
+
+function validatePercentage(environment, key) {
+  const value = environment[key]?.trim();
+  if (value === undefined || value === '') return;
+  const match = /^([1-9][0-9]?|100)%$/u.exec(value);
+  if (!match) throw new Error(`${key} must be a percentage from 1% to 100%`);
+}
+
 async function main(path) {
   if (!path) throw new Error('Usage: node scripts/check-production-env.mjs <environment-file>');
   const environment = parseEnvironment(await readFile(path, 'utf8'));
   const result = validateProductionEnvironment(environment);
   console.log(
-    `Production environment verified; voice ${result.voiceEnabled ? 'enabled' : 'disabled'}; push ${result.pushEnabled ? 'enabled' : 'disabled'}.`,
+    `Production environment verified; backup ${result.backupEnabled ? 'enabled' : 'disabled'}; voice ${result.voiceEnabled ? 'enabled' : 'disabled'}; push ${result.pushEnabled ? 'enabled' : 'disabled'}.`,
   );
+  if (process.env.GITHUB_OUTPUT) {
+    await appendFile(
+      process.env.GITHUB_OUTPUT,
+      `backup_enabled=${String(result.backupEnabled)}\n`,
+      'utf8',
+    );
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

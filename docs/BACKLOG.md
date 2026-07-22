@@ -19,12 +19,13 @@
    Storage и настроить автоматические зашифрованные бэкапы PostgreSQL с проверенным
    восстановлением, сроком хранения и понятной процедурой recovery.
 
-   **Статус:** реализация и Docker backup→restore прошли CI в
-   [draft PR #6](https://github.com/mighty-cringe/mighty-cringe-main/pull/6). **Требуется участие
-   владельца:** создать private Helsinki bucket и отдельные S3 credentials; сохранить вне VPS
-   новый `RESTIC_PASSWORD`; внести значения в `/etc/mighty-cringe/production.env`; разрешить
-   merge. Деплой сам создаст backup и выполнит изолированный restore до установки таймеров. До
-   успешного production-прогона пункт не закрыт.
+   **Статус:** автоматизация, retention и recovery runbook готовы в
+   [draft PR #6](https://github.com/mighty-cringe/mighty-cringe-main/pull/6); локальные проверки кода
+   и конфигурации проходят, Docker backup→restore запускается в CI. **Требуется участие владельца:**
+   создать private Helsinki bucket и отдельные S3 credentials; сохранить вне VPS новый
+   `RESTIC_PASSWORD`; внести значения в `/etc/mighty-cringe/production.env`; разрешить merge.
+   Деплой сам создаст backup и выполнит изолированный restore до установки таймеров. До успешного
+   production-прогона пункт не закрыт.
 
 3. **Запись тренировки не теряется и не меняется незаметно.** Синхронизировать старт,
    подходы, завершение и изменения тренировки; сохранить очередь после перезапуска PWA,

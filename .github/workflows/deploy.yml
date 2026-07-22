@@ -28,6 +28,11 @@ jobs:
           ref: ${{ inputs.revision || github.sha }}
           fetch-depth: 1
 
+      - name: Set up Node.js for configuration preflight
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Reject a stale or unexpected revision
         id: revision
         env:
@@ -54,6 +59,7 @@ jobs:
 
       - name: Validate production configuration
         if: steps.revision.outputs.deploy == 'true'
+        id: configuration
         working-directory: infra/production
         env:
           PRODUCTION_ENV_FILE: /etc/mighty-cringe/production.env
@@ -83,6 +89,24 @@ jobs:
             docker compose --env-file "$PRODUCTION_ENV_FILE" logs --no-color --tail=200 migrate api worker web caddy || true
             exit 1
           fi
+
+      - name: Verify backup recovery and install timers
+        if: steps.revision.outputs.deploy == 'true' && steps.configuration.outputs.backup_enabled == 'true'
+        working-directory: infra/production
+        env:
+          PRODUCTION_ENV_FILE: /etc/mighty-cringe/production.env
+        run: |
+          docker compose --env-file "$PRODUCTION_ENV_FILE" --profile backup build backup
+          PRODUCTION_DIR="$GITHUB_WORKSPACE/infra/production" scripts/run-backup.sh backup
+          PRODUCTION_DIR="$GITHUB_WORKSPACE/infra/production" scripts/run-backup.sh verify
+          sudo scripts/install-backup-timers.sh "$GITHUB_WORKSPACE/infra/production"
+
+      - name: Keep unconfigured backup timers disabled
+        if: steps.revision.outputs.deploy == 'true' && steps.configuration.outputs.backup_enabled != 'true'
+        run: |
+          set -euo pipefail
+
+          sudo systemctl disable --now mighty-cringe-backup.timer mighty-cringe-restore-check.timer 2>/dev/null || true
 
       - name: Verify public HTTPS healthcheck
         if: steps.revision.outputs.deploy == 'true'

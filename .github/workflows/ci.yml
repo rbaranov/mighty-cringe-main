@@ -60,6 +60,9 @@ jobs:
       - name: Verify the PWA secret boundary
         run: pnpm test:client-boundary
 
+      - name: Validate production environment rules
+        run: pnpm test:production-env
+
       - name: Test
         run: |
           pnpm --filter @mighty-cringe/db db:migrate
@@ -69,6 +72,9 @@ jobs:
           pnpm --filter @mighty-cringe/worker test
           pnpm --filter @mighty-cringe/web test
           pnpm --filter @mighty-cringe/web test:pwa
+
+      - name: Test encrypted backup and isolated restore
+        run: infra/production/scripts/test-backup-restore.sh
 
   deploy-production:
     name: Deploy the verified main revision

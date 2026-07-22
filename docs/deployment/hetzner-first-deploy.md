@@ -251,6 +251,8 @@ https://mightycringe.com/api/v1/auth/google/callback
 Preflight требует основные DB/OAuth-поля, но разрешает полностью пустые voice и VAPID-группы: эти
 возможности останутся выключенными. Частично заполненная группа останавливает deploy до изменения
 контейнеров; значения секретов в диагностике не печатаются.
+До подключения бэкапов добавьте полную группу значений из раздела 8; полностью пустая группа
+оставляет backup timers выключенными, а частичная конфигурация отклоняется preflight.
 
 ### Приватный голос: Hetzner Object Storage
 
@@ -365,16 +367,80 @@ Server-side runner убеждается, что SHA всё ещё являетс
 показывает статус сервисов и ограниченный фрагмент логов. GitHub SSH secrets, Deploy Keys и
 personal access tokens для этого подхода не нужны.
 
-## 8. Object Storage и бэкапы перед реальными пользователями
+## 8. Object Storage и зашифрованные бэкапы
 
 Перед запуском реальных аккаунтов:
 
 1. Создайте private bucket в Hetzner Helsinki, например `mighty-cringe-prod-rb-2026`.
-2. Создайте S3 credentials и сохраните secret key: он не показывается повторно.
-3. Используйте endpoint `https://hel1.your-objectstorage.com`.
-4. Внесите credentials только в серверный `.env`.
-5. Реализуйте и проверьте ежедневный encrypted PostgreSQL backup, WAL archive и
-   ежемесячное восстановление в отдельном окружении.
+2. Создайте отдельные S3 credentials для бэкапов и сразу сохраните secret key: Hetzner не
+   показывает его повторно. Ограничьте key политикой только этим bucket, если credentials
+   находятся в отдельном проекте.
+3. Сгенерируйте независимый пароль шифрования: `openssl rand -hex 32`. Сохраните его в
+   password manager и ещё в одной офлайн-копии: без него восстановление невозможно.
+4. Добавьте в `/etc/mighty-cringe/production.env`:
+
+   ```dotenv
+   S3_ENDPOINT=https://hel1.your-objectstorage.com
+   S3_REGION=hel1
+   S3_BUCKET=<PRIVATE_BUCKET_NAME>
+   S3_ACCESS_KEY=<BACKUP_ACCESS_KEY>
+   S3_SECRET_KEY=<BACKUP_SECRET_KEY>
+   RESTIC_PASSWORD=<INDEPENDENT_ENCRYPTION_PASSWORD>
+   BACKUP_KEEP_DAILY=14
+   BACKUP_KEEP_WEEKLY=8
+   BACKUP_KEEP_MONTHLY=12
+   RESTIC_CHECK_SUBSET=5%
+   ```
+
+5. После деплоя проверьте таймеры и вручную выполните обе операции:
+
+   ```bash
+   systemctl list-timers 'mighty-cringe-*'
+   sudo systemctl start mighty-cringe-backup.service
+   sudo journalctl -u mighty-cringe-backup.service -n 200 --no-pager
+   sudo systemctl start mighty-cringe-restore-check.service
+   sudo journalctl -u mighty-cringe-restore-check.service -n 200 --no-pager
+   ```
+
+Ежедневная операция создаёт custom-format dump в tmpfs, проверяет его, шифрует на стороне клиента
+через restic, применяет retention и читает случайные 5% данных репозитория. Ежемесячная проверка
+загружает последний snapshot и применяет его к отдельному PostgreSQL в tmpfs. Успех засчитывается
+только после чтения таблиц `users`, `workouts` и `sets`. RPO — 24 часа, целевой RTO — 4 часа.
+
+### Полное восстановление после потери PostgreSQL
+
+1. Остановите запись в API: `docker compose stop api worker`.
+2. Убедитесь, что известен момент сбоя, и сохраните повреждённый volume или snapshot для разбора.
+3. Запустите `mighty-cringe-restore-check.service`. Не продолжайте, если изолированная проверка
+   последнего snapshot неуспешна.
+4. Создайте новый пустой PostgreSQL volume или новый сервер. Не восстанавливайте поверх единственной
+   копии повреждённой базы.
+5. Восстановите snapshot только в новую БД с уникальным именем. Скрипт откажется писать поверх
+   активной базы и завершится ошибкой, если `pg_restore` или чтение основных таблиц неуспешно:
+
+   ```bash
+   cd ~/actions-runner/_work/mighty-cringe-main/mighty-cringe-main/infra/production
+   PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env \
+     scripts/restore-to-new-database.sh mightycringe_recovery_20260721
+   ```
+
+6. Остановите API, замените `POSTGRES_DB` и соответствующий `DATABASE_URL` в
+   `/etc/mighty-cringe/production.env` на имя восстановленной базы, затем примените миграции и
+   запустите сервисы:
+
+   ```bash
+   PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose stop api worker
+   sudo nano /etc/mighty-cringe/production.env
+   PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose up -d migrate api
+   ```
+
+7. Проверьте `/health`, вход, количество пользователей и историю тренировок. Зафиксируйте время
+   snapshot — все изменения после него входят в заявленный RPO.
+8. Только после проверки переключите трафик и сохраните старую базу до завершения разбора инцидента.
+
+При полной потере VPS сначала разверните новый пустой PostgreSQL на новом сервере и скопируйте туда
+только `production.env` из защищённого источника. Затем выполните шаги 3–8: restic скачает snapshot
+из Object Storage независимо от потерянного Docker volume.
 
 Hetzner server backups — дополнительная защита, а не замена независимому бэкапу БД и медиа.
 
@@ -392,4 +458,8 @@ PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose logs --tail
 
 # Ручной повторный запуск уже полученной ревизии
 PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose up -d --build
+
+# Состояние и журнал последнего бэкапа
+systemctl status mighty-cringe-backup.timer mighty-cringe-restore-check.timer
+sudo journalctl -u mighty-cringe-backup.service -n 100 --no-pager
 ```

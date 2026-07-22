@@ -119,6 +119,46 @@ services:
     networks:
       - private
 
+  backup:
+    profiles:
+      - backup
+    build:
+      context: ../..
+      dockerfile: infra/production/Dockerfile.backup
+    env_file: ${PRODUCTION_ENV_FILE:-.env}
+    environment:
+      PGHOST: postgres
+      AWS_DEFAULT_REGION: ${S3_REGION:-hel1}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    tmpfs:
+      - /backup:size=512m,mode=0700
+      - /restore:size=512m,mode=0700
+    networks:
+      - private
+      - egress
+
+  restore-postgres:
+    profiles:
+      - backup
+    image: postgres:17-alpine
+    restart: 'no'
+    env_file: ${PRODUCTION_ENV_FILE:-.env}
+    environment:
+      POSTGRES_DB: mightycringe_restore
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB']
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    tmpfs:
+      - /var/lib/postgresql/data:size=512m,mode=0700
+    networks:
+      - private
+
 volumes:
   caddy_data:
   caddy_config:

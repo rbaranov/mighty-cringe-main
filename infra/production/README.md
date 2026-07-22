@@ -37,11 +37,12 @@ exact revision, validates the private environment file at `/etc/mighty-cringe/pr
 applies migrations through Docker Compose, starts the services, and verifies the public HTTPS
 health endpoint. Deployments are serialized and a stale revision is skipped.
 
-The configuration preflight requires the core database and Google OAuth settings. Voice storage plus
-OpenRouter transcription form one optional all-or-nothing capability, and the three VAPID values form
-another. A completely empty optional capability stays disabled without blocking unrelated releases;
-a partial group or an invalid 32-byte voice encryption key stops deployment before any containers are
-changed. Validation reports setting names only and never prints their values.
+The configuration preflight requires the core database and Google OAuth settings. Encrypted backups,
+voice storage plus OpenRouter transcription, and the three VAPID values are separate optional
+all-or-nothing capabilities. A completely empty optional capability stays disabled without blocking
+unrelated releases; a partial group, weak restic password, or invalid 32-byte voice encryption key
+stops deployment before any containers are changed. Validation reports setting names only and never
+prints their values.
 
 The **Deploy production** workflow can also be started manually on `main` to repeat a controlled
 deployment of its current revision. A failed Compose operation or health check keeps the Actions
@@ -54,13 +55,28 @@ to encrypted Object Storage and OpenRouter.
 
 ## Backup policy before admitting real data
 
-1. Archive PostgreSQL WAL continuously to the private object bucket.
-2. Run an encrypted base backup every 24 hours and test a restore every month.
-3. Store raw audio in a dedicated private voice bucket, encrypted with the configured SSE-C key as
-   soon as it reaches the server; only temporary local files may live on the VPS.
-4. Enable server snapshots as an additional recovery mechanism, not as the sole backup.
+Production installs two systemd timers during every deployment:
 
-The application must not begin retaining user audio until steps 1–3 are automated and tested.
+- `mighty-cringe-backup.timer` creates a client-side encrypted logical PostgreSQL backup daily,
+  retains 14 daily, 8 weekly and 12 monthly snapshots, and validates repository data;
+- `mighty-cringe-restore-check.timer` restores the latest snapshot into an isolated tmpfs-backed
+  PostgreSQL container every month and verifies the core tables.
+
+The timers only become operational after the private Helsinki bucket, S3 credentials and independent
+`RESTIC_PASSWORD` are present in `/etc/mighty-cringe/production.env`. Keep an offline password copy.
+The current RPO is 24 hours and the RTO target is four hours. Server snapshots are an additional
+recovery mechanism, never the sole backup. Raw audio must use the private object bucket when audio
+retention is implemented.
+
+When the complete backup group is configured, every production deployment builds the backup image,
+creates a fresh encrypted snapshot, and proves that the latest snapshot restores into an isolated
+PostgreSQL container before installing the timers. With the whole group empty, backup setup remains
+disabled without blocking unrelated releases; partial configuration fails preflight.
+For an incident, follow the exact non-overwriting recovery procedure in
+[Hetzner first deployment](../../docs/deployment/hetzner-first-deploy.md#полное-восстановление-после-потери-postgresql).
+
+The application must not begin retaining user audio until the backup/restore path is verified in
+production and its separate private voice bucket is configured.
 
 ## One-time Web Push setup
 
