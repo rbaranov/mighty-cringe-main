@@ -3,8 +3,18 @@
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@11.0.9",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
-    "dev": "pnpm --parallel --filter @mighty-cringe/api --filter @mighty-cringe/web --filter @mighty-cringe/worker dev",
+    "build:packages": "pnpm --filter @mighty-cringe/contracts build && pnpm --filter @mighty-cringe/db build && pnpm --filter @mighty-cringe/voice build && pnpm --filter @mighty-cringe/push build",
+    "dev": "pnpm build:packages && pnpm --parallel --filter @mighty-cringe/api --filter @mighty-cringe/web --filter @mighty-cringe/worker dev",
+    "local:doctor": "node scripts/local-environment.mjs doctor",
+    "local:up": "node scripts/local-environment.mjs up",
+    "local:dev": "node scripts/local-environment.mjs dev",
+    "local:status": "node scripts/local-environment.mjs status",
+    "local:stop": "node scripts/local-environment.mjs stop",
+    "local:reset": "node scripts/local-environment.mjs reset",
     "build": "pnpm --filter @mighty-cringe/contracts build && pnpm --filter @mighty-cringe/db build && pnpm --filter @mighty-cringe/voice build && pnpm --filter @mighty-cringe/push build && pnpm --filter @mighty-cringe/api build && pnpm --filter @mighty-cringe/worker build && pnpm --filter @mighty-cringe/web build",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",

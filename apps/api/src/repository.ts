@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import type {
+  CreateExerciseInput,
   CreateMeasurementInput,
   CreateSetInput,
   CreateWorkoutInput,
@@ -42,6 +43,7 @@ import {
   notificationPreferences,
   notificationJobs,
   pushSubscriptions,
+  or,
   sessions,
   sets,
   trainerAthleteLinks,
@@ -140,7 +142,8 @@ export class RepositoryInviteError extends Error {
 }
 
 export interface WorkoutRepository {
-  listExercises(): Promise<Exercise[]>;
+  listExercises(userId: string): Promise<Exercise[]>;
+  createExercise(userId: string, input: CreateExerciseInput): Promise<Exercise>;
   listWorkouts(userId: string): Promise<WorkoutRecord[]>;
   createWorkout(userId: string, input: CreateWorkoutInput): Promise<WorkoutMutationResult>;
   updateWorkout(userId: string, input: UpdateWorkoutInput): Promise<WorkoutMutationResult>;
@@ -232,6 +235,7 @@ type MemoryTrainerLink = {
   updatedAt: Date;
 };
 type MemoryPushSubscription = PushSubscriptionInput & { userId: string; updatedAt: Date };
+type MemoryExercise = Exercise & { userId: string };
 
 export class MemoryRepository implements WorkoutRepository {
   private readonly workouts = new Map<string, MemoryWorkout>();
@@ -246,9 +250,31 @@ export class MemoryRepository implements WorkoutRepository {
   private readonly trainerLinks = new Map<string, MemoryTrainerLink>();
   private readonly notificationPreferences = new Map<string, NotificationPreferences>();
   private readonly pushSubscriptions = new Map<string, MemoryPushSubscription>();
+  private readonly personalExercises = new Map<string, MemoryExercise>();
 
-  async listExercises() {
-    return catalog;
+  async listExercises(userId: string) {
+    return [
+      ...catalog.map((exercise) => ({ ...exercise, scope: 'global' as const })),
+      ...[...this.personalExercises.values()]
+        .filter((exercise) => exercise.userId === userId)
+        .map(({ userId: _userId, ...exercise }) => exercise),
+    ];
+  }
+
+  async createExercise(userId: string, input: CreateExerciseInput): Promise<Exercise> {
+    const existing = this.personalExercises.get(input.id);
+    if (existing) {
+      if (existing.userId !== userId) throw new RepositoryConflictError(null);
+      const { userId: _userId, ...exercise } = existing;
+      return exercise;
+    }
+    if (catalog.some((exercise) => exercise.id === input.id)) {
+      throw new RepositoryConflictError(null);
+    }
+    const exercise: MemoryExercise = { ...input, scope: 'user', userId };
+    this.personalExercises.set(input.id, exercise);
+    const { userId: _userId, ...publicExercise } = exercise;
+    return publicExercise;
   }
 
   async listWorkouts(userId: string) {
@@ -840,24 +866,43 @@ export class PostgresRepository implements WorkoutRepository {
           scope: 'global',
           ownerId: null,
           videos: [],
+          sources: [],
           notes: null,
         })
         .onConflictDoNothing({ target: exercises.id });
     }
   }
 
-  async listExercises(): Promise<Exercise[]> {
-    const records = await this.db.select().from(exercises).where(eq(exercises.scope, 'global'));
-    return records.map((record) => ({
-      id: record.id,
-      nameRu: record.nameRu,
-      nameEn: record.nameEn,
-      aliases: record.aliases,
-      tag: record.tag,
-      primaryMuscles: record.primaryMuscles as Exercise['primaryMuscles'],
-      secondaryMuscles: record.secondaryMuscles as Exercise['secondaryMuscles'],
-      equipment: record.equipment,
-    }));
+  async listExercises(userId: string): Promise<Exercise[]> {
+    const records = await this.db
+      .select()
+      .from(exercises)
+      .where(
+        or(
+          eq(exercises.scope, 'global'),
+          and(eq(exercises.scope, 'user'), eq(exercises.ownerId, userId)),
+        ),
+      );
+    return records.map(toExercise);
+  }
+
+  async createExercise(userId: string, input: CreateExerciseInput): Promise<Exercise> {
+    const existing = await this.db
+      .select()
+      .from(exercises)
+      .where(eq(exercises.id, input.id))
+      .limit(1);
+    if (existing[0]) {
+      if (existing[0].scope !== 'user' || existing[0].ownerId !== userId) {
+        throw new RepositoryConflictError(null);
+      }
+      return toExercise(existing[0]);
+    }
+    const records = await this.db
+      .insert(exercises)
+      .values({ ...input, scope: 'user', ownerId: userId })
+      .returning();
+    return toExercise(records[0]);
   }
 
   async listWorkouts(userId: string): Promise<WorkoutRecord[]> {
@@ -2102,6 +2147,23 @@ function toCurrentUser(user: {
     role: user.role,
     locale: user.locale === 'en' ? 'en' : 'ru',
     unitSystem: user.unitSystem === 'imperial' ? 'imperial' : 'metric',
+  };
+}
+
+function toExercise(record: typeof exercises.$inferSelect): Exercise {
+  return {
+    id: record.id,
+    scope: record.scope,
+    nameRu: record.nameRu,
+    nameEn: record.nameEn,
+    aliases: record.aliases,
+    tag: record.tag,
+    primaryMuscles: record.primaryMuscles as Exercise['primaryMuscles'],
+    secondaryMuscles: record.secondaryMuscles as Exercise['secondaryMuscles'],
+    equipment: record.equipment,
+    videos: record.videos,
+    sources: record.sources,
+    notes: record.notes,
   };
 }
 

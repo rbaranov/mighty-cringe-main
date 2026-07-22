@@ -220,6 +220,7 @@ SESSION_TTL_DAYS=30
 # Оставьте весь voice-блок пустым, пока не готовы одновременно S3 и OpenRouter.
 OPENROUTER_API_KEY=
 OPENROUTER_STT_MODEL=
+EXERCISE_DISCOVERY_MODEL=
 
 VOICE_S3_ENDPOINT=
 VOICE_S3_REGION=
@@ -297,6 +298,13 @@ https://docs.hetzner.com/storage/object-storage/faq/s3-credentials/.
    Transcription. Модель обязана принимать `webm`, `m4a/mp4` и `ogg`, которые создают мобильные
    браузеры.
 4. Запишите key и model только в `/etc/mighty-cringe/production.env`.
+
+Для поиска неизвестных упражнений тот же server-only `OPENROUTER_API_KEY` можно использовать без
+включения голосового хранилища. Выберите в OpenRouter актуальную модель, которая одновременно
+поддерживает tool calling и strict structured output, и запишите её slug в
+`EXERCISE_DISCOVERY_MODEL`. Ограничьте расходы ключа, отключите provider logging и включите ZDR.
+Пустое значение безопасно выключает поиск; частичная конфигурация не проходит production
+preflight. Ключ и model нельзя добавлять в `VITE_*` или клиентский bundle.
 
 Актуальный STT endpoint, форматы и поиск моделей:
 https://openrouter.ai/docs/guides/overview/multimodal/stt. Политика ZDR:

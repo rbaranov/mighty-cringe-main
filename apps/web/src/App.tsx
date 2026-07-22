@@ -10,6 +10,7 @@ import type {
 import { useLiveQuery } from 'dexie-react-hooks';
 
 import { SetSheet } from './components/SetSheet';
+import { ExerciseDiscoveryPanel } from './components/ExerciseDiscoveryPanel';
 import type { MeasurementDraft } from './components/BodyMeasurementsSection';
 import { ProgressView } from './components/ProgressView';
 import { PushReminderSettings } from './components/PushReminderSettings';
@@ -31,6 +32,13 @@ import { fallbackCatalog } from './lib/fallbackCatalog';
 import { hasPendingRemoteLogout, requestRemoteLogout } from './lib/logout';
 import { parseNaturalSet, type NaturalSetDraft, type NaturalSetResult } from './lib/naturalSet';
 import {
+  parseNaturalWorkoutCommand,
+  type NaturalWorkoutCommand,
+  type NaturalWorkoutCommandResult,
+  type WorkoutCommandOverrides,
+  workoutCommandSummary,
+} from './lib/naturalWorkoutCommand';
+import {
   exerciseName,
   formatWeight,
   PreferencesProvider,
@@ -49,6 +57,7 @@ import {
   subscribeSyncStatus,
   syncAll,
 } from './lib/sync';
+import { applyWorkoutCommandToPlan, normalizeWorkoutPlan } from './lib/workoutPlan';
 
 type View = 'workout' | 'progress' | 'catalog' | 'settings' | 'trainer';
 
@@ -67,6 +76,9 @@ type AuthState =
   | { status: 'authenticated'; user: CurrentUser; restoredFromCache: boolean };
 
 type ExercisePickerMode = { mode: 'add' } | { mode: 'replace'; itemId: string };
+
+type NaturalInputResult =
+  NaturalSetResult | Exclude<NaturalWorkoutCommandResult, { status: 'not_command' }>;
 
 type PendingConfirmation = {
   title: string;
@@ -254,7 +266,10 @@ function AuthenticatedAppContent({
         }
         if (!response.ok) throw new Error('Catalog is unavailable');
         const payload = (await response.json()) as { items: Exercise[] };
-        await db.exercises.bulkPut(payload.items);
+        await db.transaction('rw', db.exercises, async () => {
+          await db.exercises.clear();
+          await db.exercises.bulkPut(payload.items);
+        });
       } catch {
         await db.exercises.bulkPut(fallbackCatalog);
       }
@@ -407,7 +422,7 @@ function AuthenticatedAppContent({
 
   async function updateWorkoutPlan(nextPlan: WorkoutExercise[]) {
     if (!activeWorkout) return;
-    const exercises = normalizePlan(nextPlan);
+    const exercises = normalizeWorkoutPlan(nextPlan);
     await db.workouts.update(activeWorkout.id, { exercises, syncState: 'pending' });
     await queueMutation({
       type: 'workout.update',
@@ -419,6 +434,12 @@ function AuthenticatedAppContent({
       },
     });
     await flushOutbox();
+  }
+
+  async function executeWorkoutCommand(command: NaturalWorkoutCommand) {
+    if (!activeWorkout) return;
+    await updateWorkoutPlan(applyWorkoutCommandToPlan(activeWorkout.exercises, command));
+    setExplainContext(null);
   }
 
   async function chooseExercise(exercise: Exercise) {
@@ -838,6 +859,7 @@ function AuthenticatedAppContent({
         <ExplainSheet
           activeWorkout={activeWorkout}
           catalog={exercises}
+          onApplyCommand={executeWorkoutCommand}
           onClose={() => setExplainContext(null)}
           onSave={saveNaturalSet}
           scopedExercise={explainContext.exercise}
@@ -1254,10 +1276,24 @@ function WorkoutView({
 
 function CatalogView({ exercises }: { exercises: Exercise[] }) {
   const { locale } = usePreferences();
+  const [adding, setAdding] = useState(false);
   return (
     <section className="screen">
       <p className="eyebrow">{tr(locale, 'Общий + личный', 'Shared + personal')}</p>
       <h1>{tr(locale, 'Каталог упражнений', 'Exercise catalog')}</h1>
+      <button className="button primary" onClick={() => setAdding((value) => !value)} type="button">
+        {adding
+          ? tr(locale, 'Скрыть поиск', 'Hide search')
+          : tr(locale, '＋ Найти и добавить', '＋ Find and add')}
+      </button>
+      {adding && (
+        <ExerciseDiscoveryPanel
+          locale={locale}
+          onExerciseSaved={async (exercise) => {
+            await db.exercises.put(exercise);
+          }}
+        />
+      )}
       <div className="exercise-list catalog-list">
         {exercises.map((exercise) => (
           <article className="exercise-row catalog" key={exercise.id}>
@@ -1269,7 +1305,13 @@ function CatalogView({ exercises }: { exercises: Exercise[] }) {
               <small>
                 {locale === 'en' ? exercise.nameRu : exercise.nameEn} ·{' '}
                 {muscleLabel(exercise.primaryMuscles[0], locale)}
+                {exercise.scope === 'user' ? ` · ${tr(locale, 'личное', 'personal')}` : ''}
               </small>
+              {exercise.videos?.[0] && (
+                <a href={exercise.videos[0].url} rel="noreferrer" target="_blank">
+                  {tr(locale, 'Видео техники', 'Technique video')}
+                </a>
+              )}
             </div>
             <Tag tag={exercise.tag} />
           </article>
@@ -1556,6 +1598,7 @@ function ExplainSheet({
   scopedExercise,
   sets,
   onClose,
+  onApplyCommand,
   onSave,
 }: {
   activeWorkout: LocalWorkout | undefined;
@@ -1563,6 +1606,7 @@ function ExplainSheet({
   scopedExercise: Exercise | null;
   sets: LocalSet[];
   onClose: () => void;
+  onApplyCommand: (command: NaturalWorkoutCommand) => Promise<void>;
   onSave: (
     exercise: Exercise,
     input: NaturalSetDraft,
@@ -1572,7 +1616,8 @@ function ExplainSheet({
   const { locale, unitSystem } = usePreferences();
   const [mode, setMode] = useState<'text' | 'voice'>(() => loadInputMode());
   const [text, setText] = useState('');
-  const [result, setResult] = useState<NaturalSetResult | null>(null);
+  const [result, setResult] = useState<NaturalInputResult | null>(null);
+  const [commandOverrides, setCommandOverrides] = useState<WorkoutCommandOverrides>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [entrySource, setEntrySource] =
@@ -1582,12 +1627,38 @@ function ExplainSheet({
     setMode(next);
     saveInputMode(next);
     setResult(null);
+    setCommandOverrides({});
   }
 
-  function interpret(exerciseOverride: Exercise | null = null) {
-    setResult(
-      parseNaturalSet({ text, catalog, scopedExercise, exerciseOverride, locale, unitSystem }),
-    );
+  function parseInput(
+    input: string,
+    exerciseOverride: Exercise | null = null,
+    overrides: WorkoutCommandOverrides = {},
+    inputCatalog: Exercise[] = catalog,
+  ): NaturalInputResult {
+    const command = parseNaturalWorkoutCommand({
+      text: input,
+      catalog: inputCatalog,
+      plan: activeWorkout?.exercises ?? [],
+      locale,
+      overrides,
+    });
+    if (command.status !== 'not_command') return command;
+    return parseNaturalSet({
+      text: input,
+      catalog,
+      scopedExercise,
+      exerciseOverride,
+      locale,
+      unitSystem,
+    });
+  }
+
+  function interpret(
+    exerciseOverride: Exercise | null = null,
+    overrides: WorkoutCommandOverrides = commandOverrides,
+  ) {
+    setResult(parseInput(text, exerciseOverride, overrides));
   }
 
   async function confirmParsed(exercise: Exercise, draft: NaturalSetDraft) {
@@ -1602,6 +1673,24 @@ function ExplainSheet({
           locale,
           'Не удалось записать подход. Фраза сохранена в форме — попробуй ещё раз.',
           'Could not save the set. The phrase is still in the form — try again.',
+        ),
+      );
+      setSaving(false);
+    }
+  }
+
+  async function confirmCommand(command: NaturalWorkoutCommand) {
+    if (saving) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await onApplyCommand(command);
+    } catch {
+      setSaveError(
+        tr(
+          locale,
+          'Не удалось изменить план. Фраза сохранена в форме — попробуй ещё раз.',
+          'Could not change the plan. The phrase is still in the form — try again.',
         ),
       );
       setSaving(false);
@@ -1628,7 +1717,7 @@ function ExplainSheet({
         <h2>
           {scopedExercise
             ? exerciseName(scopedExercise, locale)
-            : tr(locale, 'Записать подход', 'Log a set')}
+            : tr(locale, 'Подход или команда', 'Set or command')}
         </h2>
         <p className="explain-context">
           {activeWorkout
@@ -1679,19 +1768,37 @@ function ExplainSheet({
             onTranscript={(transcript) => {
               setText(transcript);
               setEntrySource('voice_ai');
+              setCommandOverrides({});
               setMode('text');
               saveInputMode('text');
-              setResult(
-                parseNaturalSet({
-                  text: transcript,
-                  catalog,
-                  scopedExercise,
-                  locale,
-                  unitSystem,
-                }),
-              );
+              setResult(parseInput(transcript));
             }}
           />
+        ) : result?.status === 'command_ready' ? (
+          <div className="parsed-set" aria-live="polite">
+            <strong>
+              {tr(locale, 'Понял команду — выполнить?', 'I understood the command — apply it?')}
+            </strong>
+            <p className="confirmation-message">{workoutCommandSummary(result.command, locale)}</p>
+            {saveError && (
+              <p className="clarification compact" role="alert">
+                {saveError}
+              </p>
+            )}
+            <div className="parsed-actions">
+              <button className="button ghost" onClick={() => setResult(null)} type="button">
+                {tr(locale, 'Исправить фразу', 'Edit phrase')}
+              </button>
+              <button
+                className="button primary"
+                disabled={saving}
+                onClick={() => void confirmCommand(result.command)}
+                type="button"
+              >
+                {saving ? tr(locale, 'Применяю…', 'Applying…') : tr(locale, 'Выполнить', 'Apply')}
+              </button>
+            </div>
+          </div>
         ) : result?.status === 'ready' ? (
           <div className="parsed-set" aria-live="polite">
             <strong>
@@ -1748,7 +1855,11 @@ function ExplainSheet({
         ) : (
           <div className="natural-input">
             <label htmlFor="natural-set-input">
-              {tr(locale, 'Опиши подход свободной фразой', 'Describe the set naturally')}
+              {tr(
+                locale,
+                'Опиши подход или изменение тренировки',
+                'Describe a set or change the workout',
+              )}
             </label>
             <textarea
               autoFocus
@@ -1758,6 +1869,7 @@ function ExplainSheet({
                 setText(event.target.value);
                 if (!event.target.value.trim()) setEntrySource('natural_text');
                 setResult(null);
+                setCommandOverrides({});
               }}
               placeholder={
                 scopedExercise
@@ -1768,21 +1880,56 @@ function ExplainSheet({
                     )
                   : tr(
                       locale,
-                      'Например: румынка 80 на 8, RIR 2, техника чистая',
-                      'For example: Romanian deadlift 175 for 8, RIR 2, clean technique',
+                      'Например: «румынка 80 на 8» или «замени верхний блок на румынскую тягу»',
+                      'For example: “Romanian deadlift 175 for 8” or “replace lat pulldown with Romanian deadlift”',
                     )
               }
               rows={4}
               value={text}
             />
-            {result?.status === 'needs_clarification' && (
+            {(result?.status === 'needs_clarification' ||
+              result?.status === 'command_needs_clarification') && (
               <div className="clarification" role="alert">
                 <strong>{tr(locale, 'Нужно уточнение', 'One detail is missing')}</strong>
                 <p>{result.question}</p>
+                {result.status === 'command_needs_clarification' &&
+                  result.role === 'target' &&
+                  result.unresolvedPhrase && (
+                    <ExerciseDiscoveryPanel
+                      initialQuery={result.unresolvedPhrase}
+                      locale={locale}
+                      onExerciseSaved={async (exercise) => {
+                        await db.exercises.put(exercise);
+                        const nextOverrides = { ...commandOverrides, target: exercise };
+                        setCommandOverrides(nextOverrides);
+                        setResult(
+                          parseInput(text, null, nextOverrides, [
+                            ...catalog.filter((item) => item.id !== exercise.id),
+                            exercise,
+                          ]),
+                        );
+                      }}
+                    />
+                  )}
                 {result.candidates.length > 0 && (
                   <div className="candidate-list">
                     {result.candidates.map((exercise) => (
-                      <button onClick={() => interpret(exercise)} key={exercise.id} type="button">
+                      <button
+                        onClick={() => {
+                          if (result.status === 'command_needs_clarification') {
+                            const nextOverrides = {
+                              ...commandOverrides,
+                              [result.role]: exercise,
+                            };
+                            setCommandOverrides(nextOverrides);
+                            interpret(null, nextOverrides);
+                          } else {
+                            interpret(exercise);
+                          }
+                        }}
+                        key={exercise.id}
+                        type="button"
+                      >
                         {exerciseName(exercise, locale)}
                       </button>
                     ))}
@@ -1947,28 +2094,4 @@ function publicLocale(): CurrentUser['locale'] {
   } catch {
     return 'ru';
   }
-}
-
-function normalizePlan(plan: WorkoutExercise[]) {
-  const ordered = plan.map((item, position) => ({ ...item, position }));
-  const groupPositions = new Map<number, number[]>();
-  for (const item of ordered) {
-    if (item.supersetGroup === null) continue;
-    const positions = groupPositions.get(item.supersetGroup) ?? [];
-    positions.push(item.position);
-    groupPositions.set(item.supersetGroup, positions);
-  }
-  const groupNumbers = new Map<number, number>();
-  let nextGroup = 1;
-  for (const [group, positions] of groupPositions) {
-    const consecutive = positions.every(
-      (position, index) => index === 0 || position === positions[index - 1] + 1,
-    );
-    if (positions.length >= 2 && consecutive) groupNumbers.set(group, nextGroup++);
-  }
-  return ordered.map((item) => ({
-    ...item,
-    supersetGroup:
-      item.supersetGroup === null ? null : (groupNumbers.get(item.supersetGroup) ?? null),
-  }));
 }

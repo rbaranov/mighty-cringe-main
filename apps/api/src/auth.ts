@@ -131,6 +131,20 @@ export function authOptionsFromEnvironment(): AuthOptions | undefined {
   };
 }
 
+export function localDemoIdentityFromEnvironment(
+  environment: Record<string, string | undefined> = process.env,
+): GoogleIdentity | undefined {
+  if (environment.NODE_ENV === 'production' || environment.LOCAL_DEMO_AUTH !== 'true') {
+    return undefined;
+  }
+  return {
+    subject: 'local-demo-athlete',
+    email: 'local-athlete@mightycringe.test',
+    displayName: 'Local Athlete',
+    avatarUrl: null,
+  };
+}
+
 export function randomToken(bytes = 32) {
   return randomBytes(bytes).toString('base64url');
 }

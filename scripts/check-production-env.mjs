@@ -19,7 +19,6 @@ const voiceStorageKeys = [
   'VOICE_S3_SECRET_ACCESS_KEY',
   'VOICE_S3_ENCRYPTION_KEY',
 ];
-const voiceTranscriberKeys = ['OPENROUTER_API_KEY', 'OPENROUTER_STT_MODEL'];
 const vapidKeys = ['VAPID_SUBJECT', 'VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY'];
 const backupKeys = [
   'S3_ENDPOINT',
@@ -72,10 +71,17 @@ export function validateProductionEnvironment(environment) {
   }
 
   const storage = groupState(environment, voiceStorageKeys);
-  const transcriber = groupState(environment, voiceTranscriberKeys);
+  const openRouterKey = present(environment, 'OPENROUTER_API_KEY');
+  const sttModel = present(environment, 'OPENROUTER_STT_MODEL');
+  const discoveryModel = present(environment, 'EXERCISE_DISCOVERY_MODEL');
   requireCompleteGroup('voice storage', storage);
-  requireCompleteGroup('OpenRouter transcription', transcriber);
-  if (storage.enabled !== transcriber.enabled) {
+  if ((sttModel || discoveryModel) && !openRouterKey) {
+    throw new Error('OPENROUTER_API_KEY is required by configured OpenRouter models');
+  }
+  if (openRouterKey && !sttModel && !discoveryModel) {
+    throw new Error('OPENROUTER_API_KEY requires OPENROUTER_STT_MODEL or EXERCISE_DISCOVERY_MODEL');
+  }
+  if (storage.enabled !== sttModel) {
     throw new Error(
       'Voice storage and OpenRouter transcription must be configured together or both left empty',
     );
@@ -123,6 +129,7 @@ export function validateProductionEnvironment(environment) {
     monitoringEnabled,
     pushEnabled: vapid.enabled,
     voiceEnabled: storage.enabled,
+    exerciseDiscoveryEnabled: discoveryModel,
   };
 }
 
@@ -178,7 +185,7 @@ async function main(path) {
   const environment = parseEnvironment(await readFile(path, 'utf8'));
   const result = validateProductionEnvironment(environment);
   console.log(
-    `Production environment verified; backup ${result.backupEnabled ? 'enabled' : 'disabled'}; monitoring ${result.monitoringEnabled ? 'enabled' : 'disabled'}; voice ${result.voiceEnabled ? 'enabled' : 'disabled'}; push ${result.pushEnabled ? 'enabled' : 'disabled'}.`,
+    `Production environment verified; backup ${result.backupEnabled ? 'enabled' : 'disabled'}; monitoring ${result.monitoringEnabled ? 'enabled' : 'disabled'}; voice ${result.voiceEnabled ? 'enabled' : 'disabled'}; exercise discovery ${result.exerciseDiscoveryEnabled ? 'enabled' : 'disabled'}; push ${result.pushEnabled ? 'enabled' : 'disabled'}.`,
   );
   if (process.env.GITHUB_OUTPUT) {
     await appendFile(

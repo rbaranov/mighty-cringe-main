@@ -51,11 +51,23 @@ describe('local user boundary', () => {
     await activateLocalUser(athlete.id);
     await cacheCurrentUser(athlete);
     await db.meta.put({ key: 'lastSuccessfulSyncAt', value: new Date().toISOString() });
+    await db.exercises.put({
+      id: '70000000-0000-4000-8000-000000000001',
+      scope: 'user',
+      nameRu: 'Личное упражнение',
+      nameEn: 'Personal exercise',
+      aliases: [],
+      tag: 'normal',
+      primaryMuscles: ['back'],
+      secondaryMuscles: [],
+      equipment: [],
+    });
 
     await activateLocalUser('20000000-0000-4000-8000-000000000002');
 
     expect(await getCachedCurrentUser()).toBeNull();
     expect(await db.meta.get('lastSuccessfulSyncAt')).toBeUndefined();
+    expect(await db.exercises.count()).toBe(0);
   });
 
   it('keeps an unfinished workout and confirmed profile across a PWA restart', async () => {

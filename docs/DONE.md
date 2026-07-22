@@ -2,6 +2,20 @@
 
 **Обновлён:** 2026-07-22
 
+## 2026-07-22 — команды тренировки, умный каталог и локальная приёмка
+
+- Текстовый parser понимает команды добавить, заменить, удалить и переставить упражнения в плане;
+  неоднозначные или неизвестные названия переводятся в явное уточнение вместо неверного изменения.
+- Неизвестное упражнение можно найти из исходной команды через server-side web search: приложение
+  показывает подтверждённые источниками сведения, сохраняет выбранный вариант только после согласия
+  пользователя в его персональный каталог и повторяет исходную команду.
+- Поиск разделён на web-grounded этап с цитатами и строгую структуризацию, использует ZDR-запросы и
+  отбрасывает неподтверждённые ссылки вместо выдумывания видео или источника.
+- Добавлен воспроизводимый локальный контур: `pnpm local:dev` поднимает изолированную PostgreSQL,
+  применяет миграции и запускает PWA, API и worker; доступны doctor, status, stop и защищённый reset.
+- Полный `pnpm test` прошёл с реальной PostgreSQL, сохранение после перезапуска проверено, а владелец
+  локально принял пользовательский сценарий поиска, добавления и замены упражнения и разрешил merge.
+
 ## 2026-07-22 — релиз продуктового бэклога
 
 - В `main` последовательно влиты PR #6, #8 и #12—#18; все соответствующие feature-ветки удалены
@@ -20,8 +34,23 @@
   ревизии `5623b78306d3661da6686d8a5b93893c69a7c8e9`.
 - После релиза `https://mightycringe.com/health` отвечает `{"status":"ok"}`, Google OAuth включён,
   callback совпадает с production URL, а анонимный API отвечает `401`.
-- Реализации зафиксированы здесь как выпущенные; пункты остаются в `BACKLOG.md`, пока владелец не
-  выполнит отмеченные credential- и acceptance-действия на реальных аккаунтах и телефоне.
+- Реализации зафиксированы здесь как выпущенные; в разделе «Ждёт владельца» файла `BACKLOG.md`
+  остаются только credential- и acceptance-действия на реальных аккаунтах и телефоне.
+
+Карта релиза: [OAuth #5](https://github.com/mighty-cringe/mighty-cringe-main/pull/5),
+[backup #6](https://github.com/mighty-cringe/mighty-cringe-main/pull/6),
+[sync #7](https://github.com/mighty-cringe/mighty-cringe-main/pull/7),
+[monitoring #8](https://github.com/mighty-cringe/mighty-cringe-main/pull/8),
+[workout editing #9](https://github.com/mighty-cringe/mighty-cringe-main/pull/9),
+[progress #10](https://github.com/mighty-cringe/mighty-cringe-main/pull/10),
+[measurements #11](https://github.com/mighty-cringe/mighty-cringe-main/pull/11),
+[offline recovery #12](https://github.com/mighty-cringe/mighty-cringe-main/pull/12),
+[natural text #13](https://github.com/mighty-cringe/mighty-cringe-main/pull/13),
+[voice #14](https://github.com/mighty-cringe/mighty-cringe-main/pull/14),
+[AI provenance #15](https://github.com/mighty-cringe/mighty-cringe-main/pull/15),
+[trainer access #16](https://github.com/mighty-cringe/mighty-cringe-main/pull/16),
+[push #17](https://github.com/mighty-cringe/mighty-cringe-main/pull/17) и
+[localization #18](https://github.com/mighty-cringe/mighty-cringe-main/pull/18).
 
 ## 2026-07-20—21 — фундамент продукта и первый production-запуск
 

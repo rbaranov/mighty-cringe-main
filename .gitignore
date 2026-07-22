@@ -8,5 +8,5 @@ coverage
 !.env.example
 *.log
 .DS_Store
+.local
 apps/*/vite-env.d.ts
-

@@ -71,6 +71,13 @@
       "when": 1784675743130,
       "tag": "0009_hesitant_squadron_supreme",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1784703456824,
+      "tag": "0010_third_lorna_dane",
+      "breakpoints": true
     }
   ]
 }
