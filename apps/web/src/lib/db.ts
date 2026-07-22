@@ -1,12 +1,15 @@
 import Dexie, { type EntityTable } from 'dexie';
 
 import type {
+  CurrentUser,
   Exercise,
   MeasurementRecord,
   SetRecord,
   SyncMutation,
   WorkoutRecord,
 } from '@mighty-cringe/contracts';
+
+import { parseCurrentUser } from './user';
 
 export type SyncState = 'pending' | 'synced' | 'conflict';
 
@@ -159,10 +162,39 @@ export async function activateLocalUser(userId: string) {
         db.measurements.clear(),
         db.outbox.clear(),
         db.conflicts.clear(),
+        db.meta.clear(),
       ]);
       await db.meta.put({ key: 'activeUserId', value: userId });
     },
   );
+}
+
+export async function cacheCurrentUser(user: CurrentUser) {
+  const activeUser = await db.meta.get('activeUserId');
+  if (activeUser?.value !== user.id) return;
+  await db.meta.bulkPut([
+    { key: 'cachedCurrentUser', value: JSON.stringify(user) },
+    { key: 'offlineSessionAllowed', value: 'true' },
+  ]);
+}
+
+export async function getCachedCurrentUser(): Promise<CurrentUser | null> {
+  const [activeUser, cachedUser, offlineAllowed] = await db.meta.bulkGet([
+    'activeUserId',
+    'cachedCurrentUser',
+    'offlineSessionAllowed',
+  ]);
+  if (!activeUser || !cachedUser || offlineAllowed?.value !== 'true') return null;
+  try {
+    const parsed = parseCurrentUser(JSON.parse(cachedUser.value));
+    return parsed?.id === activeUser.value ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function disableOfflineSession() {
+  await db.meta.put({ key: 'offlineSessionAllowed', value: 'false' });
 }
 
 export async function clearLocalUserData() {
@@ -176,8 +208,8 @@ export async function clearLocalUserData() {
         db.measurements.clear(),
         db.outbox.clear(),
         db.conflicts.clear(),
+        db.meta.clear(),
       ]);
-      await db.meta.delete('activeUserId');
     },
   );
 }

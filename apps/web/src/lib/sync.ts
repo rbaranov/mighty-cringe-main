@@ -19,8 +19,30 @@ type MutationResponse =
   | { entityType: 'measurement'; entity: MeasurementRecord; duplicate: boolean }
   | { entityType: 'measurement'; entity: null; entityId: string; duplicate: boolean };
 
+export type SyncStatus = {
+  phase: 'idle' | 'syncing' | 'offline' | 'error';
+  message: string | null;
+};
+
+type SyncOutcome = 'success' | 'offline' | 'retry' | 'unauthorized';
+
 let lastSequence = 0;
-let activeFlush: Promise<void> | null = null;
+let activeFlush: Promise<SyncOutcome> | null = null;
+let retryAttempt = 0;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+let syncStatus: SyncStatus = browserOnline()
+  ? { phase: 'idle', message: null }
+  : { phase: 'offline', message: null };
+const syncListeners = new Set<() => void>();
+
+export function getSyncStatus() {
+  return syncStatus;
+}
+
+export function subscribeSyncStatus(listener: () => void) {
+  syncListeners.add(listener);
+  return () => syncListeners.delete(listener);
+}
 
 export async function queueMutation(mutation: SyncMutation) {
   const id = mutation.payload.clientMutationId;
@@ -30,40 +52,54 @@ export async function queueMutation(mutation: SyncMutation) {
     createdAt: new Date().toISOString(),
     mutation,
   });
-  if (navigator.onLine) setTimeout(() => void flushOutbox(), 0);
+  if (browserOnline()) setTimeout(() => void flushOutbox(), 0);
 }
 
 export function flushOutbox() {
   if (activeFlush) return activeFlush;
-  activeFlush = performFlush().finally(() => {
-    activeFlush = null;
-  });
+  updateSyncStatus(
+    browserOnline() ? { phase: 'syncing', message: null } : { phase: 'offline', message: null },
+  );
+  activeFlush = performFlush()
+    .catch(() => 'retry' as const)
+    .then(async (outcome) => {
+      await finishSync(outcome);
+      return outcome;
+    })
+    .finally(() => {
+      activeFlush = null;
+    });
   return activeFlush;
 }
 
 export async function syncAll() {
-  await flushOutbox();
-  await refreshHistory();
+  const flushOutcome = await flushOutbox();
+  if (flushOutcome !== 'success') return flushOutcome;
+  updateSyncStatus({ phase: 'syncing', message: null });
+  const refreshOutcome = await refreshHistory().catch(() => 'retry' as const);
+  await finishSync(refreshOutcome);
+  return refreshOutcome;
 }
 
-export async function refreshHistory() {
-  if (!navigator.onLine) return;
+export async function refreshHistory(): Promise<SyncOutcome> {
+  if (!browserOnline()) return 'offline';
 
-  await Promise.all([refreshWorkoutHistory(), refreshMeasurementHistory()]);
+  const outcomes = await Promise.all([refreshWorkoutHistory(), refreshMeasurementHistory()]);
+  return combineOutcomes(outcomes);
 }
 
-async function refreshWorkoutHistory() {
+async function refreshWorkoutHistory(): Promise<SyncOutcome> {
   let response: Response;
   try {
     response = await fetch('/api/v1/workouts', { credentials: 'same-origin' });
   } catch {
-    return;
+    return 'retry';
   }
   if (response.status === 401) {
     window.dispatchEvent(new Event('mighty-cringe:unauthorized'));
-    return;
+    return 'unauthorized';
   }
-  if (!response.ok) return;
+  if (!response.ok) return 'retry';
 
   const payload = (await response.json()) as { items: WorkoutRecord[] };
   await db.transaction('rw', db.workouts, db.sets, async () => {
@@ -98,20 +134,21 @@ async function refreshWorkoutHistory() {
         .map((workout) => db.workouts.delete(workout.id)),
     );
   });
+  return 'success';
 }
 
-async function refreshMeasurementHistory() {
+async function refreshMeasurementHistory(): Promise<SyncOutcome> {
   let response: Response;
   try {
     response = await fetch('/api/v1/measurements', { credentials: 'same-origin' });
   } catch {
-    return;
+    return 'retry';
   }
   if (response.status === 401) {
     window.dispatchEvent(new Event('mighty-cringe:unauthorized'));
-    return;
+    return 'unauthorized';
   }
-  if (!response.ok) return;
+  if (!response.ok) return 'retry';
 
   const payload = (await response.json()) as { items: MeasurementRecord[] };
   await db.transaction('rw', db.measurements, async () => {
@@ -131,6 +168,7 @@ async function refreshMeasurementHistory() {
         .map((measurement) => db.measurements.delete(measurement.id)),
     );
   });
+  return 'success';
 }
 
 export async function resolveConflict(conflictId: string, strategy: 'server' | 'mine') {
@@ -195,14 +233,14 @@ export async function resolveConflict(conflictId: string, strategy: 'server' | '
   await flushOutbox();
 }
 
-async function performFlush() {
-  if (!navigator.onLine) return;
+async function performFlush(): Promise<SyncOutcome> {
+  if (!browserOnline()) return 'offline';
 
-  while (navigator.onLine) {
+  while (browserOnline()) {
     const queued = await db.outbox.orderBy('sequence').first();
-    if (!queued) return;
+    if (!queued) return 'success';
     const prepared = await prepareMutation(queued);
-    if (!prepared) return;
+    if (!prepared) return 'retry';
 
     let response: Response;
     try {
@@ -213,12 +251,12 @@ async function performFlush() {
         body: JSON.stringify(prepared.mutation),
       });
     } catch {
-      return;
+      return 'retry';
     }
 
     if (response.status === 401) {
       window.dispatchEvent(new Event('mighty-cringe:unauthorized'));
-      return;
+      return 'unauthorized';
     }
     if (response.status === 409 || response.status === 400 || response.status === 404) {
       const payload = (await response.json().catch(() => ({}))) as {
@@ -232,11 +270,12 @@ async function performFlush() {
       );
       continue;
     }
-    if (!response.ok) return;
+    if (!response.ok) return 'retry';
 
     const result = (await response.json()) as MutationResponse;
     await applyMutationResult(prepared, result);
   }
+  return 'offline';
 }
 
 async function prepareMutation(queued: OutboxMutation) {
@@ -577,4 +616,58 @@ function withoutSets(workout: WorkoutRecord) {
 function nextSequence() {
   lastSequence = Math.max(Date.now() * 1_000, lastSequence + 1);
   return lastSequence;
+}
+
+async function finishSync(outcome: SyncOutcome) {
+  if (outcome === 'success') {
+    retryAttempt = 0;
+    if (retryTimer) clearTimeout(retryTimer);
+    retryTimer = null;
+    const completedAt = new Date().toISOString();
+    await db.meta.put({ key: 'lastSuccessfulSyncAt', value: completedAt }).catch(() => undefined);
+    updateSyncStatus({ phase: 'idle', message: null });
+    return;
+  }
+  if (outcome === 'offline') {
+    updateSyncStatus({ phase: 'offline', message: null });
+    return;
+  }
+  if (outcome === 'unauthorized') {
+    updateSyncStatus({ phase: 'error', message: 'Сессия истекла — войди снова.' });
+    return;
+  }
+
+  updateSyncStatus({
+    phase: 'error',
+    message: 'Сервер пока недоступен. Данные сохранены на этом устройстве.',
+  });
+  scheduleRetry();
+}
+
+function scheduleRetry() {
+  if (retryTimer || !browserOnline()) return;
+  const delay = Math.min(2_000 * 2 ** retryAttempt, 60_000);
+  retryAttempt += 1;
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    void syncAll();
+  }, delay);
+  if (typeof retryTimer === 'object' && 'unref' in retryTimer) retryTimer.unref();
+}
+
+function combineOutcomes(outcomes: SyncOutcome[]): SyncOutcome {
+  if (outcomes.includes('unauthorized')) return 'unauthorized';
+  if (outcomes.includes('offline')) return 'offline';
+  if (outcomes.includes('retry')) return 'retry';
+  return 'success';
+}
+
+function browserOnline() {
+  return typeof navigator === 'undefined' || navigator.onLine !== false;
+}
+
+function updateSyncStatus(next: SyncStatus) {
+  if (syncStatus.phase === next.phase && syncStatus.message === next.message) return;
+  syncStatus = next;
+  for (const listener of syncListeners) listener();
 }

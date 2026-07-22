@@ -167,20 +167,71 @@ small,
   font-size: 13px;
 }
 .sync-state {
+  appearance: none;
   border: 1px solid #53604b;
   border-radius: 999px;
   padding: 6px 8px;
+  background: transparent;
   color: #c2c9b9;
   font-size: 11px;
   white-space: nowrap;
 }
-.sync-state.online {
+.sync-state.idle {
   border-color: #5e852c;
   color: #c5ef82;
+}
+.sync-state.syncing {
+  border-color: #7d913e;
+  color: #dff5a7;
+  cursor: wait;
+}
+.sync-state.error {
+  border-color: #a45d46;
+  color: #ffd6ca;
 }
 .sync-state.conflict {
   border-color: #a45d46;
   color: #ffd6ca;
+}
+.connectivity-notice,
+.recovery-notice {
+  margin: 14px 0 0;
+  padding: 11px 12px;
+  border: 1px solid #6d793b;
+  border-radius: 12px;
+  background: #242918;
+  color: #dce6c6;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.connectivity-notice.error {
+  border-color: #8b4c3d;
+  background: #2b1c18;
+  color: #ffd6ca;
+}
+.recovery-notice {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  border-color: #567338;
+  background: #202b18;
+}
+.recovery-notice strong,
+.recovery-notice span {
+  display: block;
+}
+.recovery-notice span {
+  margin-top: 3px;
+  color: #aebaa1;
+}
+.recovery-notice button {
+  border: 0;
+  padding: 0 3px;
+  background: transparent;
+  color: #c5ef82;
+  font-size: 18px;
 }
 .screen {
   margin-top: 44px;
