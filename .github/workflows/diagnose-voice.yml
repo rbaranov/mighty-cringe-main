@@ -1,0 +1,54 @@
+name: Diagnose production voice processing
+
+on:
+  push:
+    branches: [agent/voice-processing-diagnostic]
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    environment: production
+    runs-on: [self-hosted, linux, x64, mighty-cringe-production]
+    timeout-minutes: 5
+    steps:
+      - name: Check out the diagnostic revision
+        uses: actions/checkout@v4
+
+      - name: Inspect voice worker and queue without user content
+        working-directory: infra/production
+        env:
+          PRODUCTION_ENV_FILE: /etc/mighty-cringe/production.env
+        run: |
+          set -euo pipefail
+
+          docker compose --env-file "$PRODUCTION_ENV_FILE" ps worker
+          docker compose --env-file "$PRODUCTION_ENV_FILE" exec -T postgres sh -lc '
+            psql --no-psqlrc --set=ON_ERROR_STOP=1 \
+              --username "$POSTGRES_USER" \
+              --dbname "$POSTGRES_DB" \
+              --command "
+                select
+                  status,
+                  attempts,
+                  extract(epoch from (now() - updated_at))::integer as seconds_since_update,
+                  case
+                    when next_attempt_at is null then null
+                    else greatest(
+                      0,
+                      extract(epoch from (next_attempt_at - now()))::integer
+                    )
+                  end as retry_in_seconds,
+                  left(coalesce(last_error, '\'''\''), 200) as last_error
+                from voice_entries
+                order by created_at desc
+                limit 10;
+              "
+          '
+          docker compose --env-file "$PRODUCTION_ENV_FILE" logs \
+            --since=30m \
+            --tail=200 \
+            --no-color \
+            worker |
+            sed -E 's/"id":"[^"]+"/"id":"[redacted]"/g'
