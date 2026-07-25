@@ -13,6 +13,7 @@ import {
   refreshVoiceEntries,
   requestVoiceDeletion,
   revokeVoiceConsent,
+  waitForVoiceEntry,
 } from './voice';
 
 const id = '82000000-0000-4000-8000-000000000001';
@@ -124,6 +125,54 @@ describe('private durable voice queue', () => {
     const entry = await db.voiceEntries.get(id);
     expect(entry).toMatchObject({ status: 'confirmed', transcript: 'жим 40 на 12' });
     expect(entry?.audio).toBeInstanceOf(Blob);
+  });
+
+  it('polls a pending entry until the server transcript is confirmed without using HTTP cache', async () => {
+    await queueVoiceRecording({
+      id,
+      workoutId,
+      audio: new Blob(['private-audio'], { type: 'audio/webm' }),
+      consentVersion: '2026-07-22',
+      now: new Date(createdAt),
+    });
+    await db.voiceEntries.update(id, { status: 'pending', serverStored: true });
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ items: [serverEntry('pending')] }))
+      .mockResolvedValueOnce(
+        Response.json({ items: [{ ...serverEntry('confirmed'), transcript: 'жим 40 на 12' }] }),
+      );
+    vi.stubGlobal('fetch', request);
+
+    await expect(waitForVoiceEntry(id, { intervalMs: 0 })).resolves.toMatchObject({
+      status: 'confirmed',
+      transcript: 'жим 40 на 12',
+    });
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(request).toHaveBeenNthCalledWith(1, '/api/v1/voice-entries', {
+      cache: 'no-store',
+      credentials: 'same-origin',
+    });
+  });
+
+  it('stops polling immediately when the voice panel is closed', async () => {
+    await queueVoiceRecording({
+      id,
+      workoutId,
+      audio: new Blob(['private-audio'], { type: 'audio/webm' }),
+      consentVersion: '2026-07-22',
+      now: new Date(createdAt),
+    });
+    await db.voiceEntries.update(id, { status: 'pending', serverStored: true });
+    const request = vi.fn<typeof fetch>();
+    vi.stubGlobal('fetch', request);
+    const controller = new AbortController();
+
+    const polling = waitForVoiceEntry(id, { intervalMs: 60_000, signal: controller.signal });
+    controller.abort();
+
+    await expect(polling).resolves.toMatchObject({ status: 'pending' });
+    expect(request).not.toHaveBeenCalled();
   });
 
   it('keeps a saved recording queued when a later local sync step fails', async () => {

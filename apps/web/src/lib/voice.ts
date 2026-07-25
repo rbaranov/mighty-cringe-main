@@ -12,6 +12,10 @@ export type VoiceConfig = {
 
 export type VoiceSyncOutcome = 'success' | 'offline' | 'retry' | 'unauthorized';
 export type VoiceLocalSaveFailure = 'quota' | 'storage';
+export type VoicePollOptions = {
+  intervalMs?: number;
+  signal?: AbortSignal;
+};
 
 const voiceConsentMetaKey = 'voiceConsentVersion';
 
@@ -122,7 +126,10 @@ export async function refreshVoiceEntries(): Promise<VoiceSyncOutcome> {
   if (!browserOnline()) return 'offline';
   let response: Response;
   try {
-    response = await fetch('/api/v1/voice-entries', { credentials: 'same-origin' });
+    response = await fetch('/api/v1/voice-entries', {
+      cache: 'no-store',
+      credentials: 'same-origin',
+    });
   } catch {
     return 'retry';
   }
@@ -170,6 +177,21 @@ export async function refreshVoiceEntries(): Promise<VoiceSyncOutcome> {
   } catch {
     return 'retry';
   }
+}
+
+export async function waitForVoiceEntry(
+  id: string,
+  options: VoicePollOptions = {},
+): Promise<LocalVoiceEntry | undefined> {
+  const intervalMs = options.intervalMs ?? 900;
+  let entry = await db.voiceEntries.get(id);
+  while (entry && voiceEntryIsInProgress(entry) && !options.signal?.aborted) {
+    const shouldContinue = await waitForPoll(intervalMs, options.signal);
+    if (!shouldContinue) break;
+    await refreshVoiceEntries();
+    entry = await db.voiceEntries.get(id);
+  }
+  return entry;
 }
 
 export async function requestVoiceDeletion(id: string): Promise<VoiceSyncOutcome> {
@@ -369,6 +391,30 @@ function parseVoiceEntry(value: unknown): VoiceEntryRecord | null {
 
 function due(entry: LocalVoiceEntry) {
   return !entry.nextAttemptAt || entry.nextAttemptAt <= new Date().toISOString();
+}
+
+function voiceEntryIsInProgress(entry: LocalVoiceEntry) {
+  return (
+    entry.status === 'queued' ||
+    entry.status === 'uploading' ||
+    entry.status === 'pending' ||
+    entry.status === 'processing'
+  );
+}
+
+function waitForPoll(intervalMs: number, signal?: AbortSignal) {
+  if (signal?.aborted) return Promise.resolve(false);
+  return new Promise<boolean>((resolve) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', abort);
+      resolve(true);
+    }, intervalMs);
+    const abort = () => {
+      clearTimeout(timer);
+      resolve(false);
+    };
+    signal?.addEventListener('abort', abort, { once: true });
+  });
 }
 
 function browserOnline() {
