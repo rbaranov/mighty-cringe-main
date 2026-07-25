@@ -287,6 +287,29 @@ test(
     assert.equal((await repository.listTrainerAthletes(trainer.id))[0].id, user.id);
     assert.equal((await repository.listSharedWorkouts(trainer.id, user.id)).length, 1);
     assert.equal((await repository.listSharedMeasurements(trainer.id, user.id)).length, 1);
+    await assert.rejects(
+      repository.deleteWorkout(user.id, {
+        clientMutationId: randomUUID(),
+        workoutId,
+        baseRevision: 1,
+      }),
+      RepositoryConflictError,
+    );
+    const deleteWorkoutMutationId = randomUUID();
+    const deletedWorkout = await repository.deleteWorkout(user.id, {
+      clientMutationId: deleteWorkoutMutationId,
+      workoutId,
+      baseRevision: 2,
+    });
+    assert.equal(deletedWorkout.duplicate, false);
+    const repeatedWorkoutDelete = await repository.deleteWorkout(user.id, {
+      clientMutationId: deleteWorkoutMutationId,
+      workoutId,
+      baseRevision: 2,
+    });
+    assert.equal(repeatedWorkoutDelete.duplicate, true);
+    assert.deepEqual(await repository.listWorkouts(user.id), []);
+    assert.deepEqual(await repository.listSharedWorkouts(trainer.id, user.id), []);
     assert.equal(await repository.revokeAthleteTrainer(user.id, inviteNow), true);
     await assert.rejects(repository.listSharedWorkouts(trainer.id, user.id), /Record not found/);
   },

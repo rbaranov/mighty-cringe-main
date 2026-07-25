@@ -12,6 +12,8 @@ export type VoiceConfig = {
 
 export type VoiceSyncOutcome = 'success' | 'offline' | 'retry' | 'unauthorized';
 
+const voiceConsentMetaKey = 'voiceConsentVersion';
+
 let activeFlush: Promise<VoiceSyncOutcome> | null = null;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -42,6 +44,18 @@ export async function loadVoiceConfig(): Promise<VoiceConfig | null> {
   } catch {
     return null;
   }
+}
+
+export async function hasAcceptedVoiceConsent(version: string) {
+  return (await db.meta.get(voiceConsentMetaKey))?.value === version;
+}
+
+export async function acceptVoiceConsent(version: string) {
+  await db.meta.put({ key: voiceConsentMetaKey, value: version });
+}
+
+export async function revokeVoiceConsent() {
+  await db.meta.delete(voiceConsentMetaKey);
 }
 
 export async function queueVoiceRecording(input: {

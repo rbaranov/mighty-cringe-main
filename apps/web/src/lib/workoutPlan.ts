@@ -18,14 +18,7 @@ export function applyWorkoutCommandToPlan(
   }
 
   if (command.type === 'remove') {
-    const removed = ordered.find((item) => item.id === command.source.item.id);
-    const remaining = ordered.filter((item) => item.id !== command.source.item.id);
-    if (removed?.supersetGroup !== null && removed?.supersetGroup !== undefined) {
-      for (const item of remaining) {
-        if (item.supersetGroup === removed.supersetGroup) item.supersetGroup = null;
-      }
-    }
-    return normalizeWorkoutPlan(remaining);
+    return normalizeWorkoutPlan(ordered.filter((item) => item.id !== command.source.item.id));
   }
 
   if (command.type === 'add') {
@@ -46,15 +39,49 @@ export function applyWorkoutCommandToPlan(
   if (sourceIndex < 0) return ordered;
   const [source] = ordered.splice(sourceIndex, 1);
   if (source.supersetGroup !== null) {
-    const detachedGroup = source.supersetGroup;
     source.supersetGroup = null;
-    for (const item of ordered) {
-      if (item.supersetGroup === detachedGroup) item.supersetGroup = null;
-    }
   }
   const anchorIndex = ordered.findIndex((item) => item.id === command.anchor.item.id);
   if (anchorIndex < 0) return normalizeWorkoutPlan([...ordered, source]);
   ordered.splice(anchorIndex + (command.placement === 'after' ? 1 : 0), 0, source);
+  return normalizeWorkoutPlan(ordered);
+}
+
+export function toggleWorkoutGroupLink(plan: WorkoutExercise[], itemId: string) {
+  const ordered = normalizeWorkoutPlan(plan).map((item) => ({ ...item }));
+  const index = ordered.findIndex((item) => item.id === itemId);
+  const current = ordered[index];
+  const following = ordered[index + 1];
+  if (!current || !following) return ordered;
+
+  if (current.supersetGroup !== null && current.supersetGroup === following.supersetGroup) {
+    const group = current.supersetGroup;
+    const left = ordered.filter(
+      (item) => item.supersetGroup === group && item.position <= current.position,
+    );
+    const right = ordered.filter(
+      (item) => item.supersetGroup === group && item.position >= following.position,
+    );
+    const rightGroup = Math.max(0, ...ordered.map((item) => item.supersetGroup ?? 0)) + 1;
+    for (const item of left) item.supersetGroup = left.length >= 2 ? group : null;
+    for (const item of right) item.supersetGroup = right.length >= 2 ? rightGroup : null;
+    return normalizeWorkoutPlan(ordered);
+  }
+
+  const targetGroup =
+    current.supersetGroup ??
+    following.supersetGroup ??
+    Math.max(0, ...ordered.map((item) => item.supersetGroup ?? 0)) + 1;
+  const mergedGroups = new Set(
+    [current.supersetGroup, following.supersetGroup].filter(
+      (group): group is number => group !== null,
+    ),
+  );
+  for (const item of ordered) {
+    if (mergedGroups.has(item.supersetGroup ?? -1)) item.supersetGroup = targetGroup;
+  }
+  current.supersetGroup = targetGroup;
+  following.supersetGroup = targetGroup;
   return normalizeWorkoutPlan(ordered);
 }
 

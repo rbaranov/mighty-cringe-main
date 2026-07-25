@@ -1,6 +1,7 @@
 import type {
   DeleteMeasurementInput,
   DeleteSetInput,
+  DeleteWorkoutInput,
   MeasurementRecord,
   SetRecord,
   SyncMutation,
@@ -15,6 +16,7 @@ import { flushVoiceQueue, refreshVoiceEntries } from './voice';
 
 type MutationResponse =
   | { entityType: 'workout'; entity: WorkoutRecord; duplicate: boolean }
+  | { entityType: 'workout'; entity: null; entityId: string; duplicate: boolean }
   | { entityType: 'set'; entity: SetRecord; duplicate: boolean }
   | { entityType: 'set'; entity: null; entityId: string; duplicate: boolean }
   | { entityType: 'measurement'; entity: MeasurementRecord; duplicate: boolean }
@@ -335,8 +337,14 @@ async function applyMutationResult(queued: OutboxMutation, result: MutationRespo
     );
 
     if (result.entity === null) {
-      if (result.entityType === 'set') await db.sets.delete(result.entityId);
-      else await db.measurements.delete(result.entityId);
+      if (result.entityType === 'workout') {
+        await db.sets.where('workoutId').equals(result.entityId).delete();
+        await db.workouts.delete(result.entityId);
+      } else if (result.entityType === 'set') {
+        await db.sets.delete(result.entityId);
+      } else {
+        await db.measurements.delete(result.entityId);
+      }
       await db.outbox.delete(queued.id);
       return;
     }
@@ -453,6 +461,18 @@ async function rebaseMutation(conflict: SyncConflict): Promise<SyncMutation | nu
     return { type: 'workout.update', payload };
   }
   if (
+    conflict.mutation.type === 'workout.delete' &&
+    conflict.current &&
+    isWorkoutRecord(conflict.current)
+  ) {
+    const payload: DeleteWorkoutInput = {
+      ...conflict.mutation.payload,
+      clientMutationId,
+      baseRevision: conflict.current.revision,
+    };
+    return { type: 'workout.delete', payload };
+  }
+  if (
     conflict.mutation.type === 'set.update' &&
     conflict.current &&
     isSetRecord(conflict.current)
@@ -564,6 +584,12 @@ function mutationEntity(mutation: SyncMutation) {
         key: `workout:${mutation.payload.id}`,
       };
     case 'workout.update':
+      return {
+        type: 'workout' as const,
+        id: mutation.payload.workoutId,
+        key: `workout:${mutation.payload.workoutId}`,
+      };
+    case 'workout.delete':
       return {
         type: 'workout' as const,
         id: mutation.payload.workoutId,

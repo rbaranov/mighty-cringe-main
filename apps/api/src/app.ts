@@ -10,6 +10,7 @@ import {
   deletePushSubscriptionSchema,
   deleteMeasurementSchema,
   deleteSetSchema,
+  deleteWorkoutSchema,
   exerciseDiscoveryQuerySchema,
   syncMutationSchema,
   pushSubscriptionSchema,
@@ -586,6 +587,21 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
     }
   });
 
+  app.delete('/api/v1/workouts/:workoutId', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+
+    const workoutId = (request.params as { workoutId?: unknown }).workoutId;
+    const parsed = deleteWorkoutSchema.safeParse({ ...(request.body as object), workoutId });
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() });
+
+    try {
+      return await repository.deleteWorkout(user.id, parsed.data);
+    } catch (error) {
+      return sendRepositoryError(reply, error);
+    }
+  });
+
   app.post('/api/v1/sets', async (request, reply) => {
     const user = await getCurrentUser(request, repository, now());
     if (!user) return reply.status(401).send({ error: 'Authentication required' });
@@ -697,6 +713,9 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
           break;
         case 'workout.update':
           result = await repository.updateWorkout(user.id, parsed.data.payload);
+          break;
+        case 'workout.delete':
+          result = await repository.deleteWorkout(user.id, parsed.data.payload);
           break;
         case 'set.create':
           result = await repository.createSet(user.id, parsed.data.payload);

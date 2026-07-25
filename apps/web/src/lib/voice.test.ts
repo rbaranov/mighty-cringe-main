@@ -4,11 +4,14 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { db } from './db';
 import {
+  acceptVoiceConsent,
   flushVoiceQueue,
+  hasAcceptedVoiceConsent,
   loadVoiceConfig,
   queueVoiceRecording,
   refreshVoiceEntries,
   requestVoiceDeletion,
+  revokeVoiceConsent,
 } from './voice';
 
 const id = '82000000-0000-4000-8000-000000000001';
@@ -41,6 +44,15 @@ describe('private durable voice queue', () => {
 
     await expect(loadVoiceConfig()).resolves.toMatchObject({ enabled: true, maximumSeconds: 60 });
     expect(await db.meta.get('voiceConfig')).toBeDefined();
+  });
+
+  it('remembers consent for the current version and asks again after revocation or a new version', async () => {
+    await expect(hasAcceptedVoiceConsent('2026-07-26')).resolves.toBe(false);
+    await acceptVoiceConsent('2026-07-26');
+    await expect(hasAcceptedVoiceConsent('2026-07-26')).resolves.toBe(true);
+    await expect(hasAcceptedVoiceConsent('2026-08-01')).resolves.toBe(false);
+    await revokeVoiceConsent();
+    await expect(hasAcceptedVoiceConsent('2026-07-26')).resolves.toBe(false);
   });
 
   it('stores audio locally before uploading it with explicit consent', async () => {

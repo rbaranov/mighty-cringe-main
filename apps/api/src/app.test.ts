@@ -625,6 +625,38 @@ test('OAuth sessions isolate athlete data, support logout, and enforce admin rol
   assert.equal(adminUsers.statusCode, 200);
   assert.equal(adminUsers.json().items.length, 4);
 
+  const deleteWorkoutMutation = {
+    type: 'workout.delete',
+    payload: {
+      clientMutationId: '30000000-0000-4000-8000-000000000004',
+      workoutId,
+      baseRevision: 3,
+    },
+  };
+  const deletedWorkout = await app.inject({
+    method: 'POST',
+    url: '/api/v1/sync',
+    headers: { cookie: athleteOneCookie },
+    payload: deleteWorkoutMutation,
+  });
+  assert.equal(deletedWorkout.statusCode, 200);
+  assert.equal(deletedWorkout.json().entity, null);
+  assert.equal(deletedWorkout.json().duplicate, false);
+  const repeatedWorkoutDelete = await app.inject({
+    method: 'POST',
+    url: '/api/v1/sync',
+    headers: { cookie: athleteOneCookie },
+    payload: deleteWorkoutMutation,
+  });
+  assert.equal(repeatedWorkoutDelete.statusCode, 200);
+  assert.equal(repeatedWorkoutDelete.json().duplicate, true);
+  const historyAfterWorkoutDelete = await app.inject({
+    method: 'GET',
+    url: '/api/v1/workouts',
+    headers: { cookie: athleteOneCookie },
+  });
+  assert.deepEqual(historyAfterWorkoutDelete.json().items, []);
+
   const logout = await app.inject({
     method: 'POST',
     url: '/api/v1/auth/logout',

@@ -15,6 +15,7 @@ import {
 type Props = {
   exercise: Exercise | null;
   initial: LocalSet | null;
+  defaults: LocalSet | null;
   onClose: () => void;
   onExplain: () => void;
   onSave: (input: {
@@ -25,7 +26,7 @@ type Props = {
   }) => void;
 };
 
-export function SetSheet({ exercise, initial, onClose, onExplain, onSave }: Props) {
+export function SetSheet({ exercise, initial, defaults, onClose, onExplain, onSave }: Props) {
   const { locale, unitSystem } = usePreferences();
   const [weight, setWeight] = useState('');
   const [reps, setReps] = useState('');
@@ -33,11 +34,19 @@ export function SetSheet({ exercise, initial, onClose, onExplain, onSave }: Prop
   const [comment, setComment] = useState('');
 
   useEffect(() => {
-    setWeight(initial ? String(displayWeight(initial.weightKg, unitSystem)) : '');
-    setReps(initial ? String(initial.reps) : '');
-    setRir(initial?.rir === null || initial?.rir === undefined ? '' : String(initial.rir));
+    const source = initial ?? defaults;
+    setWeight(source ? String(displayWeight(source.weightKg, unitSystem)) : '');
+    setReps(source ? String(source.reps) : '');
+    setRir(source?.rir === null || source?.rir === undefined ? '' : String(source.rir));
     setComment(initial?.comment ?? '');
-  }, [exercise?.id, initial?.id, initial?.updatedAt, unitSystem]);
+  }, [
+    exercise?.id,
+    initial?.id,
+    initial?.updatedAt,
+    defaults?.id,
+    defaults?.updatedAt,
+    unitSystem,
+  ]);
 
   useEffect(() => {
     if (!exercise) return;

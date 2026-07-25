@@ -20,6 +20,7 @@ describe('SetSheet', () => {
   it('opens without forcing iOS Safari to focus and move the viewport', () => {
     const html = renderToStaticMarkup(
       <SetSheet
+        defaults={null}
         exercise={exercise}
         initial={null}
         onClose={() => {}}

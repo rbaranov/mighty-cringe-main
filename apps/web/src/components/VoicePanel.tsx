@@ -5,11 +5,14 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type LocalVoiceEntry } from '../lib/db';
 import { tr, usePreferences } from '../lib/preferences';
 import {
+  acceptVoiceConsent,
   flushVoiceQueue,
+  hasAcceptedVoiceConsent,
   loadVoiceConfig,
   queueVoiceRecording,
   refreshVoiceEntries,
   requestVoiceDeletion,
+  revokeVoiceConsent,
   type VoiceConfig,
 } from '../lib/voice';
 
@@ -34,16 +37,19 @@ export function VoicePanel({
     'idle',
   );
   const [error, setError] = useState<string | null>(null);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [latestEntryId, setLatestEntryId] = useState<string | null>(null);
   const capture = useRef<Capture | null>(null);
-  const entries = useLiveQuery(
-    () => db.voiceEntries.orderBy('createdAt').reverse().limit(5).toArray(),
-    [],
-    [],
+  const deliveredTranscriptId = useRef<string | null>(null);
+  const latestEntry = useLiveQuery(
+    () => (latestEntryId ? db.voiceEntries.get(latestEntryId) : undefined),
+    [latestEntryId],
   );
 
   useEffect(() => {
-    void loadVoiceConfig().then(setConfig);
+    void loadVoiceConfig().then(async (next) => {
+      setConfig(next);
+      setConsented(next ? await hasAcceptedVoiceConsent(next.consentVersion) : false);
+    });
     void refreshVoiceEntries();
     return () => {
       const current = capture.current;
@@ -54,6 +60,29 @@ export function VoicePanel({
       current.stream.getTracks().forEach((track) => track.stop());
     };
   }, []);
+
+  useEffect(() => {
+    if (!latestEntry) return;
+    if (
+      latestEntry.status === 'confirmed' &&
+      latestEntry.transcript &&
+      deliveredTranscriptId.current !== latestEntry.id
+    ) {
+      deliveredTranscriptId.current = latestEntry.id;
+      onTranscript(latestEntry.transcript);
+      return;
+    }
+    if (
+      latestEntry.status !== 'queued' &&
+      latestEntry.status !== 'uploading' &&
+      latestEntry.status !== 'pending' &&
+      latestEntry.status !== 'processing'
+    ) {
+      return;
+    }
+    const timer = window.setTimeout(() => void refreshVoiceEntries(), 900);
+    return () => window.clearTimeout(timer);
+  }, [latestEntry, onTranscript]);
 
   async function startRecording() {
     if (!config?.enabled || !consented || !activeWorkoutId || capture.current) return;
@@ -125,6 +154,7 @@ export function VoicePanel({
         audio,
         consentVersion: currentConfig.consentVersion,
       });
+      setLatestEntryId(entry.id);
       if (audio.size > currentConfig.maximumBytes) {
         await db.voiceEntries.update(entry.id, {
           status: 'failed',
@@ -140,7 +170,6 @@ export function VoicePanel({
         await flushVoiceQueue();
         await refreshVoiceEntries();
       }
-      setConsented(false);
       setCaptureState('idle');
     } catch {
       setCaptureState('idle');
@@ -152,11 +181,6 @@ export function VoicePanel({
         ),
       );
     }
-  }
-
-  async function deleteEntry(id: string) {
-    setConfirmDeleteId(null);
-    await requestVoiceDeletion(id);
   }
 
   if (config === undefined) {
@@ -193,41 +217,35 @@ export function VoicePanel({
 
   return (
     <div className="voice-panel">
-      <div className="voice-consent">
-        <strong>
-          {tr(
-            locale,
-            'Перед каждой записью — явное согласие',
-            'Explicit consent before every recording',
-          )}
-        </strong>
-        <p>
-          {tr(
-            locale,
-            'Аудио сразу сохранится на этом устройстве, затем уйдёт в приватное серверное хранилище и в',
-            'Audio is saved on this device first, then sent to private server storage and to',
-          )}{' '}
-          {config.provider}{' '}
-          {tr(
-            locale,
-            'только для расшифровки. Оно хранится до твоего явного удаления.',
-            'for transcription only. It is retained until you explicitly delete it.',
-          )}
-        </p>
-        <label>
-          <input
-            checked={consented}
-            disabled={captureState !== 'idle'}
-            onChange={(event) => setConsented(event.target.checked)}
-            type="checkbox"
-          />
-          {tr(
-            locale,
-            'Я согласен на запись и описанную обработку этого аудио',
-            'I agree to record and process this audio as described',
-          )}
-        </label>
-      </div>
+      {!consented && (
+        <div className="voice-consent">
+          <strong>
+            {tr(locale, 'Одно согласие для быстрых записей', 'Consent once for quick recordings')}
+          </strong>
+          <p>
+            {tr(
+              locale,
+              'Аудио сначала сохранится на устройстве, затем уйдёт в приватное хранилище и в',
+              'Audio is saved on this device first, then sent to private storage and to',
+            )}{' '}
+            {config.provider}{' '}
+            {tr(
+              locale,
+              'только для расшифровки. Оно хранится до твоего явного удаления. Условия и архив доступны в настройках.',
+              'for transcription only. It is retained until you delete it. Terms and recordings are available in Settings.',
+            )}
+          </p>
+          <button
+            className="button primary full"
+            onClick={() =>
+              void acceptVoiceConsent(config.consentVersion).then(() => setConsented(true))
+            }
+            type="button"
+          >
+            {tr(locale, 'Принять и продолжить', 'Accept and continue')}
+          </button>
+        </div>
+      )}
 
       {captureState === 'recording' ? (
         <div className="recording-controls" role="status">
@@ -259,7 +277,7 @@ export function VoicePanel({
             ? tr(locale, 'Запрашиваем микрофон…', 'Requesting microphone…')
             : captureState === 'saving'
               ? tr(locale, 'Сохраняем на устройстве…', 'Saving on device…')
-              : tr(locale, 'Согласен и начать запись', 'Agree and start recording')}
+              : tr(locale, 'Начать запись', 'Start recording')}
         </button>
       )}
       {!activeWorkoutId && (
@@ -272,58 +290,119 @@ export function VoicePanel({
           {error}
         </p>
       )}
-
-      {entries.length > 0 && (
-        <div className="voice-history">
-          <strong>{tr(locale, 'Последние записи', 'Recent recordings')}</strong>
-          {entries.map((entry) => (
-            <article key={entry.id}>
-              <div>
-                <span>{voiceStatusLabel(entry, locale)}</span>
-                <small>{formatVoiceTime(entry.createdAt, locale)}</small>
-              </div>
-              {entry.transcript && <p>«{entry.transcript}»</p>}
-              {entry.status !== 'deleting' && <VoicePlayback entry={entry} />}
-              {entry.status === 'confirmed' && entry.transcript && (
-                <button
-                  className="button primary small"
-                  onClick={() => onTranscript(entry.transcript!)}
-                  type="button"
-                >
-                  {tr(locale, 'Разобрать расшифровку', 'Parse transcript')}
-                </button>
-              )}
-              {confirmDeleteId === entry.id ? (
-                <div className="voice-delete-confirm">
-                  <span>
-                    {tr(
-                      locale,
-                      'Удалить аудио с устройства и сервера?',
-                      'Delete audio from the device and server?',
-                    )}
-                  </span>
-                  <button onClick={() => void deleteEntry(entry.id)} type="button">
-                    {tr(locale, 'Да, удалить', 'Delete')}
-                  </button>
-                  <button onClick={() => setConfirmDeleteId(null)} type="button">
-                    {tr(locale, 'Отмена', 'Cancel')}
-                  </button>
-                </div>
-              ) : (
-                <button
-                  className="voice-delete"
-                  disabled={entry.status === 'deleting'}
-                  onClick={() => setConfirmDeleteId(entry.id)}
-                  type="button"
-                >
-                  {tr(locale, 'Удалить аудио', 'Delete audio')}
-                </button>
-              )}
-            </article>
-          ))}
-        </div>
+      {latestEntry && (
+        <p className="voice-live-status" role="status">
+          {latestEntry.status === 'confirmed' && latestEntry.transcript
+            ? `«${latestEntry.transcript}»`
+            : voiceStatusLabel(latestEntry, locale)}
+        </p>
       )}
     </div>
+  );
+}
+
+export function VoiceSettingsPanel() {
+  const { locale } = usePreferences();
+  const [config, setConfig] = useState<VoiceConfig | null | undefined>(undefined);
+  const [consented, setConsented] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const entries = useLiveQuery(
+    () => db.voiceEntries.orderBy('createdAt').reverse().toArray(),
+    [],
+    [],
+  );
+
+  useEffect(() => {
+    void loadVoiceConfig().then(async (next) => {
+      setConfig(next);
+      setConsented(next ? await hasAcceptedVoiceConsent(next.consentVersion) : false);
+    });
+    void refreshVoiceEntries();
+  }, []);
+
+  async function deleteEntry(id: string) {
+    setConfirmDeleteId(null);
+    await requestVoiceDeletion(id);
+  }
+
+  return (
+    <section className="voice-settings-panel">
+      <div className="section-head">
+        <div>
+          <p className="eyebrow">{tr(locale, 'Приватность', 'Privacy')}</p>
+          <h2>{tr(locale, 'Голос и записи', 'Voice and recordings')}</h2>
+        </div>
+        {config?.enabled && (
+          <span className={consented ? 'voice-consent-status accepted' : 'voice-consent-status'}>
+            {consented
+              ? tr(locale, 'согласие принято', 'consent accepted')
+              : tr(locale, 'не принято', 'not accepted')}
+          </span>
+        )}
+      </div>
+      <p className="voice-settings-copy">
+        {tr(
+          locale,
+          'Записи хранятся приватно до удаления. Согласие действует для текущей версии условий и не спрашивается перед каждым подходом.',
+          'Recordings stay private until deletion. Consent applies to the current terms and is not requested before every set.',
+        )}
+      </p>
+      {consented && (
+        <button
+          className="button ghost small"
+          onClick={() =>
+            void revokeVoiceConsent().then(() => {
+              setConsented(false);
+            })
+          }
+          type="button"
+        >
+          {tr(locale, 'Отозвать согласие', 'Revoke consent')}
+        </button>
+      )}
+      <div className="voice-history">
+        <strong>{tr(locale, 'Архив записей', 'Recording archive')}</strong>
+        {!entries.length && (
+          <p className="detail-empty">{tr(locale, 'Записей пока нет.', 'No recordings yet.')}</p>
+        )}
+        {entries.map((entry) => (
+          <article key={entry.id}>
+            <div>
+              <span>{voiceStatusLabel(entry, locale)}</span>
+              <small>{formatVoiceTime(entry.createdAt, locale)}</small>
+            </div>
+            {entry.transcript && <p>«{entry.transcript}»</p>}
+            {entry.status !== 'deleting' && <VoicePlayback entry={entry} />}
+            {confirmDeleteId === entry.id ? (
+              <div className="voice-delete-confirm">
+                <span>
+                  {tr(
+                    locale,
+                    'Удалить аудио с устройства и сервера?',
+                    'Delete audio from the device and server?',
+                  )}
+                </span>
+                <button onClick={() => void deleteEntry(entry.id)} type="button">
+                  {tr(locale, 'Да, удалить', 'Delete')}
+                </button>
+                <button onClick={() => setConfirmDeleteId(null)} type="button">
+                  {tr(locale, 'Отмена', 'Cancel')}
+                </button>
+              </div>
+            ) : (
+              <button
+                className="voice-delete"
+                disabled={entry.status === 'deleting'}
+                onClick={() => setConfirmDeleteId(entry.id)}
+                type="button"
+              >
+                {tr(locale, 'Удалить аудио', 'Delete audio')}
+              </button>
+            )}
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
 

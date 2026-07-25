@@ -3172,6 +3172,366 @@ small,
 .push-settings-grid select {
   min-width: 0;
 }
+
+/* Real-workout pass: five balanced mobile tabs and a deliberate central action. */
+.tabs {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  height: calc(78px + max(12px, env(safe-area-inset-bottom)));
+  padding: 6px 8px max(12px, env(safe-area-inset-bottom));
+  overflow: visible;
+}
+.tab {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 54px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 3px;
+  padding: 4px 2px;
+  border-radius: 14px;
+  color: #7b8490;
+  font-size: 9px;
+  font-weight: 650;
+  line-height: 1;
+  touch-action: manipulation;
+}
+.tab-icon {
+  display: grid;
+  width: 30px;
+  height: 28px;
+  place-items: center;
+  border-radius: 10px;
+}
+.tab-icon svg,
+.explain-orb svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+.tab .tab-label {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tab.active .tab-icon {
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+}
+.tab.active::after {
+  position: absolute;
+  right: 26%;
+  bottom: 1px;
+  left: 26%;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--accent-deep);
+  content: '';
+}
+.explain-tab {
+  z-index: 1;
+  transform: translateY(-12px);
+  color: var(--ink);
+  overflow: visible;
+}
+.explain-tab:active {
+  transform: translateY(-10px) scale(0.97);
+}
+.explain-tab::after,
+.explain-tab.active::after {
+  display: none;
+}
+.explain-orb {
+  position: relative;
+  display: grid;
+  width: 54px;
+  height: 54px;
+  place-items: center;
+  border: 4px solid #ffffff;
+  border-radius: 19px;
+  background: linear-gradient(145deg, #4338ca, #6d5dfc 62%, #8b5cf6);
+  color: #ffffff;
+  box-shadow:
+    0 9px 22px rgb(79 70 229 / 28%),
+    inset 0 1px 0 rgb(255 255 255 / 32%);
+}
+.explain-orb i {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  display: grid;
+  width: 19px;
+  height: 19px;
+  place-items: center;
+  border: 2px solid #ffffff;
+  border-radius: 7px;
+  background: #f59e0b;
+  color: #ffffff;
+  font-size: 10px;
+  font-style: normal;
+}
+.explain-tab .tab-label {
+  overflow: visible;
+  color: #4038a8;
+  font-weight: 800;
+}
+.explain-tab:focus-visible {
+  outline: none;
+}
+.explain-tab:focus-visible .explain-orb {
+  outline: 3px solid #312e81;
+  outline-offset: 2px;
+}
+
+/* Exercise actions are a thumb-friendly bottom sheet, not a desktop popover. */
+.exercise-options-trigger {
+  display: grid;
+  width: 34px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-soft);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+.exercise-actions-sheet {
+  max-height: min(88dvh, 720px);
+  overflow-y: auto;
+}
+.exercise-actions-sheet h2 {
+  margin-bottom: 16px;
+  font-size: clamp(22px, 7vw, 30px);
+}
+.exercise-actions-grid {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.exercise-actions-grid button {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  min-height: 54px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 8px 12px;
+  background: var(--surface-soft);
+  color: var(--ink);
+  font-weight: 750;
+  text-align: left;
+}
+.exercise-actions-grid button > span {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 11px;
+  background: #ffffff;
+  color: var(--accent-deep);
+  font-size: 20px;
+}
+.exercise-actions-grid button:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
+}
+.exercise-actions-grid .danger-action {
+  margin-top: 4px;
+  border-color: #f2d2ce;
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.exercise-actions-grid .danger-action > span {
+  color: var(--danger);
+}
+
+/* The exercise screen follows the interactive mockup hierarchy. */
+.technique-preview {
+  position: relative;
+  display: grid;
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  overflow: hidden;
+  place-items: center;
+  border-radius: 14px;
+  background: linear-gradient(145deg, #1f2440, #4f46e5);
+  color: #ffffff;
+  text-decoration: none;
+}
+.technique-preview img,
+.technique-preview-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.technique-preview img {
+  object-fit: cover;
+}
+.technique-preview::after {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgb(8 10 24 / 72%), transparent 58%);
+  content: '';
+}
+.technique-preview-art {
+  display: grid;
+  place-items: center;
+  color: rgb(255 255 255 / 16%);
+  font-size: clamp(90px, 34vw, 160px);
+  font-weight: 900;
+}
+.technique-play {
+  z-index: 1;
+  display: grid;
+  width: 56px;
+  height: 56px;
+  place-items: center;
+  border: 1px solid rgb(255 255 255 / 65%);
+  border-radius: 50%;
+  background: rgb(255 255 255 / 92%);
+  color: var(--accent-deep);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 24%);
+  font-size: 20px;
+  text-indent: 3px;
+}
+.technique-preview strong {
+  position: absolute;
+  z-index: 1;
+  right: 13px;
+  bottom: 12px;
+  left: 13px;
+  overflow: hidden;
+  color: #ffffff;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.technique-preview small {
+  position: absolute;
+  z-index: 1;
+  right: 13px;
+  bottom: 30px;
+  left: 13px;
+  color: rgb(255 255 255 / 78%);
+}
+.technique-preview-fallback strong {
+  bottom: 12px;
+}
+.technique-preview-fallback small + strong {
+  bottom: 12px;
+}
+.youtube-link {
+  display: block;
+  margin-top: 8px;
+  color: var(--accent-deep);
+  font-size: 11px;
+  font-weight: 750;
+  text-align: right;
+  text-decoration: none;
+}
+.technique-links {
+  margin-top: 12px;
+}
+.exercise-detail-actions {
+  position: sticky;
+  bottom: calc(82px + env(safe-area-inset-bottom));
+  z-index: 2;
+  display: grid;
+  grid-template-columns: 1fr 1.25fr;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  background: rgb(255 255 255 / 94%);
+  box-shadow: 0 8px 30px rgb(20 24 31 / 12%);
+  backdrop-filter: blur(14px);
+}
+
+.workout-delete {
+  border-color: #f2d2ce !important;
+  color: var(--danger) !important;
+}
+.workout-history-actions {
+  flex-wrap: wrap;
+}
+
+/* Voice capture is immediate; consent and the technical archive live in Settings. */
+.voice-live-status {
+  margin: 0;
+  border-radius: 12px;
+  padding: 11px 12px;
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.voice-settings-panel {
+  margin: 18px 0;
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.voice-settings-panel h2 {
+  margin: 2px 0 0;
+  font-size: 20px;
+}
+.voice-settings-copy {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.voice-consent-status {
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: var(--surface-strong);
+  color: var(--muted);
+  font-size: 9px;
+  white-space: nowrap;
+}
+.voice-consent-status.accepted {
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+}
+.voice-settings-panel .voice-history {
+  margin-top: 16px;
+}
+
+@media (max-width: 360px) {
+  .tabs {
+    padding-inline: 4px;
+  }
+  .tab,
+  .tab .tab-label {
+    font-size: 8px;
+  }
+  .tab-icon svg {
+    width: 20px;
+    height: 20px;
+  }
+  .explain-orb {
+    width: 50px;
+    height: 50px;
+    border-radius: 17px;
+  }
+  .workout-live .exercise-card-actions .tag {
+    display: none;
+  }
+}
 .push-settings-grid input,
 .push-settings-grid select {
   min-height: 44px;
