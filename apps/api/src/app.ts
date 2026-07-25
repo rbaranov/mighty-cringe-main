@@ -57,6 +57,7 @@ type AppOptions = {
   developmentUser?: CurrentUser;
   voiceStorage?: VoiceStorage;
   voiceProcessingEnabled?: boolean;
+  voiceProvider?: string;
   pushPublicKey?: string | null;
   exerciseDiscovery?: ExerciseDiscovery;
   now?: () => Date;
@@ -404,7 +405,7 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
       maximumSeconds: maximumVoiceDurationSeconds,
       provider:
         Boolean(options.voiceStorage) && options.voiceProcessingEnabled !== false
-          ? 'OpenRouter'
+          ? (options.voiceProvider ?? 'OpenRouter')
           : null,
     };
   });

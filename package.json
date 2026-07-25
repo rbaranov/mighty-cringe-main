@@ -15,6 +15,7 @@
     "local:status": "node scripts/local-environment.mjs status",
     "local:stop": "node scripts/local-environment.mjs stop",
     "local:reset": "node scripts/local-environment.mjs reset",
+    "local:voice-acceptance:api": "node scripts/local-voice-acceptance.mjs",
     "build": "pnpm --filter @mighty-cringe/contracts build && pnpm --filter @mighty-cringe/db build && pnpm --filter @mighty-cringe/voice build && pnpm --filter @mighty-cringe/push build && pnpm --filter @mighty-cringe/api build && pnpm --filter @mighty-cringe/worker build && pnpm --filter @mighty-cringe/web build",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",

@@ -11,6 +11,7 @@ export type VoiceConfig = {
 };
 
 export type VoiceSyncOutcome = 'success' | 'offline' | 'retry' | 'unauthorized';
+export type VoiceLocalSaveFailure = 'quota' | 'storage';
 
 const voiceConsentMetaKey = 'voiceConsentVersion';
 
@@ -86,11 +87,34 @@ export async function queueVoiceRecording(input: {
   return entry;
 }
 
+export function classifyVoiceLocalSaveFailure(error: unknown): VoiceLocalSaveFailure {
+  if (
+    error instanceof DOMException &&
+    (error.name === 'QuotaExceededError' || error.name === 'NS_ERROR_DOM_QUOTA_REACHED')
+  ) {
+    return 'quota';
+  }
+  if (
+    error &&
+    typeof error === 'object' &&
+    'name' in error &&
+    (error.name === 'QuotaExceededError' || error.name === 'NS_ERROR_DOM_QUOTA_REACHED')
+  ) {
+    return 'quota';
+  }
+  return 'storage';
+}
+
 export function flushVoiceQueue() {
   if (activeFlush) return activeFlush;
-  activeFlush = performFlush().finally(() => {
-    activeFlush = null;
-  });
+  activeFlush = performFlush()
+    .catch(() => {
+      scheduleFlush(5_000);
+      return 'retry' as const;
+    })
+    .finally(() => {
+      activeFlush = null;
+    });
   return activeFlush;
 }
 
@@ -108,26 +132,44 @@ export async function refreshVoiceEntries(): Promise<VoiceSyncOutcome> {
   }
   if (!response.ok) return 'retry';
 
-  const payload = (await response.json()) as { items?: unknown };
-  if (!Array.isArray(payload.items)) return 'retry';
-  const records = payload.items.map(parseVoiceEntry).filter(Boolean) as VoiceEntryRecord[];
-  await db.transaction('rw', db.voiceEntries, async () => {
-    for (const record of records) {
-      const local = await db.voiceEntries.get(record.id);
-      if (local?.status === 'deleting') continue;
-      await db.voiceEntries.put({
-        ...record,
-        audio: local?.audio ?? null,
-        mimeType: local?.mimeType ?? '',
-        consentVersion: local?.consentVersion ?? '',
-        serverStored: true,
-        uploadAttempts: local?.uploadAttempts ?? 0,
-        retryable: false,
-        nextAttemptAt: null,
-      });
-    }
-  });
-  return 'success';
+  try {
+    const payload = (await response.json()) as { items?: unknown };
+    if (!Array.isArray(payload.items)) return 'retry';
+    const records = payload.items.map(parseVoiceEntry).filter(Boolean) as VoiceEntryRecord[];
+    await db.transaction('rw', db.voiceEntries, async () => {
+      for (const record of records) {
+        const local = await db.voiceEntries.get(record.id);
+        if (local?.status === 'deleting') continue;
+        if (local) {
+          await db.voiceEntries.update(record.id, {
+            workoutId: record.workoutId,
+            status: record.status,
+            transcript: record.transcript,
+            createdAt: record.createdAt,
+            updatedAt: record.updatedAt,
+            lastError: record.lastError,
+            serverStored: true,
+            retryable: false,
+            nextAttemptAt: null,
+          });
+          continue;
+        }
+        await db.voiceEntries.put({
+          ...record,
+          audio: null,
+          mimeType: '',
+          consentVersion: '',
+          serverStored: true,
+          uploadAttempts: 0,
+          retryable: false,
+          nextAttemptAt: null,
+        });
+      }
+    });
+    return 'success';
+  } catch {
+    return 'retry';
+  }
 }
 
 export async function requestVoiceDeletion(id: string): Promise<VoiceSyncOutcome> {

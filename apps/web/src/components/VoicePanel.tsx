@@ -6,6 +6,7 @@ import { db, type LocalVoiceEntry } from '../lib/db';
 import { tr, usePreferences } from '../lib/preferences';
 import {
   acceptVoiceConsent,
+  classifyVoiceLocalSaveFailure,
   flushVoiceQueue,
   hasAcceptedVoiceConsent,
   loadVoiceConfig,
@@ -148,14 +149,35 @@ export function VoicePanel({
   }
 
   async function persistRecording(audio: Blob, currentConfig: VoiceConfig) {
+    let entry: LocalVoiceEntry;
     try {
-      const entry = await queueVoiceRecording({
+      entry = await queueVoiceRecording({
         workoutId: activeWorkoutId,
         audio,
         consentVersion: currentConfig.consentVersion,
       });
-      setLatestEntryId(entry.id);
-      if (audio.size > currentConfig.maximumBytes) {
+    } catch (saveError) {
+      setCaptureState('idle');
+      setError(
+        classifyVoiceLocalSaveFailure(saveError) === 'quota'
+          ? tr(
+              locale,
+              'На устройстве действительно не хватает места для записи. Освободи место и попробуй снова.',
+              'There really is not enough device storage for this recording. Free some space and try again.',
+            )
+          : tr(
+              locale,
+              'Не удалось сохранить запись в хранилище приложения. Перезапусти Mighty & Cringe и попробуй снова.',
+              'Could not save the recording in app storage. Restart Mighty & Cringe and try again.',
+            ),
+      );
+      return;
+    }
+
+    setLatestEntryId(entry.id);
+    setCaptureState('idle');
+    if (audio.size > currentConfig.maximumBytes) {
+      try {
         await db.voiceEntries.update(entry.id, {
           status: 'failed',
           retryable: false,
@@ -166,20 +188,21 @@ export function VoicePanel({
             'The recording is too large. Delete it and record a shorter one.',
           ),
         });
-      } else {
-        await flushVoiceQueue();
-        await refreshVoiceEntries();
+      } catch {
+        setError(
+          tr(
+            locale,
+            'Запись сохранена, но не удалось обновить её статус. Повторим автоматически.',
+            'The recording was saved, but its status could not be updated. We will retry automatically.',
+          ),
+        );
       }
-      setCaptureState('idle');
-    } catch {
-      setCaptureState('idle');
-      setError(
-        tr(
-          locale,
-          'Не удалось сохранить запись на устройстве. Освободи место и попробуй снова.',
-          'Could not save the recording on this device. Free some space and try again.',
-        ),
-      );
+      return;
+    }
+
+    const syncOutcome = await flushVoiceQueue();
+    if (syncOutcome === 'success') {
+      await refreshVoiceEntries();
     }
   }
 
