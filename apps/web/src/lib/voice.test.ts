@@ -5,6 +5,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from './db';
 import {
   acceptVoiceConsent,
+  classifyVoiceLocalSaveFailure,
   flushVoiceQueue,
   hasAcceptedVoiceConsent,
   loadVoiceConfig,
@@ -86,7 +87,18 @@ describe('private durable voice queue', () => {
     expect(await db.voiceEntries.get(id)).toMatchObject({ status: 'pending', serverStored: true });
   });
 
-  it('merges a confirmed transcript without removing the retained audio', async () => {
+  it('classifies only real quota failures as missing device space', () => {
+    expect(classifyVoiceLocalSaveFailure(new DOMException('full', 'QuotaExceededError'))).toBe(
+      'quota',
+    );
+    expect(classifyVoiceLocalSaveFailure({ name: 'NS_ERROR_DOM_QUOTA_REACHED' })).toBe('quota');
+    expect(classifyVoiceLocalSaveFailure(new DOMException('failed', 'UnknownError'))).toBe(
+      'storage',
+    );
+    expect(classifyVoiceLocalSaveFailure(new Error('status refresh failed'))).toBe('storage');
+  });
+
+  it('merges a confirmed transcript without rewriting or removing the retained audio', async () => {
     await queueVoiceRecording({
       id,
       workoutId,
@@ -103,12 +115,43 @@ describe('private durable voice queue', () => {
           Response.json({ items: [{ ...serverEntry('confirmed'), transcript: 'жим 40 на 12' }] }),
         ),
     );
+    const update = vi.spyOn(db.voiceEntries, 'update');
 
     await expect(refreshVoiceEntries()).resolves.toBe('success');
 
+    expect(update).toHaveBeenCalled();
+    expect(update.mock.calls[0]?.[1]).not.toHaveProperty('audio');
     const entry = await db.voiceEntries.get(id);
     expect(entry).toMatchObject({ status: 'confirmed', transcript: 'жим 40 на 12' });
     expect(entry?.audio).toBeInstanceOf(Blob);
+  });
+
+  it('keeps a saved recording queued when a later local sync step fails', async () => {
+    await queueVoiceRecording({
+      id,
+      workoutId,
+      audio: new Blob(['private-audio'], { type: 'audio/webm' }),
+      consentVersion: '2026-07-22',
+      now: new Date(createdAt),
+    });
+    const update = vi.spyOn(db.voiceEntries, 'update').mockRejectedValueOnce(new Error('failed'));
+
+    await expect(flushVoiceQueue()).resolves.toBe('retry');
+
+    update.mockRestore();
+    expect(await db.voiceEntries.get(id)).toMatchObject({
+      status: 'queued',
+      serverStored: false,
+    });
+  });
+
+  it('treats a malformed status refresh as retryable instead of a local save failure', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>().mockResolvedValue(new Response('{', { status: 200 })),
+    );
+
+    await expect(refreshVoiceEntries()).resolves.toBe('retry');
   });
 
   it('removes local audio immediately and retries server deletion', async () => {
