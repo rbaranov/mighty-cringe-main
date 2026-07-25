@@ -41,6 +41,7 @@ export function ProgressView({
   exercises,
   measurements,
   onDeleteMeasurement,
+  onDeleteWorkout,
   onEditWorkout,
   onImportMeasurements,
   onResumeWorkout,
@@ -51,6 +52,7 @@ export function ProgressView({
   exercises: Exercise[];
   measurements: LocalMeasurement[];
   onDeleteMeasurement: (measurement: LocalMeasurement) => void;
+  onDeleteWorkout: (workout: LocalWorkout) => void;
   onEditWorkout: (workout: LocalWorkout) => void;
   onImportMeasurements: (drafts: MeasurementDraft[]) => Promise<void>;
   onResumeWorkout: (workout: LocalWorkout) => void;
@@ -231,6 +233,7 @@ export function ProgressView({
           <DayDetails
             dateKey={selectedDay.dateKey}
             exercises={exercises}
+            onDeleteWorkout={onDeleteWorkout}
             onEditWorkout={onEditWorkout}
             onResumeWorkout={onResumeWorkout}
             sets={visibleSets}
@@ -391,6 +394,7 @@ function DayDetails({
   workouts,
   sets,
   exercises,
+  onDeleteWorkout,
   onEditWorkout,
   onResumeWorkout,
 }: {
@@ -399,6 +403,7 @@ function DayDetails({
   workouts: LocalWorkout[];
   sets: LocalSet[];
   exercises: Exercise[];
+  onDeleteWorkout: (workout: LocalWorkout) => void;
   onEditWorkout: (workout: LocalWorkout) => void;
   onResumeWorkout: (workout: LocalWorkout) => void;
 }) {
@@ -443,6 +448,13 @@ function DayDetails({
                   type="button"
                 >
                   {tr(locale, 'Продолжить', 'Continue')}
+                </button>
+                <button
+                  className="button ghost small workout-delete"
+                  onClick={() => onDeleteWorkout(workout)}
+                  type="button"
+                >
+                  {tr(locale, 'Удалить', 'Delete')}
                 </button>
               </div>
             )}

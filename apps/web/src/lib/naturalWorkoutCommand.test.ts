@@ -69,6 +69,23 @@ describe('natural workout commands', () => {
     });
   });
 
+  it('keeps the full quoted target when source and replacement share a prefix', () => {
+    expect(
+      parseNaturalWorkoutCommand({
+        text: 'замени жим штанги лежа на "жим штанги лежа на наклонной скамье"',
+        catalog: fallbackCatalog,
+        plan,
+      }),
+    ).toMatchObject({
+      status: 'command_ready',
+      command: {
+        type: 'replace',
+        source: { exercise: { nameRu: 'Жим лёжа' } },
+        replacement: { nameRu: 'Жим штанги лёжа на наклонной скамье' },
+      },
+    });
+  });
+
   it('completes the original command after a discovered alias enters the personal catalog', () => {
     const personalExercise = {
       ...fallbackCatalog[7],

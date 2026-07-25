@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 
 import type {
   CurrentUser,
@@ -15,7 +23,7 @@ import type { MeasurementDraft } from './components/BodyMeasurementsSection';
 import { ProgressView } from './components/ProgressView';
 import { PushReminderSettings } from './components/PushReminderSettings';
 import { TrainerDashboard, TrainerRelationshipCard } from './components/TrainerAccess';
-import { VoicePanel } from './components/VoicePanel';
+import { VoicePanel, VoiceSettingsPanel } from './components/VoicePanel';
 import {
   activateLocalUser,
   cacheCurrentUser,
@@ -57,18 +65,14 @@ import {
   subscribeSyncStatus,
   syncAll,
 } from './lib/sync';
-import { applyWorkoutCommandToPlan, normalizeWorkoutPlan } from './lib/workoutPlan';
+import {
+  applyWorkoutCommandToPlan,
+  normalizeWorkoutPlan,
+  toggleWorkoutGroupLink,
+} from './lib/workoutPlan';
+import { buildSuggestedExercises } from './lib/workoutSuggestions';
 
 type View = 'workout' | 'progress' | 'catalog' | 'settings' | 'trainer';
-
-const suggestedIds = [
-  '10000000-0000-4000-8000-000000000001',
-  '10000000-0000-4000-8000-000000000002',
-  '10000000-0000-4000-8000-000000000003',
-  '10000000-0000-4000-8000-000000000004',
-  '10000000-0000-4000-8000-000000000005',
-  '10000000-0000-4000-8000-000000000006',
-];
 
 type AuthState =
   | { status: 'loading' }
@@ -260,12 +264,26 @@ function AuthenticatedAppContent({
     : undefined;
   const workoutContext = editingWorkout ?? activeWorkout;
   const suggested = useMemo(
-    () =>
-      suggestedIds
-        .map((id) => availableExercises.find((exercise) => exercise.id === id))
-        .filter(Boolean) as Exercise[],
-    [availableExercises],
+    () => buildSuggestedExercises({ catalog: availableExercises, workouts }),
+    [availableExercises, workouts],
   );
+  const setDefaults = useMemo(() => {
+    if (!sheet || sheet.set) return null;
+    const candidates = sets.filter((set) => set.exerciseId === sheet.exercise.id && !set.deleted);
+    const currentWorkoutSet = workoutContext
+      ? candidates
+          .filter((set) => set.workoutId === workoutContext.id)
+          .sort(
+            (left, right) =>
+              right.position - left.position || right.performedAt.localeCompare(left.performedAt),
+          )[0]
+      : null;
+    return (
+      currentWorkoutSet ??
+      candidates.sort((left, right) => right.performedAt.localeCompare(left.performedAt))[0] ??
+      null
+    );
+  }, [sets, sheet, workoutContext]);
   const exerciseDetail = exerciseDetailId
     ? (exercises.find((exercise) => exercise.id === exerciseDetailId) ?? null)
     : null;
@@ -313,7 +331,7 @@ function AuthenticatedAppContent({
       id: crypto.randomUUID(),
       exerciseId: exercise.id,
       position,
-      supersetGroup: null,
+      supersetGroup: Math.floor(position / 2) + 1,
     }));
     await db.workouts.put({
       id,
@@ -550,14 +568,7 @@ function AuthenticatedAppContent({
 
   async function removeExercise(itemId: string) {
     if (!workoutContext) return;
-    const removed = workoutContext.exercises.find((item) => item.id === itemId);
-    let nextPlan = workoutContext.exercises.filter((item) => item.id !== itemId);
-    if (removed?.supersetGroup !== null && removed?.supersetGroup !== undefined) {
-      nextPlan = nextPlan.map((item) =>
-        item.supersetGroup === removed.supersetGroup ? { ...item, supersetGroup: null } : item,
-      );
-    }
-    await updateWorkoutPlan(nextPlan);
+    await updateWorkoutPlan(workoutContext.exercises.filter((item) => item.id !== itemId));
   }
 
   async function moveExercise(itemId: string, direction: -1 | 1) {
@@ -568,11 +579,8 @@ function AuthenticatedAppContent({
     const index = nextPlan.findIndex((item) => item.id === itemId);
     const destination = index + direction;
     if (index < 0 || destination < 0 || destination >= nextPlan.length) return;
-    const group = nextPlan[index].supersetGroup;
-    if (group !== null) {
-      for (const item of nextPlan) {
-        if (item.supersetGroup === group) item.supersetGroup = null;
-      }
+    if (nextPlan[index].supersetGroup !== nextPlan[destination].supersetGroup) {
+      nextPlan[index].supersetGroup = null;
     }
     [nextPlan[index], nextPlan[destination]] = [nextPlan[destination], nextPlan[index]];
     await updateWorkoutPlan(nextPlan);
@@ -580,35 +588,7 @@ function AuthenticatedAppContent({
 
   async function toggleSuperset(itemId: string) {
     if (!workoutContext) return;
-    const nextPlan = workoutContext.exercises
-      .map((item) => ({ ...item }))
-      .sort((left, right) => left.position - right.position);
-    const index = nextPlan.findIndex((item) => item.id === itemId);
-    const current = nextPlan[index];
-    const following = nextPlan[index + 1];
-    if (!current || !following) return;
-
-    if (current.supersetGroup !== null && current.supersetGroup === following.supersetGroup) {
-      const group = current.supersetGroup;
-      for (const item of nextPlan) {
-        if (item.supersetGroup === group) item.supersetGroup = null;
-      }
-    } else {
-      const detachedGroups = new Set(
-        [current.supersetGroup, following.supersetGroup].filter(
-          (group): group is number => group !== null,
-        ),
-      );
-      for (const item of nextPlan) {
-        if (item.supersetGroup !== null && detachedGroups.has(item.supersetGroup)) {
-          item.supersetGroup = null;
-        }
-      }
-      const group = Math.max(0, ...nextPlan.map((item) => item.supersetGroup ?? 0)) + 1;
-      current.supersetGroup = group;
-      following.supersetGroup = group;
-    }
-    await updateWorkoutPlan(nextPlan);
+    await updateWorkoutPlan(toggleWorkoutGroupLink(workoutContext.exercises, itemId));
   }
 
   async function deleteSet(set: LocalSet) {
@@ -636,6 +616,52 @@ function AuthenticatedAppContent({
       ),
       confirmLabel: tr(locale, 'Удалить подход', 'Delete set'),
       action: () => deleteSet(set),
+    });
+  }
+
+  async function deleteWorkout(workout: LocalWorkout) {
+    const queued = await db.outbox.toArray();
+    const supersededMutationIds = queued
+      .filter((item) => mutationWorkoutId(item.mutation) === workout.id)
+      .map((item) => item.id);
+    if (workout.revision > 0) {
+      await queueMutation({
+        type: 'workout.delete',
+        payload: {
+          clientMutationId: crypto.randomUUID(),
+          workoutId: workout.id,
+          baseRevision: workout.revision,
+        },
+      });
+    }
+    await db.transaction('rw', db.workouts, db.sets, db.outbox, async () => {
+      await db.sets.where('workoutId').equals(workout.id).delete();
+      await db.workouts.delete(workout.id);
+      await db.outbox.bulkDelete(supersededMutationIds);
+    });
+    setEditingWorkoutId(null);
+    setExerciseDetailId(null);
+    setView('progress');
+    await flushOutbox();
+  }
+
+  function requestDeleteWorkout(workout: LocalWorkout) {
+    const workoutSetCount = sets.filter(
+      (set) => set.workoutId === workout.id && !set.deleted,
+    ).length;
+    const date = new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'ru-RU', {
+      dateStyle: 'long',
+      timeStyle: 'short',
+    }).format(new Date(workout.startedAt));
+    setConfirmation({
+      title: tr(locale, 'Удалить тренировку?', 'Delete this workout?'),
+      message: tr(
+        locale,
+        `${date} · ${workoutSetCount} ${setCountLabel(workoutSetCount, 'ru')}. Тренировка исчезнет из календаря, истории и расчётов прогресса.`,
+        `${date} · ${workoutSetCount} ${setCountLabel(workoutSetCount, 'en')}. The workout will disappear from the calendar, history, and progress calculations.`,
+      ),
+      confirmLabel: tr(locale, 'Да, удалить тренировку', 'Yes, delete workout'),
+      action: () => deleteWorkout(workout),
     });
   }
 
@@ -845,6 +871,12 @@ function AuthenticatedAppContent({
           onDeleteSet={requestDeleteSet}
           onEditSet={(exercise, set) => setSheet({ exercise, set })}
           onMoveSet={moveSet}
+          onReplaceExercise={() => {
+            const item = workoutContext?.exercises.find(
+              (candidate) => candidate.exerciseId === exerciseDetail.id,
+            );
+            if (item) setExercisePicker({ mode: 'replace', itemId: item.id });
+          }}
           sets={sets}
           workouts={workouts}
         />
@@ -889,6 +921,7 @@ function AuthenticatedAppContent({
               exercises={exercises}
               measurements={measurements}
               onDeleteMeasurement={requestDeleteMeasurement}
+              onDeleteWorkout={requestDeleteWorkout}
               onEditWorkout={editCompletedWorkout}
               onImportMeasurements={importMeasurements}
               onResumeWorkout={requestResumeWorkout}
@@ -919,70 +952,65 @@ function AuthenticatedAppContent({
       )}
 
       {view !== 'trainer' && (
-        <button
-          aria-label={tr(
-            locale,
-            'Пояснить подход или изменить тренировку',
-            'Describe a set or change the workout',
-          )}
-          className="explain-button"
-          onClick={() => setExplainContext({ exercise: exerciseDetail })}
-          type="button"
-        >
-          <span aria-hidden="true" className="explain-button-icons">
-            <svg viewBox="0 0 24 24">
-              <path d="M12 15.25a3.5 3.5 0 0 0 3.5-3.5v-5a3.5 3.5 0 1 0-7 0v5a3.5 3.5 0 0 0 3.5 3.5Z" />
-              <path d="M5.75 11.25v.5a6.25 6.25 0 0 0 12.5 0v-.5M12 18v3M9.25 21h5.5" />
-            </svg>
-            <svg viewBox="0 0 24 24">
-              <path d="m14.75 5.25 4 4M5.5 18.5l2.1-5.1L16.8 4.2a1.4 1.4 0 0 1 2 0l1 1a1.4 1.4 0 0 1 0 2l-9.2 9.2-5.1 2.1Z" />
-              <path d="m7.6 13.4 3 3" />
-            </svg>
-          </span>
-          <span className="explain-button-label">{tr(locale, 'Пояснить', 'Describe')}</span>
-        </button>
+        <nav aria-label={tr(locale, 'Основная навигация', 'Primary navigation')} className="tabs">
+          <Tab
+            active={view === 'workout'}
+            icon={<NavIcon name="workout" />}
+            label={tr(locale, 'Тренировка', 'Workout')}
+            onClick={() => {
+              setExerciseDetailId(null);
+              setView('workout');
+            }}
+          />
+          <Tab
+            active={view === 'progress'}
+            icon={<NavIcon name="progress" />}
+            label={tr(locale, 'Прогресс', 'Progress')}
+            onClick={() => {
+              setExerciseDetailId(null);
+              setView('progress');
+            }}
+          />
+          <button
+            aria-expanded={Boolean(explainContext)}
+            aria-label={tr(
+              locale,
+              'Пояснить подход или изменить тренировку',
+              'Describe a set or change the workout',
+            )}
+            className={`tab explain-tab ${explainContext ? 'active' : ''}`}
+            onClick={() => setExplainContext({ exercise: exerciseDetail })}
+            type="button"
+          >
+            <span className="explain-orb">
+              <NavIcon name="explain" />
+              <i aria-hidden="true">✦</i>
+            </span>
+            <span className="tab-label">{tr(locale, 'Пояснить', 'Describe')}</span>
+          </button>
+          <Tab
+            active={view === 'catalog'}
+            icon={<NavIcon name="catalog" />}
+            label={tr(locale, 'Каталог', 'Catalog')}
+            onClick={() => {
+              setExerciseDetailId(null);
+              setView('catalog');
+            }}
+          />
+          <Tab
+            active={view === 'settings'}
+            icon={<NavIcon name="settings" />}
+            label={tr(locale, 'Настройки', 'Settings')}
+            onClick={() => {
+              setExerciseDetailId(null);
+              setView('settings');
+            }}
+          />
+        </nav>
       )}
-      <nav aria-label={tr(locale, 'Основная навигация', 'Primary navigation')} className="tabs">
-        <Tab
-          active={view === 'workout'}
-          icon="🏋️"
-          label={tr(locale, 'Тренировка', 'Workout')}
-          onClick={() => {
-            setExerciseDetailId(null);
-            setView('workout');
-          }}
-        />
-        <Tab
-          active={view === 'progress'}
-          icon="📈"
-          label={tr(locale, 'Прогресс', 'Progress')}
-          onClick={() => {
-            setExerciseDetailId(null);
-            setView('progress');
-          }}
-        />
-        <span className="tab-spacer" />
-        <Tab
-          active={view === 'catalog'}
-          icon="📚"
-          label={tr(locale, 'Каталог', 'Catalog')}
-          onClick={() => {
-            setExerciseDetailId(null);
-            setView('catalog');
-          }}
-        />
-        <Tab
-          active={view === 'settings'}
-          icon="⚙️"
-          label={tr(locale, 'Настройки', 'Settings')}
-          onClick={() => {
-            setExerciseDetailId(null);
-            setView('settings');
-          }}
-        />
-      </nav>
 
       <SetSheet
+        defaults={setDefaults}
         exercise={sheet?.exercise ?? null}
         initial={sheet?.set ?? null}
         onClose={() => setSheet(null)}
@@ -1131,6 +1159,7 @@ function WorkoutView({
 }) {
   const { locale, unitSystem } = usePreferences();
   const [elapsedAt, setElapsedAt] = useState(() => Date.now());
+  const [optionsItemId, setOptionsItemId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!activeWorkout || editingHistory) return;
@@ -1198,6 +1227,10 @@ function WorkoutView({
   const removedExerciseIds = [...new Set(visibleSets.map((set) => set.exerciseId))].filter(
     (exerciseId) => !planExerciseIds.has(exerciseId),
   );
+  const optionsSelection = plan.find(({ item }) => item.id === optionsItemId) ?? null;
+  const optionsIndex = optionsSelection
+    ? plan.findIndex(({ item }) => item.id === optionsSelection.item.id)
+    : -1;
 
   return (
     <section
@@ -1285,6 +1318,11 @@ function WorkoutView({
           const linkedWithNext =
             item.supersetGroup !== null &&
             item.supersetGroup === plan[index + 1]?.item.supersetGroup;
+          const groupSize =
+            item.supersetGroup === null
+              ? 0
+              : plan.filter(({ item: candidate }) => candidate.supersetGroup === item.supersetGroup)
+                  .length;
           return (
             <article
               className={[
@@ -1307,51 +1345,14 @@ function WorkoutView({
                 </button>
                 <div className="exercise-card-actions">
                   <Tag tag={exercise.tag} />
-                  <details className="exercise-options">
-                    <summary
-                      aria-label={`${tr(locale, 'Настроить упражнение', 'Exercise options')}: ${exerciseName(exercise, locale)}`}
-                    >
-                      •••
-                    </summary>
-                    <div
-                      className="plan-controls"
-                      aria-label={`${tr(locale, 'План', 'Plan')}: ${exerciseName(exercise, locale)}`}
-                    >
-                      <button
-                        aria-label={tr(locale, 'Поднять упражнение', 'Move exercise up')}
-                        disabled={index === 0}
-                        onClick={() => onMoveExercise(item.id, -1)}
-                        type="button"
-                      >
-                        ↑
-                      </button>
-                      <button
-                        aria-label={tr(locale, 'Опустить упражнение', 'Move exercise down')}
-                        disabled={index === plan.length - 1}
-                        onClick={() => onMoveExercise(item.id, 1)}
-                        type="button"
-                      >
-                        ↓
-                      </button>
-                      <button onClick={() => onReplaceExercise(item.id)} type="button">
-                        {tr(locale, 'Заменить', 'Replace')}
-                      </button>
-                      {index < plan.length - 1 && (
-                        <button onClick={() => onToggleSuperset(item.id)} type="button">
-                          {linkedWithNext
-                            ? tr(locale, 'Разъединить', 'Unlink')
-                            : `${tr(locale, 'Суперсет', 'Superset')} ↓`}
-                        </button>
-                      )}
-                      <button
-                        className="danger-text"
-                        onClick={() => onRemoveExercise(item.id, logged.length > 0)}
-                        type="button"
-                      >
-                        {tr(locale, 'Убрать', 'Remove')}
-                      </button>
-                    </div>
-                  </details>
+                  <button
+                    aria-label={`${tr(locale, 'Настроить упражнение', 'Exercise options')}: ${exerciseName(exercise, locale)}`}
+                    className="exercise-options-trigger"
+                    onClick={() => setOptionsItemId(item.id)}
+                    type="button"
+                  >
+                    •••
+                  </button>
                   <button className="add-set" onClick={() => onAddSet(exercise)} type="button">
                     ＋ {tr(locale, 'Подход', 'Set')}
                   </button>
@@ -1359,7 +1360,7 @@ function WorkoutView({
               </div>
               {item.supersetGroup !== null && (
                 <span className="superset-label">
-                  {tr(locale, 'Суперсет', 'Superset')} {item.supersetGroup}
+                  {workoutGroupLabel(groupSize, locale)} {item.supersetGroup}
                 </span>
               )}
               {logged.length ? (
@@ -1456,7 +1457,134 @@ function WorkoutView({
           </div>
         )}
       </div>
+      <ExerciseOptionsSheet
+        exercise={optionsSelection?.exercise ?? null}
+        hasLoggedSets={
+          optionsSelection
+            ? visibleSets.some((set) => set.exerciseId === optionsSelection.exercise.id)
+            : false
+        }
+        index={optionsIndex}
+        linkedWithNext={
+          optionsSelection !== null &&
+          optionsSelection.item.supersetGroup !== null &&
+          optionsSelection.item.supersetGroup === plan[optionsIndex + 1]?.item.supersetGroup
+        }
+        onClose={() => setOptionsItemId(null)}
+        onLink={() => {
+          if (!optionsSelection) return;
+          setOptionsItemId(null);
+          void onToggleSuperset(optionsSelection.item.id);
+        }}
+        onMove={(direction) => {
+          if (!optionsSelection) return;
+          setOptionsItemId(null);
+          void onMoveExercise(optionsSelection.item.id, direction);
+        }}
+        onRemove={() => {
+          if (!optionsSelection) return;
+          setOptionsItemId(null);
+          onRemoveExercise(
+            optionsSelection.item.id,
+            visibleSets.some((set) => set.exerciseId === optionsSelection.exercise.id),
+          );
+        }}
+        onReplace={() => {
+          if (!optionsSelection) return;
+          setOptionsItemId(null);
+          onReplaceExercise(optionsSelection.item.id);
+        }}
+        planLength={plan.length}
+      />
     </section>
+  );
+}
+
+function ExerciseOptionsSheet({
+  exercise,
+  index,
+  planLength,
+  linkedWithNext,
+  hasLoggedSets,
+  onClose,
+  onMove,
+  onReplace,
+  onLink,
+  onRemove,
+}: {
+  exercise: Exercise | null;
+  index: number;
+  planLength: number;
+  linkedWithNext: boolean;
+  hasLoggedSets: boolean;
+  onClose: () => void;
+  onMove: (direction: -1 | 1) => void;
+  onReplace: () => void;
+  onLink: () => void;
+  onRemove: () => void;
+}) {
+  const { locale } = usePreferences();
+
+  useEffect(() => {
+    if (!exercise) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [exercise]);
+
+  if (!exercise) return null;
+
+  return (
+    <div className="sheet-backdrop" role="presentation" onMouseDown={onClose}>
+      <section
+        aria-label={`${tr(locale, 'Действия с упражнением', 'Exercise actions')}: ${exerciseName(exercise, locale)}`}
+        aria-modal="true"
+        className="sheet exercise-actions-sheet"
+        onMouseDown={(event) => event.stopPropagation()}
+        role="dialog"
+      >
+        <div className="sheet-handle" />
+        <p className="eyebrow">{tr(locale, 'Упражнение', 'Exercise')}</p>
+        <h2>{exerciseName(exercise, locale)}</h2>
+        <div className="exercise-actions-grid">
+          <button disabled={index <= 0} onClick={() => onMove(-1)} type="button">
+            <span aria-hidden="true">↑</span>
+            {tr(locale, 'Поднять выше', 'Move up')}
+          </button>
+          <button
+            disabled={index < 0 || index >= planLength - 1}
+            onClick={() => onMove(1)}
+            type="button"
+          >
+            <span aria-hidden="true">↓</span>
+            {tr(locale, 'Опустить ниже', 'Move down')}
+          </button>
+          <button onClick={onReplace} type="button">
+            <span aria-hidden="true">↻</span>
+            {tr(locale, 'Заменить', 'Replace')}
+          </button>
+          {index >= 0 && index < planLength - 1 && (
+            <button onClick={onLink} type="button">
+              <span aria-hidden="true">{linkedWithNext ? '⌁' : '⛓'}</span>
+              {linkedWithNext
+                ? tr(locale, 'Разделить связку здесь', 'Split group here')
+                : tr(locale, 'Связать со следующим', 'Link with next')}
+            </button>
+          )}
+          <button className="danger-action" onClick={onRemove} type="button">
+            <span aria-hidden="true">×</span>
+            {hasLoggedSets
+              ? tr(locale, 'Убрать, сохранив подходы', 'Remove, keep sets')
+              : tr(locale, 'Убрать из тренировки', 'Remove from workout')}
+          </button>
+        </div>
+        <button className="button ghost full" onClick={onClose} type="button">
+          {tr(locale, 'Отмена', 'Cancel')}
+        </button>
+      </section>
+    </div>
   );
 }
 
@@ -1470,6 +1598,7 @@ function ExerciseDetailView({
   onEditSet,
   onMoveSet,
   onDeleteSet,
+  onReplaceExercise,
 }: {
   exercise: Exercise;
   activeWorkout: LocalWorkout | undefined;
@@ -1480,6 +1609,7 @@ function ExerciseDetailView({
   onEditSet: (exercise: Exercise, set: LocalSet) => void;
   onMoveSet: (set: LocalSet, direction: -1 | 1) => void;
   onDeleteSet: (set: LocalSet) => void;
+  onReplaceExercise: () => void;
 }) {
   const { locale, unitSystem } = usePreferences();
   const currentSets = activeWorkout
@@ -1505,19 +1635,20 @@ function ExerciseDetailView({
   const canAddSet = Boolean(
     activeWorkout?.exercises.some((item) => item.exerciseId === exercise.id),
   );
-  const techniqueLinks = exercise.videos?.length
-    ? exercise.videos
-    : [
-        {
-          title: tr(locale, 'Найти видео техники', 'Find a technique video'),
-          url: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${exerciseName(exercise, locale)} техника выполнения`)}`,
-        },
-      ];
+  const primaryVideo = exercise.videos?.[0] ?? null;
+  const alternativeVideos = exercise.videos?.slice(1) ?? [];
+  const primaryVideoId = primaryVideo ? youtubeVideoId(primaryVideo.url) : null;
+  const fallbackVideoUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(
+    `${exerciseName(exercise, locale)} техника выполнения`,
+  )}`;
 
   return (
     <section className="screen exercise-detail-screen">
       <button className="detail-back" onClick={onBack} type="button">
-        ← {tr(locale, 'Назад', 'Back')}
+        ←{' '}
+        {activeWorkout
+          ? tr(locale, 'К тренировке', 'Back to workout')
+          : tr(locale, 'Назад', 'Back')}
       </button>
       <div className="exercise-detail-title">
         <div>
@@ -1533,25 +1664,9 @@ function ExerciseDetailView({
         <span>{exercise.equipment.join(', ')}</span>
       </div>
 
-      <section className="exercise-detail-section technique-section">
-        <div className="section-head">
-          <h2>{tr(locale, 'Техника', 'Technique')}</h2>
-          <span>{tr(locale, 'видео откроется отдельно', 'opens separately')}</span>
-        </div>
-        {exercise.notes && <p>{exercise.notes}</p>}
-        <div className="technique-links">
-          {techniqueLinks.map((video) => (
-            <a href={video.url} key={video.url} rel="noreferrer" target="_blank">
-              <span aria-hidden="true">▶</span>
-              {video.title}
-            </a>
-          ))}
-        </div>
-      </section>
-
       <section className="exercise-detail-section">
         <div className="section-head">
-          <h2>{tr(locale, 'Эта тренировка', 'This workout')}</h2>
+          <h2>{tr(locale, 'Подходы сегодня', "Today's sets")}</h2>
           {canAddSet && (
             <button className="add-set" onClick={() => onAddSet(exercise)} type="button">
               ＋ {tr(locale, 'Подход', 'Set')}
@@ -1609,7 +1724,7 @@ function ExerciseDetailView({
       </section>
 
       <section className="exercise-detail-section">
-        <h2>{tr(locale, 'Предыдущие подходы', 'Previous sets')}</h2>
+        <h2>{tr(locale, 'Предыдущие результаты', 'Previous results')}</h2>
         {previous.length ? (
           <div className="previous-workouts">
             {previous.map(({ workout, sets: workoutSets }) => (
@@ -1638,6 +1753,84 @@ function ExerciseDetailView({
           </p>
         )}
       </section>
+
+      <section className="exercise-detail-section technique-section">
+        <div className="section-head">
+          <h2>{tr(locale, 'Видео с техникой', 'Technique video')}</h2>
+          {primaryVideo && <span>{tr(locale, 'основное видео', 'main video')}</span>}
+        </div>
+        {exercise.notes && <p>{exercise.notes}</p>}
+        {primaryVideo ? (
+          <>
+            <a
+              className="technique-preview"
+              href={primaryVideo.url}
+              rel="noreferrer"
+              target="_blank"
+            >
+              {primaryVideoId ? (
+                <img
+                  alt={tr(
+                    locale,
+                    `Превью видео: ${primaryVideo.title}`,
+                    `Video preview: ${primaryVideo.title}`,
+                  )}
+                  loading="lazy"
+                  src={`https://i.ytimg.com/vi/${primaryVideoId}/hqdefault.jpg`}
+                />
+              ) : (
+                <span className="technique-preview-art" aria-hidden="true">
+                  {exerciseName(exercise, locale).slice(0, 1)}
+                </span>
+              )}
+              <span className="technique-play" aria-hidden="true">
+                ▶
+              </span>
+              <strong>{primaryVideo.title}</strong>
+            </a>
+            <a className="youtube-link" href={primaryVideo.url} rel="noreferrer" target="_blank">
+              {tr(locale, 'Открыть на YouTube ↗', 'Open on YouTube ↗')}
+            </a>
+          </>
+        ) : (
+          <a
+            className="technique-preview technique-preview-fallback"
+            href={fallbackVideoUrl}
+            rel="noreferrer"
+            target="_blank"
+          >
+            <span className="technique-preview-art" aria-hidden="true">
+              {exerciseName(exercise, locale).slice(0, 1)}
+            </span>
+            <span className="technique-play" aria-hidden="true">
+              ▶
+            </span>
+            <strong>{tr(locale, 'Видео ещё не закреплено', 'No featured video yet')}</strong>
+            <small>{tr(locale, 'Подобрать на YouTube', 'Browse YouTube')}</small>
+          </a>
+        )}
+        {alternativeVideos.length > 0 && (
+          <div className="technique-links">
+            {alternativeVideos.map((video) => (
+              <a href={video.url} key={video.url} rel="noreferrer" target="_blank">
+                <span aria-hidden="true">▶</span>
+                {video.title}
+              </a>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {canAddSet && (
+        <div className="exercise-detail-actions">
+          <button className="button ghost" onClick={onReplaceExercise} type="button">
+            ↻ {tr(locale, 'Заменить', 'Replace')}
+          </button>
+          <button className="button primary" onClick={() => onAddSet(exercise)} type="button">
+            ＋ {tr(locale, 'Подход', 'Set')}
+          </button>
+        </div>
+      )}
     </section>
   );
 }
@@ -1843,13 +2036,7 @@ function SettingsView({
       )}
       <PushReminderSettings />
       <TrainerRelationshipCard refreshKey={relationshipRefreshKey} />
-      <p className="privacy-note">
-        {tr(
-          locale,
-          'Перед включением голоса приложение покажет, какие данные будут переданы провайдеру распознавания.',
-          'Before voice input is enabled, the app will show which data is sent to the transcription provider.',
-        )}
-      </p>
+      <VoiceSettingsPanel />
       <button className="button ghost full" onClick={onLogout} type="button">
         {tr(locale, 'Выйти', 'Sign out')}
       </button>
@@ -2089,6 +2276,31 @@ function ExplainSheet({
     }
   }
 
+  async function acceptVoiceTranscript(transcript: string) {
+    setText(transcript);
+    setEntrySource('voice_ai');
+    setCommandOverrides({});
+    setMode('text');
+    saveInputMode('text');
+    const parsed = parseInput(transcript);
+    setResult(parsed);
+    if (parsed.status !== 'command_ready' || parsed.command.type === 'remove') return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await onApplyCommand(parsed.command);
+    } catch {
+      setSaving(false);
+      setSaveError(
+        tr(
+          locale,
+          'Команда распознана, но применить её не удалось. Попробуй ещё раз.',
+          'The command was recognized but could not be applied. Try again.',
+        ),
+      );
+    }
+  }
+
   const previousSet =
     result?.status === 'ready'
       ? sets
@@ -2157,14 +2369,7 @@ function ExplainSheet({
         {mode === 'voice' ? (
           <VoicePanel
             activeWorkoutId={activeWorkout?.id ?? null}
-            onTranscript={(transcript) => {
-              setText(transcript);
-              setEntrySource('voice_ai');
-              setCommandOverrides({});
-              setMode('text');
-              saveInputMode('text');
-              setResult(parseInput(transcript));
-            }}
+            onTranscript={(transcript) => void acceptVoiceTranscript(transcript)}
           />
         ) : result?.status === 'command_ready' ? (
           <div className="parsed-set" aria-live="polite">
@@ -2370,15 +2575,57 @@ function Tab({
   onClick,
 }: {
   active: boolean;
-  icon: string;
+  icon: ReactNode;
   label: string;
   onClick: () => void;
 }) {
   return (
     <button className={`tab ${active ? 'active' : ''}`} onClick={onClick} type="button">
-      <span>{icon}</span>
-      {label}
+      <span className="tab-icon">{icon}</span>
+      <span className="tab-label">{label}</span>
     </button>
+  );
+}
+
+function NavIcon({ name }: { name: 'workout' | 'progress' | 'explain' | 'catalog' | 'settings' }) {
+  const paths = {
+    workout: (
+      <>
+        <path d="M5 8v8M8 6v12M16 6v12M19 8v8M8 12h8" />
+      </>
+    ),
+    progress: (
+      <>
+        <path d="M4 19V5M4 19h16" />
+        <path d="m7 15 4-4 3 2 5-6" />
+      </>
+    ),
+    explain: (
+      <>
+        <path d="M12 15.5a3.5 3.5 0 0 0 3.5-3.5V7a3.5 3.5 0 1 0-7 0v5a3.5 3.5 0 0 0 3.5 3.5Z" />
+        <path d="M5.5 11.5v.5a6.5 6.5 0 0 0 13 0v-.5M12 18.5V21M9 21h6" />
+      </>
+    ),
+    catalog: (
+      <>
+        <path d="M5 5.5A2.5 2.5 0 0 1 7.5 3H11v16H7.5A2.5 2.5 0 0 0 5 21.5v-16Z" />
+        <path d="M19 5.5A2.5 2.5 0 0 0 16.5 3H13v16h3.5a2.5 2.5 0 0 1 2.5 2.5v-16Z" />
+      </>
+    ),
+    settings: (
+      <>
+        <circle cx="12" cy="12" r="3" />
+        <path
+          d="M19 13.5v-3l-2-.7a7 7 0 0 0-.7-1.6l.9-1.9-2.1-2.1-1.9.9a7 7 0 0 0-1.6-.7L10.5 2h-3l-.7 2a7 7 0 0 0-1.6.7l-1.9-.9-2.1 2.1.9 1.9a7 7 0 0 0-.7 1.6L0 10.5v3l2 .7a7 7 0 0 0 .7 1.6l-.9 1.9 2.1 2.1 1.9-.9a7 7 0 0 0 1.6.7l.7 2.4h3l.7-2a7 7 0 0 0 1.6-.7l1.9.9 2.1-2.1-.9-1.9a7 7 0 0 0 .7-1.6l1.8-.6Z"
+          transform="translate(2)"
+        />
+      </>
+    ),
+  };
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      {paths[name]}
+    </svg>
   );
 }
 
@@ -2417,6 +2664,44 @@ function muscleLabel(
   return label ? label[locale === 'en' ? 1 : 0] : tr(locale, 'Упражнение', 'Exercise');
 }
 
+function workoutGroupLabel(size: number, locale: CurrentUser['locale']) {
+  if (locale === 'en') return size === 2 ? 'Superset' : `Group of ${size}`;
+  if (size === 2) return 'Суперсет';
+  if (size === 3) return 'Трисет';
+  if (size === 4) return 'Квадрисет';
+  return `Связка из ${size}`;
+}
+
+function setCountLabel(value: number, locale: CurrentUser['locale']) {
+  if (locale === 'en') return value === 1 ? 'set' : 'sets';
+  const mod100 = value % 100;
+  const mod10 = value % 10;
+  if (mod100 >= 11 && mod100 <= 14) return 'подходов';
+  if (mod10 === 1) return 'подход';
+  if (mod10 >= 2 && mod10 <= 4) return 'подхода';
+  return 'подходов';
+}
+
+function youtubeVideoId(url: string) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname === 'youtu.be') return parsed.pathname.slice(1).split('/')[0] || null;
+    if (
+      parsed.hostname === 'youtube.com' ||
+      parsed.hostname.endsWith('.youtube.com') ||
+      parsed.hostname === 'youtube-nocookie.com' ||
+      parsed.hostname.endsWith('.youtube-nocookie.com')
+    ) {
+      if (parsed.pathname === '/watch') return parsed.searchParams.get('v');
+      const match = /^\/(?:embed|shorts)\/([^/?]+)/u.exec(parsed.pathname);
+      return match?.[1] ?? null;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 function firstName(displayName: string, locale: CurrentUser['locale']) {
   return displayName.trim().split(/\s+/)[0] || tr(locale, 'спортсмен', 'athlete');
 }
@@ -2443,11 +2728,29 @@ function roleLabel(role: CurrentUser['role'], locale: CurrentUser['locale']) {
 function canKeepMine(conflict: SyncConflict) {
   return (
     conflict.mutation.type === 'workout.update' ||
+    conflict.mutation.type === 'workout.delete' ||
     conflict.mutation.type === 'set.update' ||
     conflict.mutation.type === 'measurement.update' ||
     (conflict.mutation.type === 'set.delete' && conflict.current !== null) ||
     (conflict.mutation.type === 'measurement.delete' && conflict.current !== null)
   );
+}
+
+function mutationWorkoutId(mutation: Parameters<typeof queueMutation>[0]) {
+  switch (mutation.type) {
+    case 'workout.create':
+      return mutation.payload.id;
+    case 'workout.update':
+    case 'workout.delete':
+    case 'set.create':
+    case 'set.update':
+    case 'set.delete':
+      return mutation.payload.workoutId;
+    case 'measurement.create':
+    case 'measurement.update':
+    case 'measurement.delete':
+      return null;
+  }
 }
 
 function syncStatusLabel(

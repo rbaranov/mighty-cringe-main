@@ -339,6 +339,12 @@ export const updateWorkoutSchema = z.object({
   changes: workoutChangesSchema,
 });
 
+export const deleteWorkoutSchema = z.object({
+  clientMutationId: z.string().uuid(),
+  workoutId: z.string().uuid(),
+  baseRevision: z.number().int().nonnegative(),
+});
+
 const setChangesSchema = z
   .object({
     weightKg: z.number().nonnegative().max(1000).optional(),
@@ -369,6 +375,7 @@ export const deleteSetSchema = z.object({
 export const syncMutationSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('workout.create'), payload: createWorkoutSchema }),
   z.object({ type: z.literal('workout.update'), payload: updateWorkoutSchema }),
+  z.object({ type: z.literal('workout.delete'), payload: deleteWorkoutSchema }),
   z.object({ type: z.literal('set.create'), payload: createSetSchema }),
   z.object({ type: z.literal('set.update'), payload: updateSetSchema }),
   z.object({ type: z.literal('set.delete'), payload: deleteSetSchema }),
@@ -399,6 +406,7 @@ export type SetEntrySource = SetInput['entrySource'];
 export type CreateWorkoutInput = z.infer<typeof createWorkoutSchema>;
 export type CreateSetInput = z.infer<typeof createSetSchema>;
 export type UpdateWorkoutInput = z.infer<typeof updateWorkoutSchema>;
+export type DeleteWorkoutInput = z.infer<typeof deleteWorkoutSchema>;
 export type UpdateSetInput = z.infer<typeof updateSetSchema>;
 export type DeleteSetInput = z.infer<typeof deleteSetSchema>;
 export type MeasurementValues = z.infer<typeof measurementValuesSchema>;

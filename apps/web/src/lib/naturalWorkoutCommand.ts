@@ -207,7 +207,13 @@ function parseIntent(text: string): ParsedIntent | null {
     /^(?:замени|заменить|поменяй|поменять|смени|replace|swap|change)\s+(.+?)\s+(?:на|with|to|for)\s+(.+)$/iu.exec(
       value,
     );
-  if (match) return { type: 'replace', source: match[1].trim(), target: match[2].trim() };
+  if (match) {
+    return {
+      type: 'replace',
+      source: stripWrappingQuotes(match[1]),
+      target: stripWrappingQuotes(match[2]),
+    };
+  }
 
   match =
     /^(?:переставь|переставить|перемести|переместить|поставь|поставить|move|put)\s+(.+?)\s+(перед|после|before|after)\s+(.+)$/iu.exec(
@@ -241,6 +247,13 @@ function parseIntent(text: string): ParsedIntent | null {
     );
   if (match) return { type: 'remove', source: match[1].trim() };
   return null;
+}
+
+function stripWrappingQuotes(value: string) {
+  return value
+    .trim()
+    .replace(/^(?:["'«„“]+)|(?:["'»“”]+)$/gu, '')
+    .trim();
 }
 
 function resolvePlanExercise({

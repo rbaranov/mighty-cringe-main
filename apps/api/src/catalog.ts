@@ -151,4 +151,14 @@ export const catalog: Exercise[] = [
     secondaryMuscles: ['hamstrings'],
     equipment: ['machine'],
   },
+  {
+    id: '10000000-0000-4000-8000-000000000018',
+    nameRu: 'Жим штанги лёжа на наклонной скамье',
+    nameEn: 'Incline barbell bench press',
+    aliases: ['жим штанги лежа на наклонной скамье', 'наклонный жим штанги', 'incline bench press'],
+    tag: 'mighty',
+    primaryMuscles: ['chest'],
+    secondaryMuscles: ['triceps', 'front_delt'],
+    equipment: ['barbell', 'incline bench'],
+  },
 ];

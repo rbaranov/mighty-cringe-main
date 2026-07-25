@@ -4,6 +4,10 @@
 
 **Date:** 2026-07-22
 
+**Amended:** 2026-07-26 — versioned account consent replaces per-recording consent; the active
+input panel now follows the newest recording through transcription automatically, while the durable
+queue remains the failure and offline path.
+
 ## Context
 
 Voice capture must continue to work when a gym connection disappears, but raw audio is sensitive
@@ -20,8 +24,11 @@ athlete must be able to delete the recording explicitly.
 
 Each recording uses this trust boundary:
 
-1. The PWA asks for an explicit, versioned consent for that recording before it requests microphone
-   permission. Capture is limited to 60 seconds and 10 MiB.
+1. The PWA asks for explicit, versioned consent before the first recording. Acceptance is stored in
+   the current account's isolated local database and remains valid only for that exact consent
+   version. A material terms change, explicit revocation in Settings, or a new browser microphone
+   permission request makes the boundary visible again. Every upload still carries the accepted
+   consent version for server validation. Capture is limited to 60 seconds and 10 MiB.
 2. On stop, the Blob is committed to the authenticated user's IndexedDB before any network request.
    Upload and deletion are durable local queue operations with exponential retries.
 3. The authenticated API validates the consent version, MIME type, size, workout ownership, and user
@@ -37,13 +44,17 @@ LOCKED`, recovers leases stale for ten minutes, and retries transient errors up 
    key and model stay in server environment variables, and every request sets `provider.zdr: true` so
    it can only use a Zero Data Retention endpoint. OpenRouter input/output logging must remain disabled
    for the project key.
-7. The PWA polls user-scoped statuses (`pending`, `processing`, `confirmed`, `failed`). A confirmed
-   transcript is parsed locally by the deterministic natural-set parser and still requires the normal
-   field-by-field confirmation before a set is created.
-8. Raw audio is retained until explicit deletion so it can be replayed and corrected. Deletion removes
-   the local Blob immediately, keeps a durable local tombstone while offline, deletes the encrypted S3
-   object, and only then removes its PostgreSQL row. Playback from the server is authenticated,
-   user-scoped, and returned with `Cache-Control: private, no-store`.
+7. After stopping an online recording, the PWA persists it first, uploads immediately, and polls its
+   user-scoped status (`pending`, `processing`, `confirmed`, `failed`) without making the athlete
+   reopen a recording list. A confirmed transcript is forwarded directly to the deterministic local
+   parser. Sets still require the normal field-by-field confirmation; unambiguous non-destructive
+   workout commands may apply immediately, while ambiguous or destructive commands require an
+   explicit clarification or confirmation.
+8. Raw audio is retained until explicit deletion so it can be replayed and corrected. Recording
+   statuses, playback, transcripts and deletion live under Settings rather than in the active input
+   panel. Deletion removes the local Blob immediately, keeps a durable local tombstone while offline,
+   deletes the encrypted S3 object, and only then removes its PostgreSQL row. Playback from the server
+   is authenticated, user-scoped, and returned with `Cache-Control: private, no-store`.
 
 Recordings that predate the versioned-consent schema are migrated to `failed` and are never submitted
 to the provider. The athlete can delete and re-record them.
@@ -65,6 +76,11 @@ Official capability references:
 An offline or suspended PWA does not lose a completed recording, transient provider failures do not
 need user intervention, and neither S3 nor OpenRouter credentials are present in the browser bundle.
 Manual/text entry remains independent of the voice services.
+
+The athlete accepts the current processing terms once instead of interrupting every set. This is not
+blanket or silent consent: the accepted version is account-scoped, visible and revocable in Settings,
+and the server rejects an upload carrying any other version. Browser microphone permission remains a
+separate user-agent control.
 
 Production cannot enable voice until the owner creates a dedicated private bucket and credentials,
 stores the SSE-C recovery key outside the VPS, creates a spend-limited OpenRouter key with privacy

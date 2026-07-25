@@ -52,6 +52,7 @@ describe('ProgressView', () => {
         exercises={[exercise]}
         measurements={[]}
         onDeleteMeasurement={() => {}}
+        onDeleteWorkout={() => {}}
         onEditWorkout={() => {}}
         onImportMeasurements={async () => {}}
         onResumeWorkout={() => {}}
@@ -116,6 +117,7 @@ describe('ProgressView', () => {
           exercises={[exercise]}
           measurements={[]}
           onDeleteMeasurement={() => {}}
+          onDeleteWorkout={() => {}}
           onEditWorkout={() => {}}
           onImportMeasurements={async () => {}}
           onResumeWorkout={() => {}}

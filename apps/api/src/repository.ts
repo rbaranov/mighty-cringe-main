@@ -8,6 +8,7 @@ import type {
   CurrentUser,
   DeleteMeasurementInput,
   DeleteSetInput,
+  DeleteWorkoutInput,
   Exercise,
   MeasurementRecord,
   MeasurementValues,
@@ -112,7 +113,7 @@ export type EntityMutationResult =
   WorkoutMutationResult | SetMutationResult | MeasurementMutationResult;
 
 export type DeleteMutationResult = {
-  entityType: 'set' | 'measurement';
+  entityType: 'workout' | 'set' | 'measurement';
   entity: null;
   entityId: string;
   duplicate: boolean;
@@ -147,6 +148,7 @@ export interface WorkoutRepository {
   listWorkouts(userId: string): Promise<WorkoutRecord[]>;
   createWorkout(userId: string, input: CreateWorkoutInput): Promise<WorkoutMutationResult>;
   updateWorkout(userId: string, input: UpdateWorkoutInput): Promise<WorkoutMutationResult>;
+  deleteWorkout(userId: string, input: DeleteWorkoutInput): Promise<DeleteMutationResult>;
   createSet(userId: string, input: CreateSetInput): Promise<SetMutationResult>;
   updateSet(userId: string, input: UpdateSetInput): Promise<SetMutationResult>;
   deleteSet(userId: string, input: DeleteSetInput): Promise<DeleteMutationResult>;
@@ -342,6 +344,43 @@ export class MemoryRepository implements WorkoutRepository {
     workout.updatedAt = new Date().toISOString();
     this.mutations.add(mutationKey);
     return { entityType: 'workout', entity: this.workoutRecord(workout), duplicate: false };
+  }
+
+  async deleteWorkout(userId: string, input: DeleteWorkoutInput): Promise<DeleteMutationResult> {
+    const mutationKey = this.mutationKey(userId, input.clientMutationId);
+    if (this.mutations.has(mutationKey)) {
+      return {
+        entityType: 'workout',
+        entity: null,
+        entityId: input.workoutId,
+        duplicate: true,
+      };
+    }
+    const workout = this.workouts.get(input.workoutId);
+    if (!workout || workout.userId !== userId) {
+      this.mutations.add(mutationKey);
+      return {
+        entityType: 'workout',
+        entity: null,
+        entityId: input.workoutId,
+        duplicate: true,
+      };
+    }
+    if (workout.revision !== input.baseRevision) {
+      throw new RepositoryConflictError(this.workoutRecord(workout));
+    }
+
+    this.workouts.delete(workout.id);
+    for (const [setId, set] of this.sets) {
+      if (set.userId === userId && set.workoutId === workout.id) this.sets.delete(setId);
+    }
+    this.mutations.add(mutationKey);
+    return {
+      entityType: 'workout',
+      entity: null,
+      entityId: input.workoutId,
+      duplicate: false,
+    };
   }
 
   async createSet(userId: string, input: CreateSetInput): Promise<SetMutationResult> {
@@ -1048,6 +1087,48 @@ export class PostgresRepository implements WorkoutRepository {
     const entity = await this.getWorkout(userId, input.workoutId);
     if (!entity) throw new RepositoryNotFoundError();
     return { entityType: 'workout', entity, duplicate };
+  }
+
+  async deleteWorkout(userId: string, input: DeleteWorkoutInput): Promise<DeleteMutationResult> {
+    const duplicate = await this.db.transaction(async (transaction) => {
+      const alreadyApplied = await recordMutation(transaction, userId, input.clientMutationId);
+      if (alreadyApplied) return true;
+
+      const existingRows = await transaction
+        .select()
+        .from(workouts)
+        .where(and(eq(workouts.id, input.workoutId), eq(workouts.userId, userId)))
+        .limit(1);
+      const existing = existingRows[0];
+      if (!existing || existing.deletedAt) return true;
+      if (existing.revision !== input.baseRevision) {
+        const existingPlan = await selectWorkoutPlan(transaction, existing.id);
+        throw new RepositoryConflictError(toWorkoutRecord(existing, existingPlan, []));
+      }
+
+      await transaction
+        .update(workouts)
+        .set({
+          deletedAt: new Date(),
+          revision: existing.revision + 1,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(workouts.id, existing.id),
+            eq(workouts.userId, userId),
+            eq(workouts.revision, input.baseRevision),
+            isNull(workouts.deletedAt),
+          ),
+        );
+      return false;
+    });
+    return {
+      entityType: 'workout',
+      entity: null,
+      entityId: input.workoutId,
+      duplicate,
+    };
   }
 
   async createSet(userId: string, input: CreateSetInput): Promise<SetMutationResult> {
