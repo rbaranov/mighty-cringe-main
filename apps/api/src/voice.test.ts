@@ -90,6 +90,7 @@ test('voice audio is private, consent-bound, and deletable', async () => {
     headers: { cookie: 'mc_session=voice-session' },
   });
   assert.equal(ownList.statusCode, 200);
+  assert.equal(ownList.headers['cache-control'], 'private, no-store');
   assert.deepEqual(
     ownList.json().items.map((entry: { id: string }) => entry.id),
     [id],

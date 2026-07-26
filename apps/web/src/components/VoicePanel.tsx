@@ -14,6 +14,7 @@ import {
   refreshVoiceEntries,
   requestVoiceDeletion,
   revokeVoiceConsent,
+  waitForVoiceEntry,
   type VoiceConfig,
 } from '../lib/voice';
 
@@ -41,10 +42,15 @@ export function VoicePanel({
   const [latestEntryId, setLatestEntryId] = useState<string | null>(null);
   const capture = useRef<Capture | null>(null);
   const deliveredTranscriptId = useRef<string | null>(null);
+  const transcriptHandler = useRef(onTranscript);
   const latestEntry = useLiveQuery(
     () => (latestEntryId ? db.voiceEntries.get(latestEntryId) : undefined),
     [latestEntryId],
   );
+
+  useEffect(() => {
+    transcriptHandler.current = onTranscript;
+  }, [onTranscript]);
 
   useEffect(() => {
     void loadVoiceConfig().then(async (next) => {
@@ -63,27 +69,22 @@ export function VoicePanel({
   }, []);
 
   useEffect(() => {
-    if (!latestEntry) return;
-    if (
-      latestEntry.status === 'confirmed' &&
-      latestEntry.transcript &&
-      deliveredTranscriptId.current !== latestEntry.id
-    ) {
-      deliveredTranscriptId.current = latestEntry.id;
-      onTranscript(latestEntry.transcript);
-      return;
-    }
-    if (
-      latestEntry.status !== 'queued' &&
-      latestEntry.status !== 'uploading' &&
-      latestEntry.status !== 'pending' &&
-      latestEntry.status !== 'processing'
-    ) {
-      return;
-    }
-    const timer = window.setTimeout(() => void refreshVoiceEntries(), 900);
-    return () => window.clearTimeout(timer);
-  }, [latestEntry, onTranscript]);
+    if (!latestEntryId) return;
+    const controller = new AbortController();
+    void waitForVoiceEntry(latestEntryId, { signal: controller.signal }).then((entry) => {
+      if (
+        controller.signal.aborted ||
+        entry?.status !== 'confirmed' ||
+        !entry.transcript ||
+        deliveredTranscriptId.current === entry.id
+      ) {
+        return;
+      }
+      deliveredTranscriptId.current = entry.id;
+      transcriptHandler.current(entry.transcript);
+    });
+    return () => controller.abort();
+  }, [latestEntryId]);
 
   async function startRecording() {
     if (!config?.enabled || !consented || !activeWorkoutId || capture.current) return;

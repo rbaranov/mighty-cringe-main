@@ -23,7 +23,37 @@ class MemoryVoiceStorage {
   }
 }
 
-const repository = new MemoryRepository();
+class AcceptanceRepository extends MemoryRepository {
+  readyAt = new Map();
+
+  async createVoiceEntry(userId, input) {
+    const entry = await super.createVoiceEntry(userId, input);
+    this.readyAt.set(entry.id, Date.now() + 1_200);
+    return entry;
+  }
+
+  async listVoiceEntries(userId) {
+    return (await super.listVoiceEntries(userId)).map((entry) =>
+      Date.now() >= (this.readyAt.get(entry.id) ?? Number.POSITIVE_INFINITY)
+        ? {
+            ...entry,
+            status: 'confirmed',
+            transcript: 'жим штанги лежа 40 на 10 rir 2',
+            updatedAt: new Date().toISOString(),
+            lastError: null,
+          }
+        : entry,
+    );
+  }
+
+  async deleteVoiceEntry(userId, voiceEntryId) {
+    const deleted = await super.deleteVoiceEntry(userId, voiceEntryId);
+    if (deleted) this.readyAt.delete(voiceEntryId);
+    return deleted;
+  }
+}
+
+const repository = new AcceptanceRepository();
 const developmentUser = await repository.upsertGoogleUser(
   {
     subject: 'voice-acceptance-athlete',

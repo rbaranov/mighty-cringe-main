@@ -413,7 +413,9 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
   app.get('/api/v1/voice-entries', async (request, reply) => {
     const user = await getCurrentUser(request, repository, now());
     if (!user) return reply.status(401).send({ error: 'Authentication required' });
-    return { items: await repository.listVoiceEntries(user.id) };
+    return reply
+      .header('cache-control', 'private, no-store')
+      .send({ items: await repository.listVoiceEntries(user.id) });
   });
 
   app.get('/api/v1/notifications/config', async (request, reply) => {
