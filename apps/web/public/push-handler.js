@@ -1,6 +1,6 @@
 self.addEventListener('push', (event) => {
   let payload = {
-    title: 'Mighty & Cringe',
+    title: 'MightyCringe',
     body: 'Пора заглянуть в тренировочный план.',
     url: '/',
   };

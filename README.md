@@ -1,4 +1,4 @@
-# Mighty & Cringe
+# MightyCringe
 
 Offline-first PWA for strength training: workout logging, exercise catalog, progress, voice
 capture and read-only coach access.

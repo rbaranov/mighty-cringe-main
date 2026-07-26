@@ -158,14 +158,14 @@ for path in $disk_paths; do
 done
 
 if [ -n "$failures" ]; then
-  diagnostic="Mighty & Cringe production monitoring failed on $domain:
+  diagnostic="MightyCringe production monitoring failed on $domain:
 $failures"
   send_healthchecks_signal /fail "$diagnostic" || \
     echo "Could not send monitoring failure signal" >&2
   exit 1
 fi
 
-if ! send_healthchecks_signal '' "Mighty & Cringe production checks passed on $domain"; then
+if ! send_healthchecks_signal '' "MightyCringe production checks passed on $domain"; then
   echo "Checks passed, but the success heartbeat could not be delivered" >&2
   exit 69
 fi

@@ -1,5 +1,5 @@
 [Unit]
-Description=Run the Mighty & Cringe PostgreSQL backup every day
+Description=Run the MightyCringe PostgreSQL backup every day
 
 [Timer]
 OnCalendar=*-*-* 02:15:00 UTC

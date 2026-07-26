@@ -1,5 +1,5 @@
 [Unit]
-Description=Mighty & Cringe encrypted PostgreSQL backup
+Description=MightyCringe encrypted PostgreSQL backup
 Requires=docker.service
 After=docker.service network-online.target
 Wants=network-online.target

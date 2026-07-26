@@ -220,6 +220,18 @@ function parseIntent(text: string): ParsedIntent | null {
   }
 
   match =
+    /^(.+?)\s+(?:замени|заменить|поменяй|поменять|смени|replace|swap|change)\s+(?:на|with|to|for)\s+(.+)$/iu.exec(
+      value,
+    );
+  if (match) {
+    return {
+      type: 'replace',
+      source: stripWrappingQuotes(match[1]),
+      target: stripWrappingQuotes(match[2]),
+    };
+  }
+
+  match =
     /^(?:переставь|переставить|перемести|переместить|поставь|поставить|move|put)\s+(.+?)\s+(перед|после|before|after)\s+(.+)$/iu.exec(
       value,
     );
@@ -315,7 +327,10 @@ function resolveExercise({
     const selected = candidates.find((candidate) => candidate.id === override.id);
     if (selected) return { exercise: selected };
   }
-  const match = matchExerciseText(phrase, candidates) ?? matchInflectedExercise(phrase, candidates);
+  const normalizedPhrase = normalizeMixedScriptPhrase(phrase);
+  const match =
+    matchExerciseText(normalizedPhrase, candidates) ??
+    matchInflectedExercise(normalizedPhrase, candidates);
   if (!match) {
     const source = role === 'source' || role === 'anchor';
     return clarification(
@@ -355,14 +370,18 @@ function matchInflectedExercise(
       0,
       ...variants.map((variant) => {
         const variantTokens = searchableTokens(variant);
-        if (!variantTokens.length || variantTokens.length > phraseTokens.length) return 0;
-        for (let offset = 0; offset <= phraseTokens.length - variantTokens.length; offset += 1) {
+        if (!variantTokens.length) return 0;
+        const shorterTokens =
+          variantTokens.length <= phraseTokens.length ? variantTokens : phraseTokens;
+        const longerTokens =
+          variantTokens.length <= phraseTokens.length ? phraseTokens : variantTokens;
+        for (let offset = 0; offset <= longerTokens.length - shorterTokens.length; offset += 1) {
           if (
-            variantTokens.every((token, index) =>
-              inflectedTokenMatch(token, phraseTokens[offset + index]),
+            shorterTokens.every((token, index) =>
+              inflectedTokenMatch(token, longerTokens[offset + index]),
             )
           ) {
-            return variantTokens.join(' ').length;
+            return shorterTokens.join(' ').length;
           }
         }
         return 0;
@@ -378,13 +397,17 @@ function matchInflectedExercise(
 }
 
 function searchableTokens(value: string) {
-  return value
-    .toLocaleLowerCase('ru-RU')
-    .replaceAll('ё', 'е')
+  const lowered = value.toLocaleLowerCase('ru-RU').replaceAll('ё', 'е');
+  const normalized = /[а-я]/u.test(lowered) ? lowered.replace(/\bc\b/gu, 'с') : lowered;
+  return normalized
     .replace(/[^a-zа-я0-9]+/giu, ' ')
     .trim()
     .split(/\s+/u)
     .filter(Boolean);
+}
+
+function normalizeMixedScriptPhrase(value: string) {
+  return /[а-яё]/iu.test(value) ? value.replace(/\bc\b/giu, 'с') : value;
 }
 
 function inflectedTokenMatch(expected: string, actual: string) {

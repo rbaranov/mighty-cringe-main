@@ -1,4 +1,4 @@
-# Mighty & Cringe: первый production-сервер в Hetzner
+# MightyCringe: первый production-сервер в Hetzner
 
 Этот runbook разворачивает техническое окружение в Hetzner Cloud, Helsinki.
 
@@ -20,7 +20,7 @@
 
 ## 1. Hetzner Cloud: проект, ключ и Firewall
 
-1. Создайте проект `Mighty Cringe` в Hetzner Cloud Console.
+1. Создайте проект `MightyCringe` в Hetzner Cloud Console.
 2. На Mac создайте SSH-ключ, если его ещё нет:
 
    ```bash
@@ -292,7 +292,7 @@ https://docs.hetzner.com/storage/object-storage/faq/s3-credentials/.
 
 ### Приватный голос: OpenRouter
 
-1. Создайте отдельный API key только для production Mighty & Cringe и установите небольшой credit
+1. Создайте отдельный API key только для production MightyCringe и установите небольшой credit
    limit. Не вставляйте ключ в GitHub, браузер или `VITE_*` переменные.
 2. В OpenRouter **Privacy** отключите использование inputs/outputs и включите ZDR для группы,
    соответствующей выбранной STT-модели. В **Observability** оставьте **Input & Output Logging**

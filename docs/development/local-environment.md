@@ -1,4 +1,4 @@
-# Локальный запуск Mighty & Cringe
+# Локальный запуск MightyCringe
 
 Один и тот же путь запускает PWA, API, worker и PostgreSQL без production-секретов. PostgreSQL
 работает в отдельном Docker Compose project либо в изолированном native-каталоге, а

@@ -214,7 +214,7 @@ function requestHeaders(apiKey: string) {
   return {
     Authorization: `Bearer ${apiKey}`,
     'Content-Type': 'application/json',
-    'X-Title': 'Mighty & Cringe exercise discovery',
+    'X-Title': 'MightyCringe exercise discovery',
   };
 }
 
