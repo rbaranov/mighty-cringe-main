@@ -1612,6 +1612,8 @@ function ExerciseDetailView({
   onReplaceExercise: () => void;
 }) {
   const { locale, unitSystem } = usePreferences();
+  const [videoPlaying, setVideoPlaying] = useState(false);
+  useEffect(() => setVideoPlaying(false), [exercise.id]);
   const currentSets = activeWorkout
     ? sets
         .filter(
@@ -1762,13 +1764,26 @@ function ExerciseDetailView({
         {exercise.notes && <p>{exercise.notes}</p>}
         {primaryVideo ? (
           <>
-            <a
-              className="technique-preview"
-              href={primaryVideo.url}
-              rel="noreferrer"
-              target="_blank"
-            >
-              {primaryVideoId ? (
+            {primaryVideoId && videoPlaying ? (
+              <div className="technique-player">
+                <iframe
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allowFullScreen
+                  src={`https://www.youtube-nocookie.com/embed/${primaryVideoId}?autoplay=1&rel=0`}
+                  title={primaryVideo.title}
+                />
+              </div>
+            ) : primaryVideoId ? (
+              <button
+                aria-label={tr(
+                  locale,
+                  `Запустить видео: ${primaryVideo.title}`,
+                  `Play video: ${primaryVideo.title}`,
+                )}
+                className="technique-preview"
+                onClick={() => setVideoPlaying(true)}
+                type="button"
+              >
                 <img
                   alt={tr(
                     locale,
@@ -1778,19 +1793,37 @@ function ExerciseDetailView({
                   loading="lazy"
                   src={`https://i.ytimg.com/vi/${primaryVideoId}/hqdefault.jpg`}
                 />
-              ) : (
+                <span className="technique-play" aria-hidden="true">
+                  ▶
+                </span>
+                <strong>{primaryVideo.title}</strong>
+              </button>
+            ) : (
+              <a
+                className="technique-preview"
+                href={primaryVideo.url}
+                rel="noreferrer"
+                target="_blank"
+              >
                 <span className="technique-preview-art" aria-hidden="true">
                   {exerciseName(exercise, locale).slice(0, 1)}
                 </span>
-              )}
-              <span className="technique-play" aria-hidden="true">
-                ▶
-              </span>
-              <strong>{primaryVideo.title}</strong>
-            </a>
-            <a className="youtube-link" href={primaryVideo.url} rel="noreferrer" target="_blank">
-              {tr(locale, 'Открыть на YouTube ↗', 'Open on YouTube ↗')}
-            </a>
+                <span className="technique-play" aria-hidden="true">
+                  ↗
+                </span>
+                <strong>{primaryVideo.title}</strong>
+              </a>
+            )}
+            <div className="technique-video-actions">
+              <a href={primaryVideo.url} rel="noreferrer" target="_blank">
+                <span aria-hidden="true">↗</span>
+                {tr(locale, 'Открыть видео', 'Open video')}
+              </a>
+              <a href={fallbackVideoUrl} rel="noreferrer" target="_blank">
+                <span aria-hidden="true">⌕</span>
+                {tr(locale, 'Найти другие', 'Find others')}
+              </a>
+            </div>
           </>
         ) : (
           <a

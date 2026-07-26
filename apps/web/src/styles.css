@@ -1965,19 +1965,6 @@ small,
   margin: 0;
   accent-color: #b9f400;
 }
-.recording-controls {
-  padding: 13px;
-  border: 1px solid #9e503f;
-  border-radius: 12px;
-  background: #2b1915;
-  color: #ffd0c6;
-  font-size: 11px;
-}
-.recording-controls > div {
-  display: flex;
-  gap: 7px;
-  margin-top: 10px;
-}
 .voice-hint {
   margin: 0;
   color: #e7c983;
@@ -2551,7 +2538,6 @@ small,
 .auth-error,
 .conflict-panel,
 .inline-confirmation,
-.recording-controls,
 .import-result.error,
 .set-chip.conflict {
   border-color: #df9a8c;
@@ -2575,6 +2561,201 @@ small,
 }
 .clarification.compact {
   color: var(--warning);
+}
+
+.voice-recording-stage {
+  position: relative;
+  display: grid;
+  overflow: hidden;
+  gap: 14px;
+  padding: 16px;
+  border: 0;
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 88% 12%, rgb(255 138 31 / 58%), transparent 26%),
+    radial-gradient(circle at 8% 92%, rgb(130 118 255 / 62%), transparent 32%),
+    linear-gradient(145deg, #171a3f 0%, #3430a5 55%, #4f46e5 100%);
+  box-shadow: 0 18px 42px rgb(41 37 132 / 28%);
+  color: #ffffff;
+  isolation: isolate;
+}
+.voice-recording-stage::before,
+.voice-recording-stage::after {
+  position: absolute;
+  z-index: -1;
+  width: 150px;
+  height: 150px;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 50%;
+  content: '';
+}
+.voice-recording-stage::before {
+  top: -92px;
+  left: -58px;
+}
+.voice-recording-stage::after {
+  right: -84px;
+  bottom: -102px;
+}
+.voice-recording-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.voice-recording-live,
+.voice-recording-limit {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 850;
+}
+.voice-recording-live {
+  gap: 7px;
+  padding: 7px 10px;
+  background: rgb(9 10 31 / 28%);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.voice-recording-live i {
+  width: 8px;
+  height: 8px;
+  border: 2px solid rgb(255 255 255 / 78%);
+  border-radius: 50%;
+  background: #ff8a1f;
+  box-shadow: 0 0 0 0 rgb(255 138 31 / 55%);
+  animation: voicePulse 1.5s ease-out infinite;
+}
+.voice-recording-limit {
+  padding: 7px 10px;
+  background: rgb(255 255 255 / 12%);
+  color: rgb(255 255 255 / 74%);
+}
+.voice-recording-visual {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  min-height: 70px;
+}
+.voice-recording-mic {
+  display: grid;
+  width: 64px;
+  height: 64px;
+  place-items: center;
+  border: 1px solid rgb(255 255 255 / 25%);
+  border-radius: 21px;
+  background: rgb(255 255 255 / 14%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 18%);
+  backdrop-filter: blur(10px);
+}
+.voice-recording-mic svg {
+  width: 30px;
+  height: 30px;
+  fill: none;
+  stroke: #ffffff;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+.voice-wave {
+  display: flex;
+  height: 56px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+.voice-wave i {
+  width: clamp(3px, 1.15vw, 6px);
+  height: 18%;
+  border-radius: 999px;
+  background: linear-gradient(to top, #ffffff, #ffbd7c);
+  transform-origin: center;
+  animation: voiceWave 0.95s ease-in-out infinite alternate;
+}
+.voice-wave i:nth-child(2n) {
+  animation-delay: -0.5s;
+}
+.voice-wave i:nth-child(3n) {
+  animation-delay: -0.15s;
+}
+.voice-wave i:nth-child(4n) {
+  animation-duration: 0.7s;
+}
+.voice-recording-stage > strong {
+  font-size: 18px;
+  letter-spacing: -0.025em;
+}
+.voice-recording-stage > time {
+  margin-top: -11px;
+  color: rgb(255 255 255 / 68%);
+  font-variant-numeric: tabular-nums;
+  font-weight: 750;
+}
+.voice-recording-actions {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr;
+  gap: 8px;
+}
+.voice-recording-actions button {
+  min-height: 52px;
+  border: 0;
+  border-radius: 16px;
+  font-weight: 850;
+}
+.voice-stop-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  background: #ffffff;
+  color: #302ba0;
+  box-shadow: 0 8px 24px rgb(9 10 31 / 20%);
+}
+.voice-stop-button span {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  background: #ff8a1f;
+}
+.voice-cancel-button {
+  background: rgb(255 255 255 / 12%);
+  color: #ffffff;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 15%);
+}
+@keyframes voicePulse {
+  65% {
+    box-shadow: 0 0 0 8px rgb(255 138 31 / 0%);
+  }
+  100% {
+    box-shadow: 0 0 0 8px rgb(255 138 31 / 0%);
+  }
+}
+@keyframes voiceWave {
+  0% {
+    height: 18%;
+    opacity: 0.62;
+  }
+  100% {
+    height: 88%;
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .voice-recording-live i,
+  .voice-wave i {
+    animation: none;
+  }
+  .voice-wave i:nth-child(3n + 1) {
+    height: 42%;
+  }
+  .voice-wave i:nth-child(3n + 2) {
+    height: 76%;
+  }
+  .voice-wave i:nth-child(3n) {
+    height: 58%;
+  }
 }
 
 .exercise-options .plan-controls {
@@ -3366,9 +3547,14 @@ small,
   width: 100%;
   overflow: hidden;
   place-items: center;
+  padding: 0;
+  border: 0;
   border-radius: 14px;
   background: linear-gradient(145deg, #1f2440, #4f46e5);
   color: #ffffff;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
   text-decoration: none;
 }
 .technique-preview img,
@@ -3442,6 +3628,46 @@ small,
   font-weight: 750;
   text-align: right;
   text-decoration: none;
+}
+.technique-player {
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 14px;
+  background: #111329;
+  box-shadow: 0 12px 30px rgb(25 22 86 / 20%);
+}
+.technique-player iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+.technique-video-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 9px;
+}
+.technique-video-actions a {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px 11px;
+  border-radius: 12px;
+  background: var(--surface-soft);
+  color: var(--accent-deep);
+  font-size: 11px;
+  font-weight: 800;
+  text-align: center;
+  text-decoration: none;
+}
+.technique-video-actions a:first-child {
+  background: var(--accent-soft);
+}
+.technique-video-actions span {
+  font-size: 16px;
+  line-height: 1;
 }
 .technique-links {
   margin-top: 12px;

@@ -904,7 +904,7 @@ export class PostgresRepository implements WorkoutRepository {
           ...exercise,
           scope: 'global',
           ownerId: null,
-          videos: [],
+          videos: exercise.videos ?? [],
           sources: [],
           notes: null,
         })
@@ -918,6 +918,7 @@ export class PostgresRepository implements WorkoutRepository {
             primaryMuscles: exercise.primaryMuscles,
             secondaryMuscles: exercise.secondaryMuscles,
             equipment: exercise.equipment,
+            videos: exercise.videos ?? [],
             updatedAt: new Date(),
           },
         });
