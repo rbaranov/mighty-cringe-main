@@ -10,6 +10,12 @@ export const catalog: Exercise[] = [
     primaryMuscles: ['back'],
     secondaryMuscles: ['biceps', 'rear_delt'],
     equipment: ['cable machine'],
+    videos: [
+      {
+        title: 'Техника тяги верхнего блока',
+        url: 'https://www.youtube.com/watch?v=CAwf7n6Luuc',
+      },
+    ],
   },
   {
     id: '10000000-0000-4000-8000-000000000002',
@@ -20,6 +26,12 @@ export const catalog: Exercise[] = [
     primaryMuscles: ['middle_delt'],
     secondaryMuscles: [],
     equipment: ['dumbbells'],
+    videos: [
+      {
+        title: 'Техника разведений гантелей',
+        url: 'https://www.youtube.com/watch?v=3VcKaXpzqRo',
+      },
+    ],
   },
   {
     id: '10000000-0000-4000-8000-000000000003',
@@ -30,6 +42,12 @@ export const catalog: Exercise[] = [
     primaryMuscles: ['chest'],
     secondaryMuscles: ['triceps', 'front_delt'],
     equipment: ['barbell', 'bench'],
+    videos: [
+      {
+        title: 'Техника жима штанги лёжа',
+        url: 'https://www.youtube.com/watch?v=rT7DgCr-3pg',
+      },
+    ],
   },
   {
     id: '10000000-0000-4000-8000-000000000004',
@@ -40,6 +58,12 @@ export const catalog: Exercise[] = [
     primaryMuscles: ['biceps'],
     secondaryMuscles: [],
     equipment: ['dumbbells'],
+    videos: [
+      {
+        title: 'Техника сгибаний с гантелями',
+        url: 'https://www.youtube.com/watch?v=ykJmrZ5v0Oo',
+      },
+    ],
   },
   {
     id: '10000000-0000-4000-8000-000000000005',
@@ -50,6 +74,12 @@ export const catalog: Exercise[] = [
     primaryMuscles: ['quadriceps'],
     secondaryMuscles: ['hamstrings', 'core'],
     equipment: ['barbell', 'rack'],
+    videos: [
+      {
+        title: 'Техника приседаний со штангой',
+        url: 'https://www.youtube.com/watch?v=ultWZbUMPL8',
+      },
+    ],
   },
   {
     id: '10000000-0000-4000-8000-000000000006',
@@ -60,6 +90,12 @@ export const catalog: Exercise[] = [
     primaryMuscles: ['triceps'],
     secondaryMuscles: [],
     equipment: ['cable machine'],
+    videos: [
+      {
+        title: 'Техника разгибаний рук на блоке',
+        url: 'https://www.youtube.com/watch?v=2-LAMcpzODU',
+      },
+    ],
   },
   {
     id: '10000000-0000-4000-8000-000000000007',
@@ -70,6 +106,12 @@ export const catalog: Exercise[] = [
     primaryMuscles: ['hamstrings'],
     secondaryMuscles: ['back', 'core'],
     equipment: ['barbell'],
+    videos: [
+      {
+        title: 'Техника румынской тяги',
+        url: 'https://www.youtube.com/watch?v=JCXUYuzwNrM',
+      },
+    ],
   },
   {
     id: '10000000-0000-4000-8000-000000000008',
@@ -80,6 +122,12 @@ export const catalog: Exercise[] = [
     primaryMuscles: ['back'],
     secondaryMuscles: ['biceps', 'rear_delt'],
     equipment: ['cable machine'],
+    videos: [
+      {
+        title: 'Техника тяги горизонтального блока',
+        url: 'https://www.youtube.com/watch?v=GZbfZ033f74',
+      },
+    ],
   },
   {
     id: '10000000-0000-4000-8000-000000000009',
@@ -90,6 +138,12 @@ export const catalog: Exercise[] = [
     primaryMuscles: ['front_delt', 'middle_delt'],
     secondaryMuscles: ['triceps', 'core'],
     equipment: ['barbell'],
+    videos: [
+      {
+        title: 'Техника жима штанги стоя',
+        url: 'https://www.youtube.com/watch?v=2yjwXTZQDDI',
+      },
+    ],
   },
   {
     id: '10000000-0000-4000-8000-000000000010',
@@ -100,6 +154,12 @@ export const catalog: Exercise[] = [
     primaryMuscles: ['quadriceps'],
     secondaryMuscles: ['hamstrings', 'core'],
     equipment: ['dumbbells', 'bench'],
+    videos: [
+      {
+        title: 'Техника болгарских выпадов',
+        url: 'https://www.youtube.com/watch?v=2C-uNgKwPLE',
+      },
+    ],
   },
   {
     id: '10000000-0000-4000-8000-000000000013',
@@ -110,6 +170,12 @@ export const catalog: Exercise[] = [
     primaryMuscles: ['chest'],
     secondaryMuscles: ['triceps', 'front_delt'],
     equipment: ['dumbbells', 'bench'],
+    videos: [
+      {
+        title: 'Техника жима гантелей лёжа',
+        url: 'https://www.youtube.com/watch?v=VmB1G1K7v94',
+      },
+    ],
   },
   {
     id: '10000000-0000-4000-8000-000000000014',
@@ -120,6 +186,12 @@ export const catalog: Exercise[] = [
     primaryMuscles: ['chest'],
     secondaryMuscles: ['front_delt'],
     equipment: ['machine'],
+    videos: [
+      {
+        title: 'Техника сведений рук в тренажёре',
+        url: 'https://www.youtube.com/watch?v=Z57CtFmRMxA',
+      },
+    ],
   },
   {
     id: '10000000-0000-4000-8000-000000000015',
@@ -130,6 +202,12 @@ export const catalog: Exercise[] = [
     primaryMuscles: ['chest'],
     secondaryMuscles: ['front_delt'],
     equipment: ['cable machine'],
+    videos: [
+      {
+        title: 'Техника сведений рук в кроссовере',
+        url: 'https://www.youtube.com/watch?v=taI4XduLpTk',
+      },
+    ],
   },
   {
     id: '10000000-0000-4000-8000-000000000016',
@@ -140,6 +218,12 @@ export const catalog: Exercise[] = [
     primaryMuscles: ['back'],
     secondaryMuscles: ['biceps', 'rear_delt'],
     equipment: ['pull-up bar'],
+    videos: [
+      {
+        title: 'Техника подтягиваний',
+        url: 'https://www.youtube.com/watch?v=eGo4IYlbE5g',
+      },
+    ],
   },
   {
     id: '10000000-0000-4000-8000-000000000017',
@@ -150,6 +234,12 @@ export const catalog: Exercise[] = [
     primaryMuscles: ['quadriceps'],
     secondaryMuscles: ['hamstrings'],
     equipment: ['machine'],
+    videos: [
+      {
+        title: 'Техника жима ногами',
+        url: 'https://www.youtube.com/watch?v=IZxyjW7MPJQ',
+      },
+    ],
   },
   {
     id: '10000000-0000-4000-8000-000000000018',
@@ -165,5 +255,11 @@ export const catalog: Exercise[] = [
     primaryMuscles: ['chest'],
     secondaryMuscles: ['triceps', 'front_delt'],
     equipment: ['barbell', 'incline bench'],
+    videos: [
+      {
+        title: 'Техника наклонного жима штанги',
+        url: 'https://www.youtube.com/watch?v=SrqOu55lrYU',
+      },
+    ],
   },
 ];

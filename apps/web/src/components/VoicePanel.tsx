@@ -22,6 +22,7 @@ type Capture = {
   recorder: MediaRecorder;
   stream: MediaStream;
   timer: ReturnType<typeof setTimeout>;
+  startedAt: number;
   discard: boolean;
 };
 
@@ -40,6 +41,7 @@ export function VoicePanel({
   const [captureState, setCaptureState] = useState<'idle' | 'requesting' | 'recording' | 'saving'>(
     'idle',
   );
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [latestEntryId, setLatestEntryId] = useState<string | null>(null);
   const capture = useRef<Capture | null>(null);
@@ -108,6 +110,20 @@ export function VoicePanel({
     void startRecording();
   }, [activeWorkoutId, autoStart, config, consented]);
 
+  useEffect(() => {
+    if (captureState !== 'recording') {
+      setRecordingSeconds(0);
+      return;
+    }
+    const updateElapsed = () => {
+      const startedAt = capture.current?.startedAt;
+      if (startedAt) setRecordingSeconds(Math.floor((Date.now() - startedAt) / 1_000));
+    };
+    updateElapsed();
+    const interval = setInterval(updateElapsed, 250);
+    return () => clearInterval(interval);
+  }, [captureState]);
+
   async function startRecording() {
     if (!config?.enabled || !consented || !activeWorkoutId || capture.current) return;
     setError(null);
@@ -151,7 +167,13 @@ export function VoicePanel({
       );
       recorder.start(1_000);
       const timer = setTimeout(() => stopRecording(false), config.maximumSeconds * 1_000);
-      capture.current = { recorder, stream: activeStream, timer, discard: false };
+      capture.current = {
+        recorder,
+        stream: activeStream,
+        timer,
+        startedAt: Date.now(),
+        discard: false,
+      };
       setCaptureState('recording');
     } catch {
       stream?.getTracks().forEach((track) => track.stop());
@@ -299,20 +321,48 @@ export function VoicePanel({
       )}
 
       {captureState === 'recording' ? (
-        <div className="recording-controls" role="status">
-          <span>
-            ●{' '}
-            {tr(
-              locale,
-              `Идёт запись — максимум ${config.maximumSeconds} сек.`,
-              `Recording — up to ${config.maximumSeconds} sec.`,
-            )}
-          </span>
-          <div>
-            <button className="button primary" onClick={() => stopRecording(false)} type="button">
+        <div className="voice-recording-stage" role="status">
+          <div className="voice-recording-head">
+            <span className="voice-recording-live">
+              <i aria-hidden="true" />
+              {tr(locale, 'Запись', 'Recording')}
+            </span>
+            <span className="voice-recording-limit">
+              {tr(
+                locale,
+                `до ${formatVoiceDuration(config.maximumSeconds)}`,
+                `up to ${formatVoiceDuration(config.maximumSeconds)}`,
+              )}
+            </span>
+          </div>
+          <div className="voice-recording-visual" aria-hidden="true">
+            <span className="voice-recording-mic">
+              <svg viewBox="0 0 24 24">
+                <path d="M12 15.5a4 4 0 0 0 4-4V6a4 4 0 0 0-8 0v5.5a4 4 0 0 0 4 4Zm-7-4a7 7 0 0 0 14 0M12 18.5V22M8.5 22h7" />
+              </svg>
+            </span>
+            <span className="voice-wave">
+              {Array.from({ length: 11 }, (_, index) => (
+                <i key={index} />
+              ))}
+            </span>
+          </div>
+          <strong>{tr(locale, 'Говори, я слушаю', 'Go ahead, I’m listening')}</strong>
+          <time>{formatVoiceDuration(recordingSeconds)}</time>
+          <div className="voice-recording-actions">
+            <button
+              className="voice-stop-button"
+              onClick={() => stopRecording(false)}
+              type="button"
+            >
+              <span aria-hidden="true" />
               {tr(locale, 'Остановить', 'Stop')}
             </button>
-            <button className="button ghost" onClick={() => stopRecording(true)} type="button">
+            <button
+              className="voice-cancel-button"
+              onClick={() => stopRecording(true)}
+              type="button"
+            >
               {tr(locale, 'Отменить', 'Cancel')}
             </button>
           </div>
@@ -328,7 +378,7 @@ export function VoicePanel({
             ? tr(locale, 'Запрашиваем микрофон…', 'Requesting microphone…')
             : captureState === 'saving'
               ? tr(locale, 'Сохраняем на устройстве…', 'Saving on device…')
-              : tr(locale, 'Начать запись', 'Start recording')}
+              : tr(locale, 'Дать команду', 'Give a command')}
         </button>
       )}
       {!activeWorkoutId && (
@@ -492,6 +542,12 @@ function preferredMimeType() {
     'audio/ogg;codecs=opus',
   ];
   return candidates.find((type) => MediaRecorder.isTypeSupported(type)) ?? '';
+}
+
+function formatVoiceDuration(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
 function voiceStatusLabel(entry: LocalVoiceEntry, locale: 'ru' | 'en') {
