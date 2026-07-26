@@ -812,21 +812,41 @@ function AuthenticatedAppContent({
     >
       <header className="topbar">
         <div>
-          <p className="brand">Mighty &amp; Cringe</p>
+          <p className="brand">MightyCringe</p>
           <p className="subtle">
             {tr(locale, 'Привет', 'Hi')}, {firstName(user.displayName, locale)} 👋
           </p>
         </div>
-        <button
-          aria-live="polite"
-          className={conflicts.length ? 'sync-state conflict' : `sync-state ${syncStatus.phase}`}
-          disabled={syncStatus.phase === 'syncing'}
-          onClick={() => void syncAll()}
-          title={lastSyncTitle(lastSuccessfulSyncAt, locale)}
-          type="button"
+        <details
+          className={conflicts.length ? 'sync-status conflict' : `sync-status ${syncStatus.phase}`}
         >
-          {syncStatusLabel(syncStatus.phase, outboxCount, conflicts.length, locale)}
-        </button>
+          <summary
+            aria-label={syncStatusLabel(syncStatus.phase, outboxCount, conflicts.length, locale)}
+            title={lastSyncTitle(lastSuccessfulSyncAt, locale)}
+          >
+            <SyncStatusIcon
+              conflicts={conflicts.length}
+              pending={outboxCount}
+              phase={syncStatus.phase}
+            />
+          </summary>
+          <div className="sync-tooltip" role="status">
+            <strong>
+              {syncStatusLabel(syncStatus.phase, outboxCount, conflicts.length, locale)}
+            </strong>
+            <span>
+              {syncStatusExplanation(syncStatus.phase, outboxCount, conflicts.length, locale)}
+            </span>
+            <small>{lastSyncTitle(lastSuccessfulSyncAt, locale)}</small>
+            <button
+              disabled={syncStatus.phase === 'syncing'}
+              onClick={() => void syncAll()}
+              type="button"
+            >
+              {tr(locale, 'Синхронизировать сейчас', 'Sync now')}
+            </button>
+          </div>
+        </details>
       </header>
 
       {inviteNotice && (
@@ -1052,7 +1072,7 @@ function AuthLoading() {
   const locale = publicLocale();
   return (
     <main className="auth-shell">
-      <p className="brand">Mighty &amp; Cringe</p>
+      <p className="brand">MightyCringe</p>
       <div className="auth-card" aria-live="polite">
         <p className="eyebrow">{tr(locale, 'Безопасный вход', 'Secure sign-in')}</p>
         <h1>{tr(locale, 'Проверяем сессию…', 'Checking your session…')}</h1>
@@ -1067,7 +1087,7 @@ function LoginScreen({ googleEnabled }: { googleEnabled: boolean }) {
   const loginHref = `/api/v1/auth/google?returnTo=${encodeURIComponent(currentLoginReturnTo(window.location))}`;
   return (
     <main className="auth-shell">
-      <p className="brand">Mighty &amp; Cringe</p>
+      <p className="brand">MightyCringe</p>
       <section className="auth-card">
         <p className="eyebrow">{tr(locale, 'Личный журнал', 'Private log')}</p>
         <h1>{tr(locale, 'Твои тренировки — только твои', 'Your workouts stay yours')}</h1>
@@ -1341,10 +1361,17 @@ function WorkoutView({
                   type="button"
                 >
                   <strong>{exerciseName(exercise, locale)}</strong>
-                  <small>{muscleLabel(exercise.primaryMuscles[0], locale)}</small>
+                  <span className="exercise-card-meta">
+                    <small>{muscleLabel(exercise.primaryMuscles[0], locale)}</small>
+                    <Tag tag={exercise.tag} />
+                    {item.supersetGroup !== null && (
+                      <span className="superset-label">
+                        {workoutGroupLabel(groupSize, locale)} {item.supersetGroup}
+                      </span>
+                    )}
+                  </span>
                 </button>
                 <div className="exercise-card-actions">
-                  <Tag tag={exercise.tag} />
                   <button
                     aria-label={`${tr(locale, 'Настроить упражнение', 'Exercise options')}: ${exerciseName(exercise, locale)}`}
                     className="exercise-options-trigger"
@@ -1358,11 +1385,6 @@ function WorkoutView({
                   </button>
                 </div>
               </div>
-              {item.supersetGroup !== null && (
-                <span className="superset-label">
-                  {workoutGroupLabel(groupSize, locale)} {item.supersetGroup}
-                </span>
-              )}
               {logged.length ? (
                 <div className="sets-line compact-set-list">
                   {logged.map((set, setIndex) => (
@@ -1896,31 +1918,30 @@ function CatalogView({
       )}
       <div className="exercise-list catalog-list">
         {exercises.map((exercise) => (
-          <article className="exercise-row catalog" key={exercise.id}>
-            <div className="catalog-symbol">
+          <button
+            className="exercise-row catalog catalog-exercise-link"
+            key={exercise.id}
+            onClick={() => onOpenExercise(exercise)}
+            type="button"
+          >
+            <span className="catalog-symbol">
               {exercise.tag === 'mighty' ? '⚡' : exercise.tag === 'cringe' ? '😬' : '•'}
-            </div>
+            </span>
             <div>
-              <button
-                className="catalog-exercise-link"
-                onClick={() => onOpenExercise(exercise)}
-                type="button"
-              >
-                <strong>{exerciseName(exercise, locale)}</strong>
-              </button>
+              <strong>{exerciseName(exercise, locale)}</strong>
               <small>
                 {locale === 'en' ? exercise.nameRu : exercise.nameEn} ·{' '}
                 {muscleLabel(exercise.primaryMuscles[0], locale)}
                 {exercise.scope === 'user' ? ` · ${tr(locale, 'личное', 'personal')}` : ''}
               </small>
-              {exercise.videos?.[0] && (
-                <a href={exercise.videos[0].url} rel="noreferrer" target="_blank">
-                  {tr(locale, 'Видео техники', 'Technique video')}
-                </a>
-              )}
             </div>
-            <Tag tag={exercise.tag} />
-          </article>
+            <span className="catalog-row-end">
+              <Tag tag={exercise.tag} />
+              <span aria-hidden="true" className="catalog-chevron">
+                →
+              </span>
+            </span>
+          </button>
         ))}
       </div>
     </section>
@@ -2097,9 +2118,14 @@ function ExercisePickerSheet({
   if (!mode) return null;
 
   const replacedItemId = mode.mode === 'replace' ? mode.itemId : null;
-  const unavailableIds = new Set(
-    currentPlan.filter((item) => item.id !== replacedItemId).map((item) => item.exerciseId),
-  );
+  const replacedExercise =
+    mode.mode === 'replace'
+      ? catalog.find(
+          (exercise) =>
+            exercise.id === currentPlan.find((item) => item.id === replacedItemId)?.exerciseId,
+        )
+      : null;
+  const unavailableIds = new Set(currentPlan.map((item) => item.exerciseId));
   const normalizedQuery = query.trim().toLocaleLowerCase('ru-RU');
   const options = catalog.filter(
     (exercise) =>
@@ -2124,17 +2150,42 @@ function ExercisePickerSheet({
         role="dialog"
       >
         <div className="sheet-handle" />
-        <p className="eyebrow">{tr(locale, 'Каталог', 'Catalog')}</p>
+        <p className="eyebrow">
+          {mode.mode === 'add'
+            ? tr(locale, 'Каталог', 'Catalog')
+            : tr(locale, 'Замена упражнения', 'Exercise replacement')}
+        </p>
         <h2>
           {mode.mode === 'add'
             ? tr(locale, 'Добавить упражнение', 'Add exercise')
-            : tr(locale, 'Чем заменить?', 'Choose a replacement')}
+            : tr(locale, 'Замена упражнения', 'Replace exercise')}
         </h2>
+        {mode.mode === 'replace' && replacedExercise && (
+          <div className="replacement-flow">
+            <div className="replacement-field replacement-source">
+              <span>{tr(locale, 'Что заменить', 'What to replace')}</span>
+              <strong>{exerciseName(replacedExercise, locale)}</strong>
+            </div>
+            <span aria-hidden="true" className="replacement-arrow">
+              ↓
+            </span>
+            <div className="replacement-target-label">
+              <span>{tr(locale, 'На что заменить', 'Replace with')}</span>
+              <small>
+                {tr(locale, 'Найди и выбери новое упражнение', 'Find and choose the new exercise')}
+              </small>
+            </div>
+          </div>
+        )}
         <input
           autoFocus
           className="exercise-search"
           onChange={(event) => setQuery(event.target.value)}
-          placeholder={tr(locale, 'Название или синоним', 'Name or alias')}
+          placeholder={
+            mode.mode === 'add'
+              ? tr(locale, 'Название или синоним', 'Name or alias')
+              : tr(locale, 'На что заменить?', 'Replace with…')
+          }
           type="search"
           value={query}
         />
@@ -2403,7 +2454,7 @@ function ExplainSheet({
             <strong>
               {tr(locale, 'Понял команду — выполнить?', 'I understood the command — apply it?')}
             </strong>
-            <p className="confirmation-message">{workoutCommandSummary(result.command, locale)}</p>
+            <WorkoutCommandPreview command={result.command} locale={locale} />
             {saveError && (
               <p className="clarification compact" role="alert">
                 {saveError}
@@ -2585,6 +2636,37 @@ function ExplainSheet({
   );
 }
 
+function WorkoutCommandPreview({
+  command,
+  locale,
+}: {
+  command: NaturalWorkoutCommand;
+  locale: CurrentUser['locale'];
+}) {
+  if (command.type !== 'replace') {
+    return <p className="confirmation-message">{workoutCommandSummary(command, locale)}</p>;
+  }
+  return (
+    <div className="replacement-command-preview">
+      <div className="replacement-field replacement-source">
+        <span>{tr(locale, 'Что заменить', 'What to replace')}</span>
+        <strong>{exerciseName(command.source.exercise, locale)}</strong>
+      </div>
+      <span aria-hidden="true" className="replacement-arrow">
+        ↓
+      </span>
+      <div className="replacement-field replacement-target">
+        <span>{tr(locale, 'На что заменить', 'Replace with')}</span>
+        <strong>{exerciseName(command.replacement, locale)}</strong>
+      </div>
+      <p>
+        {exerciseName(command.source.exercise, locale)} →{' '}
+        {exerciseName(command.replacement, locale)}
+      </p>
+    </div>
+  );
+}
+
 function loadInputMode(): 'text' | 'voice' {
   try {
     return localStorage.getItem('mighty-cringe:last-input-mode') === 'voice' ? 'voice' : 'text';
@@ -2659,6 +2741,51 @@ function NavIcon({ name }: { name: 'workout' | 'progress' | 'explain' | 'catalog
     <svg aria-hidden="true" viewBox="0 0 24 24">
       {paths[name]}
     </svg>
+  );
+}
+
+function SyncStatusIcon({
+  phase,
+  pending,
+  conflicts,
+}: {
+  phase: ReturnType<typeof getSyncStatus>['phase'];
+  pending: number;
+  conflicts: number;
+}) {
+  const state = conflicts ? 'conflict' : phase === 'idle' && pending > 0 ? 'pending' : phase;
+  return (
+    <span aria-hidden="true" className={`sync-status-icon ${state}`}>
+      <svg viewBox="0 0 24 24">
+        {state === 'idle' ? (
+          <>
+            <circle cx="12" cy="12" r="9" />
+            <path d="m8 12 2.5 2.5L16.5 8" />
+          </>
+        ) : state === 'syncing' ? (
+          <>
+            <path d="M20 7v5h-5M4 17v-5h5" />
+            <path d="M6.1 8.3A7 7 0 0 1 18.8 7M17.9 15.7A7 7 0 0 1 5.2 17" />
+          </>
+        ) : state === 'offline' ? (
+          <>
+            <path d="M5 9.5A11 11 0 0 1 19 9.5M8 13a6.5 6.5 0 0 1 8 0M11 16.5a2 2 0 0 1 2 0" />
+            <path d="m4 4 16 16" />
+          </>
+        ) : state === 'pending' ? (
+          <>
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 7v5l3 2" />
+          </>
+        ) : (
+          <>
+            <path d="M12 3 2.8 20h18.4L12 3Z" />
+            <path d="M12 9v5M12 17.5h.01" />
+          </>
+        )}
+      </svg>
+      {(pending > 0 || conflicts > 0) && <i>{conflicts || pending}</i>}
+    </span>
   );
 }
 
@@ -2808,6 +2935,54 @@ function syncStatusLabel(
   return pending
     ? tr(locale, `Ожидает отправки: ${pending}`, `Pending: ${pending}`)
     : tr(locale, 'Синхронизировано', 'Synced');
+}
+
+function syncStatusExplanation(
+  phase: ReturnType<typeof getSyncStatus>['phase'],
+  pending: number,
+  conflicts: number,
+  locale: CurrentUser['locale'],
+) {
+  if (conflicts) {
+    return tr(
+      locale,
+      'Есть изменения, которые нужно сравнить вручную. Локальная копия сохранена.',
+      'Some changes need a manual comparison. Your local copy is safe.',
+    );
+  }
+  if (phase === 'offline') {
+    return tr(
+      locale,
+      `Сети нет. Всё сохранено на устройстве${pending ? `; ждут отправки: ${pending}` : ''}.`,
+      `You are offline. Everything is saved on this device${pending ? `; ${pending} waiting to send` : ''}.`,
+    );
+  }
+  if (phase === 'error') {
+    return tr(
+      locale,
+      'Данные на устройстве сохранены, но сервер пока недоступен. Можно повторить синхронизацию.',
+      'Your data is safe on this device, but the server is unavailable. You can retry the sync.',
+    );
+  }
+  if (phase === 'syncing') {
+    return tr(
+      locale,
+      'Проверяем сервер и отправляем сохранённые изменения.',
+      'Checking the server and sending saved changes.',
+    );
+  }
+  if (pending) {
+    return tr(
+      locale,
+      'Изменения сохранены на устройстве и скоро будут отправлены.',
+      'Changes are saved on this device and will be sent shortly.',
+    );
+  }
+  return tr(
+    locale,
+    'Сохранено на устройстве · синхронизировано с сервером.',
+    'Saved on this device · synced with the server.',
+  );
 }
 
 function lastSyncTitle(value: string | null, locale: CurrentUser['locale']) {

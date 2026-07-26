@@ -53,7 +53,7 @@ export const catalog: Exercise[] = [
     id: '10000000-0000-4000-8000-000000000004',
     nameRu: 'Сгибание рук с гантелями',
     nameEn: 'Dumbbell curl',
-    aliases: ['сгибания на бицепс', 'dumbbell curl'],
+    aliases: ['сгибание рук', 'сгибания на бицепс', 'dumbbell curl'],
     tag: 'normal',
     primaryMuscles: ['biceps'],
     secondaryMuscles: [],

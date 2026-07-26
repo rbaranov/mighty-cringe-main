@@ -85,7 +85,7 @@ export class PostgresNotificationJobStore implements NotificationJobStore {
             ${preference.userId},
             ${preference.scheduledFor},
             ${transaction.json({
-              title: 'Mighty & Cringe',
+              title: 'MightyCringe',
               body:
                 preference.locale === 'en'
                   ? 'Time to train. Open your plan and log the result.'

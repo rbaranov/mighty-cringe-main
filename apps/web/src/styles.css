@@ -1,20 +1,20 @@
 :root {
-  --canvas: #f5f6f8;
-  --surface: #ffffff;
-  --surface-soft: #eef1f5;
-  --surface-strong: #e8ebf0;
-  --ink: #14181f;
-  --muted: #737b86;
-  --faint: #9aa1ab;
-  --line: #e6e8ec;
-  --line-strong: #d8dbe0;
-  --accent: #4f46e5;
-  --accent-soft: #eef0fe;
-  --accent-deep: #4f46e5;
-  --danger: #b42318;
-  --danger-soft: #fff1f0;
-  --warning: #b45309;
-  --warning-soft: #fdeccf;
+  --canvas: #f4e8cf;
+  --surface: #fff9ec;
+  --surface-soft: #efe0c2;
+  --surface-strong: #e4cfaa;
+  --ink: #071d2d;
+  --muted: #53616a;
+  --faint: #7e7b70;
+  --line: #b8ad99;
+  --line-strong: #7f817a;
+  --accent: #e32626;
+  --accent-soft: #f7d5c9;
+  --accent-deep: #c91f22;
+  --danger: #b9141b;
+  --danger-soft: #f8d6cd;
+  --warning: #9e4a12;
+  --warning-soft: #f3d8a5;
   font-family:
     Inter,
     ui-sans-serif,
@@ -3769,5 +3769,1160 @@ small,
 @media (max-width: 390px) {
   .workout-live .compact-set-list {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* MightyCringe · accepted red/navy editorial system */
+body {
+  background: var(--ink);
+}
+
+.app-shell,
+.auth-shell,
+.app-shell-workout:not(.app-shell-live),
+.app-shell-live,
+.app-shell-history-edit,
+.app-shell-progress,
+.app-shell-catalog,
+.app-shell-settings,
+.app-shell-trainer {
+  --screen-marker: var(--accent);
+  --nav-bg: var(--ink);
+  border-color: var(--ink);
+  background: var(--canvas);
+}
+
+.app-shell,
+.auth-shell {
+  position: relative;
+  overflow-x: clip;
+}
+
+.topbar {
+  position: relative;
+  z-index: 5;
+  min-height: 52px;
+  padding: 5px 2px 10px;
+}
+
+.topbar::before,
+.topbar::after {
+  position: absolute;
+  z-index: -1;
+  top: -14px;
+  right: -18px;
+  content: '';
+  pointer-events: none;
+}
+
+.topbar::before {
+  width: 122px;
+  height: 74px;
+  background: var(--accent);
+  clip-path: polygon(13% 0, 100% 0, 100% 100%, 0 78%, 17% 52%);
+}
+
+.topbar::after {
+  width: 76px;
+  height: 50px;
+  background-image: radial-gradient(rgb(7 29 45 / 58%) 1px, transparent 1.3px);
+  background-size: 5px 5px;
+  clip-path: polygon(20% 0, 100% 0, 100% 100%, 0 82%);
+}
+
+.brand,
+.screen h1,
+.screen h2,
+.sheet h2,
+.live-head h1,
+.auth-card h1,
+.progress-heading h2,
+.voice-settings-panel h2 {
+  font-family: 'Arial Narrow', 'Roboto Condensed', Impact, ui-sans-serif, system-ui, sans-serif;
+  font-stretch: condensed;
+}
+
+.brand {
+  color: var(--ink);
+  font-size: 27px;
+  font-weight: 950;
+  letter-spacing: -0.07em;
+  line-height: 0.95;
+}
+
+.subtle,
+.intro,
+.sets-line,
+.privacy-note,
+.section-head span,
+.exercise-card small,
+.exercise-row small,
+.explain-context,
+.manual-entry-note,
+.confirmation-message,
+.form-divider,
+.streak-note,
+.chart-legend,
+.chart-range,
+.progress-empty,
+.measurement-delta-note,
+.push-settings-panel > p:first-child,
+.push-settings-grid label,
+.trainer-invite-card label,
+.athlete-read-only-details article small,
+.voice-hint,
+.discovery-sources {
+  color: var(--muted);
+}
+
+.screen {
+  margin-top: 36px;
+}
+
+.screen h1,
+.sheet h2 {
+  color: var(--ink);
+  font-size: clamp(34px, 10vw, 48px);
+  font-weight: 950;
+  letter-spacing: -0.055em;
+  line-height: 0.88;
+  text-transform: uppercase;
+}
+
+.screen h2 {
+  color: var(--ink);
+  font-weight: 900;
+  letter-spacing: -0.025em;
+}
+
+.eyebrow,
+.app-shell .screen > .eyebrow,
+.workout-history-edit .eyebrow {
+  color: var(--accent);
+  font-weight: 950;
+  letter-spacing: 0.1em;
+}
+
+.button,
+.stat,
+.exercise-row,
+.exercise-card,
+.workout-live .exercise-card,
+.progress-section,
+.measurement-detail,
+.push-settings-panel,
+.discovery-candidate,
+.picker-option,
+.exercise-detail-section,
+.detail-set,
+.technique-preview,
+.technique-player,
+.trainer-console-link,
+.setting,
+.profile-card,
+.auth-card {
+  border-radius: 4px;
+  box-shadow: none;
+}
+
+.button {
+  min-height: 44px;
+  border: 1.5px solid var(--ink);
+  border-radius: 3px;
+  text-transform: none;
+}
+
+.button.primary,
+.explain-button {
+  background: var(--accent);
+  color: #fff9ec;
+}
+
+.button.primary:hover,
+.explain-button:hover {
+  background: #c9191d;
+}
+
+.button.ghost,
+.plan-controls button,
+.set-controls button,
+.exercise-options summary,
+.month-controls button,
+.measurement-actions button,
+.candidate-list button,
+.voice-delete-confirm button,
+.input-modes,
+.input-modes button.active,
+.trainer-console-link {
+  border-color: var(--ink);
+  background: var(--surface-soft);
+  color: var(--ink);
+}
+
+.button:focus-visible,
+.tab:focus-visible,
+.exercise-row-button:focus-visible,
+.catalog-exercise-link:focus-visible,
+.exercise-title-button:focus-visible,
+.exercise-options-trigger:focus-visible,
+.sync-status summary:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.auth-card,
+.profile-card,
+.stat,
+.exercise-row,
+.exercise-card,
+.progress-section,
+.measurement-detail,
+.trainer-invite-card,
+.pending-invites,
+.athlete-read-only-details > section,
+.trainer-roster > button,
+.sheet {
+  border-color: var(--ink);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: none;
+}
+
+.auth-shell {
+  background:
+    radial-gradient(circle at 14% 18%, rgb(227 38 38 / 24%) 0 2px, transparent 2.5px) 0 0 / 9px 9px,
+    var(--canvas);
+}
+
+.auth-card {
+  border-width: 2px;
+  background: var(--ink);
+  color: var(--surface);
+}
+
+.auth-card h1,
+.auth-card .intro {
+  color: var(--surface);
+}
+
+.auth-shell > .brand {
+  font-size: 34px;
+}
+
+.tag,
+.tag.mighty,
+.tag.cringe,
+.order,
+.superset-label,
+.self-measured,
+.read-only-badge,
+.confidence.high,
+.muscle-filters button.active,
+.previous-result {
+  border: 1px solid var(--ink);
+  border-radius: 2px;
+  background: var(--surface-soft);
+  color: var(--ink);
+}
+
+.tag.mighty {
+  border-color: #8b4a14;
+  background: var(--warning-soft);
+  color: #8b3a0e;
+}
+
+.tag.cringe {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.connectivity-notice,
+.recovery-notice,
+.progress-notice,
+.import-result,
+.voice-consent,
+.voice-boundary,
+.clarification,
+.exercise-discovery {
+  border: 1.5px solid var(--ink);
+  border-radius: 3px;
+  background: var(--surface-soft);
+  color: var(--ink);
+}
+
+.connectivity-notice.error,
+.auth-error,
+.conflict-panel,
+.inline-confirmation,
+.import-result.error,
+.set-chip.conflict {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+/* Compact synchronization icon with an explanation revealed on tap. */
+.sync-status {
+  position: relative;
+  flex: none;
+}
+
+.sync-status summary {
+  position: relative;
+  display: grid;
+  width: 44px;
+  height: 44px;
+  cursor: pointer;
+  list-style: none;
+  place-items: center;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+.sync-status summary::-webkit-details-marker {
+  display: none;
+}
+
+.sync-status[open] summary {
+  background: var(--ink);
+  color: var(--surface);
+  box-shadow: none;
+  transform: translate(2px, 2px);
+}
+
+.sync-status.offline summary,
+.sync-status.error summary,
+.sync-status.conflict summary {
+  background: var(--accent);
+  color: var(--surface);
+}
+
+.sync-status-icon {
+  position: relative;
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+}
+
+.sync-status-icon svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+  stroke-width: 2;
+}
+
+.sync-status-icon i {
+  position: absolute;
+  top: -8px;
+  right: -9px;
+  display: grid;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  place-items: center;
+  border: 2px solid var(--surface);
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--surface);
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.sync-status-icon.syncing svg {
+  animation: syncSpin 1.2s linear infinite;
+}
+
+@keyframes syncSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.sync-tooltip {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 9px);
+  right: 0;
+  display: grid;
+  width: min(310px, calc(100vw - 36px));
+  gap: 6px;
+  padding: 13px;
+  border: 2px solid var(--ink);
+  border-radius: 3px;
+  background: var(--ink);
+  color: var(--surface);
+  box-shadow: 5px 5px 0 var(--accent);
+}
+
+.sync-tooltip strong,
+.sync-tooltip span,
+.sync-tooltip small {
+  display: block;
+}
+
+.sync-tooltip strong {
+  color: var(--surface);
+  font-size: 13px;
+}
+
+.sync-tooltip span,
+.sync-tooltip small {
+  color: #d7cfbe;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.sync-tooltip button {
+  min-height: 40px;
+  margin-top: 3px;
+  border: 1px solid var(--surface);
+  border-radius: 2px;
+  background: var(--accent);
+  color: var(--surface);
+  font-weight: 850;
+}
+
+/* Active workout: full names first, controls second, six rows visible at 390 × 844. */
+.app-shell-live {
+  padding-top: 9px;
+  padding-inline: 10px;
+}
+
+.app-shell-live .topbar {
+  min-height: 48px;
+  padding-bottom: 4px;
+}
+
+.workout-live {
+  margin-top: 7px;
+}
+
+.app-shell-live .live-head {
+  min-height: 67px;
+  margin-bottom: 3px;
+  border-left: 6px solid var(--accent);
+  padding: 5px 0 5px 10px;
+}
+
+.live-head h1 {
+  margin-bottom: 0;
+  font-size: 31px;
+  line-height: 0.9;
+}
+
+.live-head .button {
+  min-height: 42px;
+  border-color: var(--ink);
+  background: var(--surface-soft);
+}
+
+.live-help {
+  margin-bottom: 5px;
+  font-size: 10px;
+}
+
+.live-help summary {
+  color: var(--muted);
+}
+
+.workout-live .exercise-list {
+  gap: 5px;
+  padding: 0 1px 3px;
+}
+
+.workout-live .exercise-card {
+  min-height: 56px;
+  padding: 6px 7px;
+  border: 1.5px solid var(--ink);
+  background: var(--surface);
+}
+
+.workout-live .exercise-card.superset {
+  border-left: 5px solid var(--accent);
+}
+
+.workout-live .exercise-card-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 5px;
+}
+
+.exercise-title-button,
+.workout-live .exercise-title-button {
+  display: block;
+  width: auto;
+  min-width: 0;
+  overflow: visible;
+  color: var(--ink);
+}
+
+.exercise-title-button strong,
+.workout-live .exercise-card-head strong {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: -0.025em;
+  line-height: 1.05;
+  text-overflow: clip;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.exercise-card-meta {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.exercise-card-meta small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.exercise-card-meta .tag,
+.exercise-card-meta .superset-label {
+  flex: none;
+  margin: 0;
+  padding: 2px 4px;
+  font-size: 7px;
+  line-height: 1.1;
+}
+
+.workout-live .exercise-card-actions {
+  min-width: max-content;
+  gap: 4px;
+}
+
+.exercise-options-trigger {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--ink);
+  border-radius: 2px;
+  background: var(--surface-soft);
+  color: var(--ink);
+}
+
+.workout-live .add-set {
+  min-width: 76px;
+  min-height: 32px;
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  padding: 4px 7px;
+  background: var(--surface);
+  color: var(--accent-deep);
+  font-size: 11px;
+}
+
+.set-chip,
+.add-set {
+  border-color: var(--ink);
+  border-radius: 2px;
+  background: var(--surface-soft);
+  color: var(--ink);
+}
+
+.workout-live .sets-line {
+  min-height: 26px;
+  margin-top: 4px;
+}
+
+.workout-live .compact-set-list {
+  gap: 4px;
+}
+
+.workout-live .compact-set-list .set-chip {
+  padding: 5px 6px;
+  color: var(--ink);
+  font-size: 10px;
+}
+
+.add-exercise,
+.empty-plan,
+.removed-sets,
+.progress-empty {
+  border-color: var(--ink);
+  border-radius: 3px;
+  background: rgb(255 249 236 / 62%);
+}
+
+.workout-live .add-exercise {
+  min-height: 38px;
+  border-width: 1.5px;
+  border-style: dashed;
+  padding: 6px 12px;
+}
+
+/* The whole catalog row is the link. Video stays exclusively on exercise details. */
+.catalog-list {
+  gap: 8px;
+}
+
+.catalog {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  width: 100%;
+  min-height: 68px;
+  align-items: center;
+  gap: 10px;
+  border: 1.5px solid var(--ink);
+  padding: 9px 10px;
+  background: var(--surface);
+  color: var(--ink);
+  text-align: left;
+}
+
+.catalog:hover,
+.catalog:active {
+  background: var(--surface-soft);
+}
+
+.catalog-symbol {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid var(--ink);
+  border-radius: 2px;
+  background: var(--surface-soft);
+}
+
+.catalog strong {
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.15;
+}
+
+.catalog small {
+  margin-top: 4px;
+  color: var(--muted);
+  line-height: 1.2;
+}
+
+.catalog-row-end {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.catalog-chevron {
+  color: var(--accent);
+  font-size: 20px;
+  font-weight: 950;
+}
+
+/* Exercise detail follows the accepted hierarchy: technique before history. */
+.exercise-detail-screen {
+  display: flex;
+  flex-direction: column;
+}
+
+.exercise-detail-screen > .detail-back {
+  order: 0;
+}
+
+.exercise-detail-screen > .exercise-detail-title {
+  order: 1;
+}
+
+.exercise-detail-screen > .exercise-detail-meta {
+  order: 2;
+}
+
+.exercise-detail-screen > .exercise-detail-section {
+  order: 4;
+}
+
+.exercise-detail-screen > .technique-section {
+  order: 3;
+}
+
+.exercise-detail-screen > .exercise-detail-actions {
+  order: 5;
+}
+
+.detail-back {
+  color: var(--accent-deep);
+  font-weight: 900;
+}
+
+.exercise-detail-meta span {
+  border: 1px solid var(--ink);
+  border-radius: 2px;
+  background: var(--surface-soft);
+  color: var(--ink);
+}
+
+.exercise-detail-section {
+  border: 1.5px solid var(--ink);
+  background: var(--surface);
+}
+
+.technique-preview,
+.technique-player {
+  border: 2px solid var(--ink);
+  background: var(--ink);
+  box-shadow: 4px 4px 0 var(--accent);
+}
+
+.technique-preview::after {
+  background: linear-gradient(to top, rgb(7 29 45 / 82%), transparent 58%);
+}
+
+.technique-play {
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--surface);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+.technique-video-actions a,
+.technique-links a {
+  border: 1px solid var(--ink);
+  border-radius: 2px;
+  background: var(--surface-soft);
+  color: var(--ink);
+}
+
+.technique-video-actions a:first-child {
+  background: var(--accent);
+  color: var(--surface);
+}
+
+.detail-set,
+.previous-workouts article,
+.strength-history article,
+.measurement-trends > article,
+.measurement-history-toggle,
+.measurement-history button,
+.measurement-values > div,
+.self-measured-toggle,
+.measurement-form-grid > label,
+.push-settings-panel,
+.voice-history article,
+.discovery-candidate,
+.parsed-set dl > div,
+.picker-option {
+  border-color: var(--ink);
+  background: var(--surface-soft);
+  color: var(--ink);
+}
+
+.previous-workouts article span {
+  border: 1px solid var(--ink);
+  border-radius: 2px;
+  background: var(--surface-soft);
+  color: var(--ink);
+}
+
+.exercise-detail-actions {
+  border: 2px solid var(--ink);
+  border-radius: 3px;
+  background: var(--surface);
+  box-shadow: 4px 4px 0 var(--ink);
+  backdrop-filter: none;
+}
+
+/* Explicit replacement grammar in both manual and natural-command flows. */
+.replacement-flow,
+.replacement-command-preview {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0 6px;
+}
+
+.replacement-field {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border: 2px solid var(--ink);
+  border-radius: 2px;
+  background: var(--surface);
+}
+
+.replacement-field span,
+.replacement-target-label > span {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.replacement-field strong {
+  color: var(--ink);
+  font-size: 17px;
+  line-height: 1.15;
+}
+
+.replacement-arrow {
+  color: var(--accent);
+  font-size: 28px;
+  font-weight: 950;
+  line-height: 0.8;
+  text-align: center;
+}
+
+.replacement-target-label {
+  display: grid;
+  gap: 3px;
+}
+
+.replacement-target-label small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.replacement-command-preview .replacement-target {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.replacement-command-preview > p {
+  margin: 2px 0 8px;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.exercise-picker {
+  max-height: min(91dvh, 780px);
+}
+
+.exercise-search,
+.natural-input textarea,
+.exercise-discovery-search input,
+.form-grid input,
+.progress-select select,
+.measurement-import-sheet textarea,
+.measurement-date input,
+.push-settings-grid input,
+.push-settings-grid select,
+.trainer-invite-card input,
+.share-link input {
+  border: 1.5px solid var(--ink);
+  border-radius: 2px;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.exercise-search:focus,
+.natural-input textarea:focus,
+.exercise-discovery-search input:focus,
+.form-grid input:focus,
+.progress-select select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgb(227 38 38 / 15%);
+}
+
+.picker-option {
+  min-height: 58px;
+  border: 1px solid var(--ink);
+  border-radius: 2px;
+}
+
+.picker-option:active {
+  background: var(--accent-soft);
+}
+
+/* Progress, settings and sheets use the same editorial language. */
+.progress-screen {
+  --progress-line: var(--ink);
+  --progress-card: var(--surface);
+}
+
+.progress-summary article,
+.progress-section {
+  border: 1.5px solid var(--ink);
+  background: var(--surface);
+}
+
+.calendar-day {
+  border-radius: 2px;
+  background: var(--surface-soft);
+  color: var(--muted);
+}
+
+.calendar-day.today {
+  border-color: var(--accent);
+}
+
+.calendar-day.trained {
+  background: var(--ink);
+  color: var(--surface);
+}
+
+.calendar-day.selected {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.calendar-day.trained::after,
+.chart-legend .estimated::before {
+  border-radius: 0;
+  background: var(--accent);
+}
+
+.chart-line.weight {
+  stroke: var(--ink);
+}
+
+.chart-line.estimated,
+.measurement-trends polyline {
+  stroke: var(--accent);
+}
+
+.chart-point.estimated,
+.measurement-trends circle {
+  fill: var(--accent);
+}
+
+.one-rep-explainer {
+  border: 2px solid var(--ink);
+  border-radius: 3px;
+  background: var(--accent);
+  color: var(--surface);
+}
+
+.one-rep-explainer span,
+.one-rep-explainer small {
+  color: #ffe8da;
+}
+
+.setting,
+.profile-card,
+.push-settings-panel,
+.voice-settings-panel,
+.trainer-console-link {
+  border-color: var(--ink);
+}
+
+.profile-card > span {
+  border-radius: 2px;
+  background: var(--accent);
+  color: var(--surface);
+}
+
+.sheet-backdrop {
+  background: rgb(7 29 45 / 62%);
+}
+
+.sheet {
+  border: 2px solid var(--ink);
+  border-bottom: 0;
+  border-radius: 16px 16px 0 0;
+  background: var(--canvas);
+  box-shadow: 0 -8px 0 var(--accent);
+}
+
+.sheet-handle {
+  width: 64px;
+  height: 5px;
+  border-radius: 0;
+  background: var(--ink);
+}
+
+.input-modes {
+  border: 1.5px solid var(--ink);
+  border-radius: 3px;
+  background: var(--surface-soft);
+}
+
+.input-modes button {
+  border-radius: 2px;
+  color: var(--ink);
+}
+
+.input-modes button.active {
+  background: var(--accent);
+  color: var(--surface);
+  box-shadow: none;
+}
+
+.parsed-set {
+  padding: 12px;
+  border: 1.5px solid var(--ink);
+  background: var(--surface);
+}
+
+.parsed-set > strong,
+.parsed-set dd,
+.natural-input label,
+.clarification strong {
+  color: var(--ink);
+}
+
+.parsed-set dl > div {
+  border: 1px solid var(--ink);
+  border-radius: 2px;
+  background: var(--surface-soft);
+}
+
+.candidate-list button {
+  border: 1px solid var(--ink);
+  border-radius: 2px;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.explain-entry {
+  border-color: var(--ink);
+  background: var(--accent);
+  color: var(--surface);
+}
+
+.voice-recording-stage {
+  border: 2px solid var(--ink);
+  border-radius: 3px;
+  background: var(--ink);
+  box-shadow: 5px 5px 0 var(--accent);
+}
+
+.voice-recording-stage::before {
+  border: 0;
+  border-radius: 0;
+  background: var(--accent);
+  clip-path: polygon(0 20%, 100% 0, 80% 100%, 8% 78%);
+  opacity: 0.7;
+}
+
+.voice-recording-stage::after {
+  border: 0;
+  border-radius: 0;
+  background-image: radial-gradient(rgb(255 249 236 / 45%) 1px, transparent 1.5px);
+  background-size: 6px 6px;
+}
+
+.voice-recording-mic,
+.voice-recording-actions button,
+.voice-live-status,
+.voice-consent-status {
+  border-radius: 3px;
+}
+
+.voice-wave i {
+  border-radius: 0;
+  background: var(--accent);
+}
+
+.voice-recording-live i,
+.voice-stop-button span {
+  background: var(--accent);
+}
+
+/* Navigation is a solid navy editorial footer with a red central command. */
+.tabs {
+  border: 0;
+  border-top: 2px solid var(--ink);
+  background: var(--ink);
+  box-shadow: none;
+}
+
+.tab {
+  border-radius: 2px;
+  color: #d6cebd;
+}
+
+.tab.active,
+.tab.active .tab-icon {
+  background: transparent;
+  color: var(--surface);
+}
+
+.tab.active::after {
+  right: 22%;
+  left: 22%;
+  height: 4px;
+  border-radius: 0;
+  background: var(--accent);
+}
+
+.explain-tab,
+.explain-tab .tab-label {
+  color: var(--surface);
+}
+
+.explain-orb {
+  border: 4px solid var(--surface);
+  border-radius: 4px;
+  background: var(--accent);
+  color: var(--surface);
+  box-shadow: 4px 4px 0 #020c13;
+}
+
+.explain-orb i {
+  border-color: var(--surface);
+  border-radius: 2px;
+  background: var(--ink);
+}
+
+.explain-tab:focus-visible .explain-orb {
+  outline-color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sync-status-icon.syncing svg {
+    animation: none;
+  }
+}
+
+@media (max-width: 390px) {
+  .app-shell {
+    padding-inline: 14px;
+  }
+
+  .app-shell-live {
+    padding-inline: 9px;
+  }
+
+  .screen {
+    margin-top: 30px;
+  }
+
+  .workout-live {
+    margin-top: 6px;
+  }
+
+  .workout-live .exercise-card-actions .tag {
+    display: inline-flex;
+  }
+
+  .catalog-row-end .tag {
+    display: none;
+  }
+}
+
+@media (max-width: 360px) {
+  .workout-live .add-set {
+    min-width: 69px;
+    padding-inline: 5px;
+  }
+
+  .exercise-title-button strong,
+  .workout-live .exercise-card-head strong {
+    font-size: 13px;
+  }
+
+  .exercise-card-meta .tag {
+    display: none;
   }
 }

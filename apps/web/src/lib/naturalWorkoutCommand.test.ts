@@ -103,6 +103,68 @@ describe('natural workout commands', () => {
     });
   });
 
+  it('understands source-first replacement phrasing and a Latin c typo', () => {
+    const genericCurl = {
+      ...fallbackCatalog[3],
+      id: '70000000-0000-4000-8000-000000000002',
+      nameRu: 'Сгибание рук',
+      nameEn: 'Arm curl',
+      aliases: ['сгибание рук'],
+    };
+    const curlPlan: WorkoutExercise[] = [
+      {
+        id: '20000000-0000-4000-8000-000000000004',
+        exerciseId: genericCurl.id,
+        position: 0,
+        supersetGroup: null,
+      },
+    ];
+
+    expect(
+      parseNaturalWorkoutCommand({
+        text: 'Сгибание рук поменяй на сгибание рук c гантелями.',
+        catalog: [...fallbackCatalog, genericCurl],
+        plan: curlPlan,
+      }),
+    ).toMatchObject({
+      status: 'command_ready',
+      command: {
+        type: 'replace',
+        source: { exercise: { nameRu: 'Сгибание рук' } },
+        replacement: { nameRu: 'Сгибание рук с гантелями' },
+      },
+    });
+  });
+
+  it('recognizes the reported phrase as a command when the replacement is already selected', () => {
+    const cachedCurl = {
+      ...fallbackCatalog[3],
+      aliases: fallbackCatalog[3].aliases.filter((alias) => alias !== 'сгибание рук'),
+    };
+    const curlPlan: WorkoutExercise[] = [
+      {
+        id: '20000000-0000-4000-8000-000000000005',
+        exerciseId: cachedCurl.id,
+        position: 0,
+        supersetGroup: null,
+      },
+    ];
+
+    expect(
+      parseNaturalWorkoutCommand({
+        text: 'Сгибание рук поменяй на сгибание рук c гантелями.',
+        catalog: fallbackCatalog.map((exercise) =>
+          exercise.id === cachedCurl.id ? cachedCurl : exercise,
+        ),
+        plan: curlPlan,
+      }),
+    ).toMatchObject({
+      status: 'command_needs_clarification',
+      role: 'target',
+      question: 'Выбрано то же упражнение. Укажи, на что его заменить.',
+    });
+  });
+
   it('completes the original command after a discovered alias enters the personal catalog', () => {
     const personalExercise = {
       ...fallbackCatalog[7],

@@ -1,4 +1,4 @@
-# Mighty & Cringe — Application Overview
+# MightyCringe — Application Overview
 
 **Document:** Application Overview / Product Requirements
 **Version:** v0.2.8
@@ -12,7 +12,7 @@
 
 ## 0. About this document and versioning
 
-This is the founding document for **Mighty & Cringe**, a strength-training web app. It defines *what* the app is, *who* it is for, and *what it must do*, plus a proposed technical architecture. It is the shared reference for the interactive mockups and for the implementation in Claude Code.
+This is the founding document for **MightyCringe**, a strength-training web app. It defines *what* the app is, *who* it is for, and *what it must do*, plus a proposed technical architecture. It is the shared reference for the interactive mockups and for the implementation in Claude Code.
 
 **Versioning rule (applies to every file in this project):**
 
@@ -47,7 +47,7 @@ This is the founding document for **Mighty & Cringe**, a strength-training web a
 
 ---
 
-## 1. What is "Mighty & Cringe"?
+## 1. What is "MightyCringe"?
 
 The name comes from a personal joke: every exercise gets sorted into one of three buckets.
 
@@ -57,7 +57,7 @@ The name comes from a personal joke: every exercise gets sorted into one of thre
 | **Normal** | Обычные | The regular working exercises — the honest volume that builds the body. |
 | **Cringe** | Унизительные | The humbling, slightly-embarrassing-but-necessary movements that fix your weak points. |
 
-Every exercise in the catalog carries one of these three tags. It's a lightweight, fun classification (not training science), and the app leans into it with tone and small visual cues. A short in-app **"Почему Mighty & Cringe?"** screen tells the joke plainly (it does **not** pre-assign specific exercises to the buckets — the owner tags them himself).
+Every exercise in the catalog carries one of these three tags. It's a lightweight, fun classification (not training science), and the app leans into it with tone and small visual cues. A short in-app **"Почему MightyCringe?"** screen tells the joke plainly (it does **not** pre-assign specific exercises to the buckets — the owner tags them himself).
 
 ---
 

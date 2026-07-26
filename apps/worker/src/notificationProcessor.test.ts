@@ -13,7 +13,7 @@ class MemoryNotificationJobs implements NotificationJobStore {
   claimed: NotificationJob | null = {
     id: '86000000-0000-4000-8000-000000000001',
     attempts: 1,
-    payload: { title: 'Mighty & Cringe', body: 'Пора тренироваться', url: '/' },
+    payload: { title: 'MightyCringe', body: 'Пора тренироваться', url: '/' },
     subscriptions: [
       {
         endpoint: 'https://push.example.test/one',

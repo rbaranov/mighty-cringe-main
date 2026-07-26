@@ -105,7 +105,7 @@ export class OpenRouterTranscriber implements VoiceTranscriber {
         headers: {
           authorization: `Bearer ${this.apiKey}`,
           'content-type': 'application/json',
-          'x-title': 'Mighty & Cringe',
+          'x-title': 'MightyCringe',
         },
         body: JSON.stringify({
           model: this.model,

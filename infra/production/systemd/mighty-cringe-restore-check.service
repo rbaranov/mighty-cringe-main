@@ -1,5 +1,5 @@
 [Unit]
-Description=Mighty & Cringe PostgreSQL restore verification
+Description=MightyCringe PostgreSQL restore verification
 Requires=docker.service
 After=docker.service network-online.target
 Wants=network-online.target

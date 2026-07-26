@@ -217,8 +217,8 @@ export function VoicePanel({
             )
           : tr(
               locale,
-              'Не удалось сохранить запись в хранилище приложения. Перезапусти Mighty & Cringe и попробуй снова.',
-              'Could not save the recording in app storage. Restart Mighty & Cringe and try again.',
+              'Не удалось сохранить запись в хранилище приложения. Перезапусти MightyCringe и попробуй снова.',
+              'Could not save the recording in app storage. Restart MightyCringe and try again.',
             ),
       );
       return;

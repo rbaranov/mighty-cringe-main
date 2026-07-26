@@ -1,5 +1,5 @@
 [Unit]
-Description=Mighty & Cringe production availability and data-safety checks
+Description=MightyCringe production availability and data-safety checks
 Requires=docker.service
 After=docker.service network-online.target
 Wants=network-online.target
