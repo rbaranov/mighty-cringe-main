@@ -23,12 +23,14 @@ test('requests transcription with raw base64 audio and zero-data-retention routi
   const transcript = await transcriber.transcribe({
     audio: Uint8Array.from([1, 2, 3]),
     format: 'webm',
+    language: 'ru',
   });
 
   assert.equal(transcript, 'жим лёжа 40 на 12');
   assert.deepEqual(body, {
     model: 'openai/whisper-large-v3',
     input_audio: { data: 'AQID', format: 'webm' },
+    language: 'ru',
     provider: { zdr: true },
   });
 });
@@ -38,7 +40,7 @@ test('marks rate limits as retryable provider failures', async () => {
   const transcriber = new OpenRouterTranscriber('server-secret', 'model', request);
 
   await assert.rejects(
-    () => transcriber.transcribe({ audio: Uint8Array.from([1]), format: 'wav' }),
+    () => transcriber.transcribe({ audio: Uint8Array.from([1]), format: 'wav', language: 'ru' }),
     (error) => error instanceof VoiceProviderError && error.retryable,
   );
 });

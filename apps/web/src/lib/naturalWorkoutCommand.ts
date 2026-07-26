@@ -202,7 +202,11 @@ function parseIntent(text: string): ParsedIntent | null {
   const value = text
     .trim()
     .replace(/[.!?]+$/u, '')
-    .replace(/\s+/gu, ' ');
+    .replace(/\s+/gu, ' ')
+    .replace(
+      /^(?:(?:(?:можешь|можете|можно)(?:\s+ли)?|пожалуйста|can you|could you|would you|please)\s*,?\s*)+/iu,
+      '',
+    );
   let match =
     /^(?:замени|заменить|поменяй|поменять|смени|replace|swap|change)\s+(.+?)\s+(?:на|with|to|for)\s+(.+)$/iu.exec(
       value,

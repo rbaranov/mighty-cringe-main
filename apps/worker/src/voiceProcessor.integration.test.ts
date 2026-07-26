@@ -32,6 +32,7 @@ test(
 
       const first = await jobs.claim();
       assert.equal(first?.id, voiceId);
+      assert.equal(first?.language, 'ru');
       assert.equal(first?.attempts, 1);
       await jobs.fail(voiceId, 'temporary', new Date(Date.now() - 1_000));
 

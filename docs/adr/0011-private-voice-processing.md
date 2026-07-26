@@ -4,9 +4,10 @@
 
 **Date:** 2026-07-22
 
-**Amended:** 2026-07-26 — versioned account consent replaces per-recording consent; the active
-input panel now follows the newest recording through transcription automatically, while the durable
-queue remains the failure and offline path.
+**Amended:** 2026-07-26 — versioned account consent replaces per-recording consent; a remembered
+voice mode starts capture when the input panel opens, follows the newest recording through
+locale-bound transcription and parsing, then asks the athlete to confirm or edit the result. The
+durable queue remains the failure and offline path.
 
 ## Context
 
@@ -41,15 +42,18 @@ Each recording uses this trust boundary:
 LOCKED`, recovers leases stale for ten minutes, and retries transient errors up to five attempts
    with exponential backoff.
 6. Only the worker sends base64 raw bytes to OpenRouter's dedicated transcription endpoint. The API
-   key and model stay in server environment variables, and every request sets `provider.zdr: true` so
-   it can only use a Zero Data Retention endpoint. OpenRouter input/output logging must remain disabled
-   for the project key.
-7. After stopping an online recording, the PWA persists it first, uploads immediately, and polls its
-   user-scoped status (`pending`, `processing`, `confirmed`, `failed`) without making the athlete
-   reopen a recording list. A confirmed transcript is forwarded directly to the deterministic local
-   parser. Sets still require the normal field-by-field confirmation; unambiguous non-destructive
-   workout commands may apply immediately, while ambiguous or destructive commands require an
-   explicit clarification or confirmation.
+   key and model stay in server environment variables, every request sends the athlete's `ru` or `en`
+   profile locale as the ISO-639-1 language hint, and every request sets `provider.zdr: true` so it can
+   only use a Zero Data Retention endpoint. OpenRouter input/output logging must remain disabled for
+   the project key.
+7. If voice was the athlete's last selected input mode, opening «Пояснить» starts capture immediately
+   after the versioned consent and browser permission checks. After stopping an online recording, the
+   PWA persists it first, uploads immediately, and polls its user-scoped status (`pending`,
+   `processing`, `confirmed`, `failed`) without making the athlete reopen a recording list. A
+   confirmed transcript is forwarded directly to the deterministic local parser. The panel shows the
+   parsed set or workout command and only then lets the athlete confirm it or edit the transcript;
+   voice results never require a separate parse action and are never applied silently. Ambiguous
+   phrases stay editable and require clarification.
 8. Raw audio is retained until explicit deletion so it can be replayed and corrected. Recording
    statuses, playback, transcripts and deletion live under Settings rather than in the active input
    panel. Deletion removes the local Blob immediately, keeps a durable local tombstone while offline,
