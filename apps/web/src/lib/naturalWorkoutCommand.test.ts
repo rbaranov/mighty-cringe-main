@@ -86,6 +86,23 @@ describe('natural workout commands', () => {
     });
   });
 
+  it('understands the reported polite Russian voice command without asking for set volume', () => {
+    expect(
+      parseNaturalWorkoutCommand({
+        text: 'Можешь заменить жим лежа на жим лежа на наклонной скамье',
+        catalog: fallbackCatalog,
+        plan,
+      }),
+    ).toMatchObject({
+      status: 'command_ready',
+      command: {
+        type: 'replace',
+        source: { exercise: { nameRu: 'Жим лёжа' } },
+        replacement: { nameRu: 'Жим штанги лёжа на наклонной скамье' },
+      },
+    });
+  });
+
   it('completes the original command after a discovered alias enters the personal catalog', () => {
     const personalExercise = {
       ...fallbackCatalog[7],

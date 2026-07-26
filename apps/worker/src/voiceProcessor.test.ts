@@ -10,6 +10,7 @@ class MemoryJobs implements VoiceJobStore {
     id: '81000000-0000-4000-8000-000000000001',
     objectKey: 'user/voice/source.webm',
     audioFormat: 'webm',
+    language: 'ru',
     attempts: 1,
   };
   confirmed: { id: string; transcript: string } | null = null;
@@ -43,9 +44,10 @@ const storage: VoiceStorage = {
 test('confirms a transcript after reading private audio', async () => {
   const jobs = new MemoryJobs();
   const transcriber: VoiceTranscriber = {
-    async transcribe({ audio, format }) {
+    async transcribe({ audio, format, language }) {
       assert.deepEqual([...audio], [1, 2, 3]);
       assert.equal(format, 'webm');
+      assert.equal(language, 'ru');
       return 'жим лёжа 40 на 12';
     },
   };

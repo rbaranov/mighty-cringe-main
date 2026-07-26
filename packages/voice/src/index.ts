@@ -10,6 +10,7 @@ export const maximumVoiceBytes = 10 * 1024 * 1024;
 export const maximumVoiceDurationSeconds = 60;
 
 export type AudioFormat = 'aac' | 'flac' | 'm4a' | 'mp3' | 'ogg' | 'wav' | 'webm';
+export type TranscriptionLanguage = 'ru' | 'en';
 
 export interface VoiceStorage {
   put(key: string, body: Uint8Array, contentType: string): Promise<void>;
@@ -18,7 +19,11 @@ export interface VoiceStorage {
 }
 
 export interface VoiceTranscriber {
-  transcribe(input: { audio: Uint8Array; format: AudioFormat }): Promise<string>;
+  transcribe(input: {
+    audio: Uint8Array;
+    format: AudioFormat;
+    language: TranscriptionLanguage;
+  }): Promise<string>;
 }
 
 export class S3VoiceStorage implements VoiceStorage {
@@ -84,7 +89,15 @@ export class OpenRouterTranscriber implements VoiceTranscriber {
     private readonly request: typeof fetch = fetch,
   ) {}
 
-  async transcribe({ audio, format }: { audio: Uint8Array; format: AudioFormat }) {
+  async transcribe({
+    audio,
+    format,
+    language,
+  }: {
+    audio: Uint8Array;
+    format: AudioFormat;
+    language: TranscriptionLanguage;
+  }) {
     let response: Response;
     try {
       response = await this.request('https://openrouter.ai/api/v1/audio/transcriptions', {
@@ -97,6 +110,7 @@ export class OpenRouterTranscriber implements VoiceTranscriber {
         body: JSON.stringify({
           model: this.model,
           input_audio: { data: Buffer.from(audio).toString('base64'), format },
+          language,
           provider: { zdr: true },
         }),
         signal: AbortSignal.timeout(60_000),

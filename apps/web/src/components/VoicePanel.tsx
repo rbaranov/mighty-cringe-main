@@ -27,9 +27,11 @@ type Capture = {
 
 export function VoicePanel({
   activeWorkoutId,
+  autoStart = false,
   onTranscript,
 }: {
   activeWorkoutId: string | null;
+  autoStart?: boolean;
   onTranscript: (transcript: string) => void;
 }) {
   const { locale } = usePreferences();
@@ -41,7 +43,9 @@ export function VoicePanel({
   const [error, setError] = useState<string | null>(null);
   const [latestEntryId, setLatestEntryId] = useState<string | null>(null);
   const capture = useRef<Capture | null>(null);
+  const autoStartAttempted = useRef(false);
   const deliveredTranscriptId = useRef<string | null>(null);
+  const mounted = useRef(true);
   const transcriptHandler = useRef(onTranscript);
   const latestEntry = useLiveQuery(
     () => (latestEntryId ? db.voiceEntries.get(latestEntryId) : undefined),
@@ -53,12 +57,16 @@ export function VoicePanel({
   }, [onTranscript]);
 
   useEffect(() => {
+    mounted.current = true;
     void loadVoiceConfig().then(async (next) => {
+      if (!mounted.current) return;
       setConfig(next);
-      setConsented(next ? await hasAcceptedVoiceConsent(next.consentVersion) : false);
+      const accepted = next ? await hasAcceptedVoiceConsent(next.consentVersion) : false;
+      if (mounted.current) setConsented(accepted);
     });
     void refreshVoiceEntries();
     return () => {
+      mounted.current = false;
       const current = capture.current;
       if (!current) return;
       current.discard = true;
@@ -86,6 +94,20 @@ export function VoicePanel({
     return () => controller.abort();
   }, [latestEntryId]);
 
+  useEffect(() => {
+    if (
+      !autoStart ||
+      autoStartAttempted.current ||
+      !config?.enabled ||
+      !consented ||
+      !activeWorkoutId
+    ) {
+      return;
+    }
+    autoStartAttempted.current = true;
+    void startRecording();
+  }, [activeWorkoutId, autoStart, config, consented]);
+
   async function startRecording() {
     if (!config?.enabled || !consented || !activeWorkoutId || capture.current) return;
     setError(null);
@@ -97,6 +119,10 @@ export function VoicePanel({
       }
       const activeStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       stream = activeStream;
+      if (!mounted.current) {
+        activeStream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       const requestedMimeType = preferredMimeType();
       const recorder = new MediaRecorder(
         activeStream,
@@ -129,6 +155,7 @@ export function VoicePanel({
       setCaptureState('recording');
     } catch {
       stream?.getTracks().forEach((track) => track.stop());
+      if (!mounted.current) return;
       setCaptureState('idle');
       setError(
         tr(
@@ -283,7 +310,7 @@ export function VoicePanel({
           </span>
           <div>
             <button className="button primary" onClick={() => stopRecording(false)} type="button">
-              {tr(locale, 'Остановить и сохранить', 'Stop and save')}
+              {tr(locale, 'Остановить', 'Stop')}
             </button>
             <button className="button ghost" onClick={() => stopRecording(true)} type="button">
               {tr(locale, 'Отменить', 'Cancel')}
@@ -471,11 +498,10 @@ function voiceStatusLabel(entry: LocalVoiceEntry, locale: 'ru' | 'en') {
   switch (entry.status) {
     case 'queued':
     case 'uploading':
-      return tr(locale, 'Сохранено — ждёт отправки', 'Saved — waiting to upload');
+      return tr(locale, 'Сохраняю и отправляю…', 'Saving and uploading…');
     case 'pending':
-      return tr(locale, 'В очереди распознавания', 'Queued for transcription');
     case 'processing':
-      return tr(locale, 'Распознаётся', 'Transcribing');
+      return tr(locale, 'Распознаю и разбираю…', 'Transcribing and parsing…');
     case 'confirmed':
       return tr(
         locale,

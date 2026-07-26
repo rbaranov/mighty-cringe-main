@@ -2201,12 +2201,14 @@ function ExplainSheet({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [entrySource, setEntrySource] =
     useState<Extract<SetEntrySource, 'natural_text' | 'voice_ai'>>('natural_text');
+  const autoStartVoice = useRef(mode === 'voice').current;
 
   function chooseMode(next: 'text' | 'voice') {
     setMode(next);
     saveInputMode(next);
     setResult(null);
     setCommandOverrides({});
+    setSaveError(null);
   }
 
   function parseInput(
@@ -2276,28 +2278,25 @@ function ExplainSheet({
     }
   }
 
-  async function acceptVoiceTranscript(transcript: string) {
+  function editPhrase() {
+    setMode('text');
+    setResult(null);
+    setCommandOverrides({});
+    setSaveError(null);
+  }
+
+  function acceptVoiceTranscript(transcript: string) {
     setText(transcript);
     setEntrySource('voice_ai');
     setCommandOverrides({});
-    setMode('text');
-    saveInputMode('text');
     const parsed = parseInput(transcript);
     setResult(parsed);
-    if (parsed.status !== 'command_ready' || parsed.command.type === 'remove') return;
-    setSaving(true);
     setSaveError(null);
-    try {
-      await onApplyCommand(parsed.command);
-    } catch {
-      setSaving(false);
-      setSaveError(
-        tr(
-          locale,
-          'Команда распознана, но применить её не удалось. Попробуй ещё раз.',
-          'The command was recognized but could not be applied. Try again.',
-        ),
-      );
+    if (
+      parsed.status === 'needs_clarification' ||
+      parsed.status === 'command_needs_clarification'
+    ) {
+      setMode('text');
     }
   }
 
@@ -2366,12 +2365,7 @@ function ExplainSheet({
           )}
         </p>
 
-        {mode === 'voice' ? (
-          <VoicePanel
-            activeWorkoutId={activeWorkout?.id ?? null}
-            onTranscript={(transcript) => void acceptVoiceTranscript(transcript)}
-          />
-        ) : result?.status === 'command_ready' ? (
+        {result?.status === 'command_ready' ? (
           <div className="parsed-set" aria-live="polite">
             <strong>
               {tr(locale, 'Понял команду — выполнить?', 'I understood the command — apply it?')}
@@ -2383,7 +2377,7 @@ function ExplainSheet({
               </p>
             )}
             <div className="parsed-actions">
-              <button className="button ghost" onClick={() => setResult(null)} type="button">
+              <button className="button ghost" onClick={editPhrase} type="button">
                 {tr(locale, 'Исправить фразу', 'Edit phrase')}
               </button>
               <button
@@ -2434,7 +2428,7 @@ function ExplainSheet({
               </p>
             )}
             <div className="parsed-actions">
-              <button className="button ghost" onClick={() => setResult(null)} type="button">
+              <button className="button ghost" onClick={editPhrase} type="button">
                 {tr(locale, 'Исправить фразу', 'Edit phrase')}
               </button>
               <button
@@ -2449,6 +2443,12 @@ function ExplainSheet({
               </button>
             </div>
           </div>
+        ) : mode === 'voice' ? (
+          <VoicePanel
+            activeWorkoutId={activeWorkout?.id ?? null}
+            autoStart={autoStartVoice}
+            onTranscript={acceptVoiceTranscript}
+          />
         ) : (
           <div className="natural-input">
             <label htmlFor="natural-set-input">

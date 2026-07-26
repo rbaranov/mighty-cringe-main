@@ -3,6 +3,7 @@ import postgres, { type Sql } from 'postgres';
 import {
   VoiceProviderError,
   type AudioFormat,
+  type TranscriptionLanguage,
   type VoiceStorage,
   type VoiceTranscriber,
 } from '@mighty-cringe/voice';
@@ -13,6 +14,7 @@ export type VoiceJob = {
   id: string;
   objectKey: string;
   audioFormat: AudioFormat;
+  language: TranscriptionLanguage;
   attempts: number;
 };
 
@@ -33,13 +35,21 @@ export class PostgresVoiceJobStore implements VoiceJobStore {
   async claim() {
     const rows = await this.sql<VoiceJob[]>`
       with candidate as (
-        select id
-        from voice_entries
+        select
+          entry.id,
+          case when users.locale = 'en' then 'en' else 'ru' end as language
+        from voice_entries as entry
+        join users on users.id = entry.user_id
         where
-          (status = 'pending' and (next_attempt_at is null or next_attempt_at <= now()))
-          or (status = 'processing' and updated_at <= now() - interval '10 minutes')
-        order by coalesce(next_attempt_at, created_at), created_at
-        for update skip locked
+          (entry.status = 'pending' and (
+            entry.next_attempt_at is null or entry.next_attempt_at <= now()
+          ))
+          or (
+            entry.status = 'processing'
+            and entry.updated_at <= now() - interval '10 minutes'
+          )
+        order by coalesce(entry.next_attempt_at, entry.created_at), entry.created_at
+        for update of entry skip locked
         limit 1
       )
       update voice_entries as voice
@@ -55,6 +65,7 @@ export class PostgresVoiceJobStore implements VoiceJobStore {
         voice.id,
         voice.object_key as "objectKey",
         voice.audio_format as "audioFormat",
+        candidate.language,
         voice.attempts
     `;
     return rows[0] ?? null;
@@ -104,7 +115,11 @@ export class VoiceProcessor {
 
     try {
       const audio = await this.storage.get(job.objectKey);
-      const transcript = await this.transcriber.transcribe({ audio, format: job.audioFormat });
+      const transcript = await this.transcriber.transcribe({
+        audio,
+        format: job.audioFormat,
+        language: job.language,
+      });
       await this.jobs.confirm(job.id, transcript);
       return { id: job.id, status: 'confirmed' as const, attempts: job.attempts };
     } catch (error) {

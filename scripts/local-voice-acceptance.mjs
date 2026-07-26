@@ -38,7 +38,7 @@ class AcceptanceRepository extends MemoryRepository {
         ? {
             ...entry,
             status: 'confirmed',
-            transcript: 'жим штанги лежа 40 на 10 rir 2',
+            transcript: 'Можешь заменить жим лежа на жим лежа на наклонной скамье',
             updatedAt: new Date().toISOString(),
             lastError: null,
           }
