@@ -3759,6 +3759,144 @@ small,
   }
 }
 
+/* Mobile catalog editor, nested audio settings and product story. */
+.exercise-editor-screen {
+  margin-top: 18px;
+}
+
+.exercise-editor-intro {
+  max-width: 46ch;
+  margin: 12px 0 16px;
+}
+
+.exercise-editor-card {
+  padding: 14px;
+  border: 2px solid var(--ink);
+  border-radius: 3px;
+  background: var(--surface);
+}
+
+.exercise-editor-screen .sheet-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.audio-command-sections {
+  margin-top: 16px;
+}
+
+.settings-detail-screen .push-settings,
+.settings-detail-screen .push-settings-panel,
+.settings-detail-screen .push-settings-grid,
+.settings-detail-screen .push-settings-grid label {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.settings-detail-screen .push-settings-panel {
+  overflow: hidden;
+  padding: 14px 12px 18px;
+}
+
+.settings-detail-screen .push-settings-grid label {
+  display: grid;
+  overflow: hidden;
+}
+
+.settings-detail-screen .push-settings-grid input,
+.settings-detail-screen .push-settings-grid select {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  inline-size: 100%;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+
+.settings-detail-screen .push-settings-grid input[type='time'] {
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.settings-detail-screen .push-settings-grid input[type='time']::-webkit-date-and-time-value {
+  min-width: 0;
+  margin: 0;
+  text-align: left;
+}
+
+.about-mighty-cringe {
+  margin-top: 28px;
+  overflow: hidden;
+  border: 2px solid var(--ink);
+  border-radius: 3px;
+  background: var(--ink);
+  color: var(--surface);
+  box-shadow: 6px 6px 0 var(--accent);
+}
+
+.about-mighty-cringe > img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  border-bottom: 7px solid var(--accent);
+  object-fit: cover;
+}
+
+.about-mighty-cringe > div {
+  padding: 18px;
+}
+
+.about-mighty-cringe .eyebrow {
+  margin: 0 0 6px;
+  color: #ff4a42;
+}
+
+.about-mighty-cringe h2 {
+  margin: 0 0 12px;
+  color: var(--surface);
+  font-size: clamp(34px, 11vw, 50px);
+  line-height: 0.9;
+  text-transform: uppercase;
+}
+
+.about-mighty-cringe p:not(.eyebrow) {
+  margin: 9px 0 0;
+  color: #e5dccb;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.about-mighty-cringe-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 16px;
+}
+
+.about-mighty-cringe-links a {
+  border: 1px solid var(--surface);
+  padding: 8px 10px;
+  background: var(--accent);
+  color: var(--surface);
+  font-size: 11px;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.workout-required-sheet .explain-context {
+  margin: 14px 0 18px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.workout-required-sheet .button + .button {
+  margin-top: 8px;
+}
+
 /* Mobile catalog, replacement and settings follow-up. */
 html,
 body {

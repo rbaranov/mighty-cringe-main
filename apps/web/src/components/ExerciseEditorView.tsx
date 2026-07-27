@@ -41,7 +41,7 @@ const muscleNames: Record<'ru' | 'en', Record<Muscle, string>> = {
   },
 };
 
-export function ExerciseEditorSheet({
+export function ExerciseEditorView({
   exercise,
   onClose,
   onSaved,
@@ -138,18 +138,24 @@ export function ExerciseEditorSheet({
   }
 
   return (
-    <div className="sheet-backdrop" onMouseDown={onClose} role="presentation">
-      <section
-        aria-label={tr(locale, 'Исправить упражнение', 'Edit exercise')}
-        aria-modal="true"
-        className="sheet exercise-editor"
-        onMouseDown={(event) => event.stopPropagation()}
-        role="dialog"
-      >
-        <div className="sheet-handle" />
-        <p className="eyebrow">{tr(locale, 'Личный каталог', 'Personal catalog')}</p>
-        <h2>{tr(locale, 'Исправить данные', 'Edit details')}</h2>
+    <section
+      aria-label={tr(locale, 'Исправить упражнение', 'Edit exercise')}
+      className="screen exercise-editor-screen"
+    >
+      <button className="detail-back" disabled={saving} onClick={onClose} type="button">
+        ← {tr(locale, 'К упражнению', 'Back to exercise')}
+      </button>
+      <p className="eyebrow">{tr(locale, 'Личный каталог', 'Personal catalog')}</p>
+      <h1>{tr(locale, 'Исправить данные', 'Edit details')}</h1>
+      <p className="intro exercise-editor-intro">
+        {tr(
+          locale,
+          'Исправь карточку личного упражнения. Изменения сохранят историю тренировок.',
+          'Correct your personal exercise. The changes keep your workout history intact.',
+        )}
+      </p>
 
+      <div className="exercise-editor-card">
         <div className="exercise-editor-fields">
           <label>
             {tr(locale, 'Название на русском', 'Russian name')}
@@ -242,8 +248,8 @@ export function ExerciseEditorSheet({
             {saving ? tr(locale, 'Сохраняю…', 'Saving…') : tr(locale, 'Сохранить', 'Save')}
           </button>
         </div>
-      </section>
-    </div>
+      </div>
+    </section>
   );
 }
 
