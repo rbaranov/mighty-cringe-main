@@ -90,3 +90,19 @@ test('does not retry permanent provider failures', async () => {
   assert.equal(result?.status, 'failed');
   assert.equal(jobs.failure?.retryAt, null);
 });
+
+test('rejects subtitle-credit hallucinations without sending them to command parsing', async () => {
+  const jobs = new MemoryJobs();
+  const transcriber: VoiceTranscriber = {
+    async transcribe() {
+      return 'Субтитры создавал DimaTorzok';
+    },
+  };
+
+  const result = await new VoiceProcessor(jobs, storage, transcriber).processOne();
+
+  assert.equal(result?.status, 'failed');
+  assert.equal(jobs.confirmed, null);
+  assert.equal(jobs.failure?.message, 'No speech command detected');
+  assert.equal(jobs.failure?.retryAt, null);
+});

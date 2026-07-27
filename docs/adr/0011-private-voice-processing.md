@@ -9,6 +9,10 @@ voice mode starts capture when the input panel opens, follows the newest recordi
 locale-bound transcription and parsing, then asks the athlete to confirm or edit the result. The
 durable queue remains the failure and offline path.
 
+**Amended:** 2026-07-27 — the worker rejects known non-speech media-credit and video-outro
+hallucinations (for example, subtitle credits) as a permanent “command not heard” result before
+they can reach deterministic workout-command parsing.
+
 ## Context
 
 Voice capture must continue to work when a gym connection disappears, but raw audio is sensitive

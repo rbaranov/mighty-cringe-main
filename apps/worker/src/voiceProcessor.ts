@@ -1,6 +1,7 @@
 import postgres, { type Sql } from 'postgres';
 
 import {
+  isLikelyNonSpeechTranscript,
   VoiceProviderError,
   type AudioFormat,
   type TranscriptionLanguage,
@@ -120,6 +121,9 @@ export class VoiceProcessor {
         format: job.audioFormat,
         language: job.language,
       });
+      if (isLikelyNonSpeechTranscript(transcript)) {
+        throw new VoiceProviderError('No speech command detected', false);
+      }
       await this.jobs.confirm(job.id, transcript);
       return { id: job.id, status: 'confirmed' as const, attempts: job.attempts };
     } catch (error) {

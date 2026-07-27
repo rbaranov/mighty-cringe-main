@@ -906,137 +906,139 @@ function AuthenticatedAppContent({
         </details>
       </header>
 
-      {inviteNotice && (
-        <p className="connectivity-notice" role="status">
-          {inviteNotice}
-        </p>
-      )}
+      <div className="app-content">
+        {inviteNotice && (
+          <p className="connectivity-notice" role="status">
+            {inviteNotice}
+          </p>
+        )}
 
-      {restoredFromCache ? (
-        <p className="connectivity-notice" role="status">
-          {tr(
-            locale,
-            'Открыта сохранённая копия. Можно продолжать тренировку — изменения останутся на этом устройстве и уйдут на сервер после восстановления связи.',
-            'A saved copy is open. You can keep training — changes will stay on this device and sync when the connection returns.',
-          )}
-        </p>
-      ) : syncStatus.phase === 'offline' ? (
-        <p className="connectivity-notice" role="status">
-          {tr(
-            locale,
-            'Нет сети. Все действия сохраняются на этом устройстве и синхронизируются позже.',
-            'You are offline. Every action is saved on this device and will sync later.',
-          )}
-        </p>
-      ) : syncStatus.phase === 'error' ? (
-        <p className="connectivity-notice error" role="status">
-          {syncStatus.message}{' '}
-          {tr(
-            locale,
-            'Нажми статус справа вверху, чтобы повторить сейчас.',
-            'Tap the status above to retry now.',
-          )}
-        </p>
-      ) : null}
+        {restoredFromCache ? (
+          <p className="connectivity-notice" role="status">
+            {tr(
+              locale,
+              'Открыта сохранённая копия. Можно продолжать тренировку — изменения останутся на этом устройстве и уйдут на сервер после восстановления связи.',
+              'A saved copy is open. You can keep training — changes will stay on this device and sync when the connection returns.',
+            )}
+          </p>
+        ) : syncStatus.phase === 'offline' ? (
+          <p className="connectivity-notice" role="status">
+            {tr(
+              locale,
+              'Нет сети. Все действия сохраняются на этом устройстве и синхронизируются позже.',
+              'You are offline. Every action is saved on this device and will sync later.',
+            )}
+          </p>
+        ) : syncStatus.phase === 'error' ? (
+          <p className="connectivity-notice error" role="status">
+            {syncStatus.message}{' '}
+            {tr(
+              locale,
+              'Нажми статус справа вверху, чтобы повторить сейчас.',
+              'Tap the status above to retry now.',
+            )}
+          </p>
+        ) : null}
 
-      {exerciseEditor ? (
-        <ExerciseEditorView
-          exercise={exerciseEditor}
-          onClose={() => setExerciseEditor(null)}
-          onSaved={async (exercise) => {
-            await db.exercises.put(exercise);
-          }}
-        />
-      ) : exerciseDetail ? (
-        <ExerciseDetailView
-          activeWorkout={workoutContext}
-          exercise={exerciseDetail}
-          onAddSet={(exercise) => setSheet({ exercise, set: null })}
-          onBack={() => setExerciseDetailId(null)}
-          onDeleteSet={requestDeleteSet}
-          onDeleteExercise={requestDeleteCatalogExercise}
-          onEditExercise={setExerciseEditor}
-          onEditSet={(exercise, set) => setSheet({ exercise, set })}
-          onMoveSet={moveSet}
-          onReplaceExercise={() => {
-            const item = workoutContext?.exercises.find(
-              (candidate) => candidate.exerciseId === exerciseDetail.id,
-            );
-            if (item) setExercisePicker({ mode: 'replace', itemId: item.id });
-          }}
-          sets={sets}
-          workouts={workouts}
-        />
-      ) : (
-        <>
-          {view === 'workout' && (
-            <WorkoutView
-              activeWorkout={workoutContext}
-              catalog={exercises}
-              editingHistory={Boolean(editingWorkout)}
-              exercises={suggested}
-              onAddSet={(exercise) => setSheet({ exercise, set: null })}
-              onAddExercise={() => setExercisePicker({ mode: 'add' })}
-              onDeleteSet={requestDeleteSet}
-              onEditSet={(exercise, set) => setSheet({ exercise, set })}
-              onFinish={requestFinishWorkout}
-              onFinishEditing={() => {
-                setEditingWorkoutId(null);
-                setView('progress');
-              }}
-              onMoveExercise={moveExercise}
-              onMoveSet={moveSet}
-              onOpenExercise={(exercise) => setExerciseDetailId(exercise.id)}
-              onRemoveExercise={requestRemoveExercise}
-              onReplaceExercise={(itemId) => setExercisePicker({ mode: 'replace', itemId })}
-              onStart={startWorkout}
-              onToggleSuperset={toggleSuperset}
-              onDismissRecovery={() => setRecoveredWorkoutId(null)}
-              recovered={activeWorkout?.id === recoveredWorkoutId}
-              sets={sets}
-              workouts={workouts}
-            />
-          )}
-          {view === 'catalog' && (
-            <CatalogView
-              exercises={availableExercises}
-              onOpenExercise={(exercise) => setExerciseDetailId(exercise.id)}
-            />
-          )}
-          {view === 'progress' && (
-            <ProgressView
-              exercises={exercises}
-              measurements={measurements}
-              onDeleteMeasurement={requestDeleteMeasurement}
-              onDeleteWorkout={requestDeleteWorkout}
-              onEditWorkout={editCompletedWorkout}
-              onImportMeasurements={importMeasurements}
-              onResumeWorkout={requestResumeWorkout}
-              onSaveMeasurement={saveMeasurement}
-              sets={sets}
-              workouts={workouts}
-            />
-          )}
-          {view === 'settings' && (
-            <SettingsView
-              conflicts={conflicts}
-              onLogout={onLogout}
-              onOpenTrainer={
-                canUseTrainerConsole(user.role)
-                  ? () => {
-                      setExerciseDetailId(null);
-                      setView('trainer');
-                    }
-                  : undefined
-              }
-              onUserUpdated={onUserUpdated}
-              relationshipRefreshKey={relationshipRefreshKey}
-              user={user}
-            />
-          )}
-          {view === 'trainer' && <TrainerDashboard onBack={() => setView('settings')} />}
-        </>
-      )}
+        {exerciseEditor ? (
+          <ExerciseEditorView
+            exercise={exerciseEditor}
+            onClose={() => setExerciseEditor(null)}
+            onSaved={async (exercise) => {
+              await db.exercises.put(exercise);
+            }}
+          />
+        ) : exerciseDetail ? (
+          <ExerciseDetailView
+            activeWorkout={workoutContext}
+            exercise={exerciseDetail}
+            onAddSet={(exercise) => setSheet({ exercise, set: null })}
+            onBack={() => setExerciseDetailId(null)}
+            onDeleteSet={requestDeleteSet}
+            onDeleteExercise={requestDeleteCatalogExercise}
+            onEditExercise={setExerciseEditor}
+            onEditSet={(exercise, set) => setSheet({ exercise, set })}
+            onMoveSet={moveSet}
+            onReplaceExercise={() => {
+              const item = workoutContext?.exercises.find(
+                (candidate) => candidate.exerciseId === exerciseDetail.id,
+              );
+              if (item) setExercisePicker({ mode: 'replace', itemId: item.id });
+            }}
+            sets={sets}
+            workouts={workouts}
+          />
+        ) : (
+          <>
+            {view === 'workout' && (
+              <WorkoutView
+                activeWorkout={workoutContext}
+                catalog={exercises}
+                editingHistory={Boolean(editingWorkout)}
+                exercises={suggested}
+                onAddSet={(exercise) => setSheet({ exercise, set: null })}
+                onAddExercise={() => setExercisePicker({ mode: 'add' })}
+                onDeleteSet={requestDeleteSet}
+                onEditSet={(exercise, set) => setSheet({ exercise, set })}
+                onFinish={requestFinishWorkout}
+                onFinishEditing={() => {
+                  setEditingWorkoutId(null);
+                  setView('progress');
+                }}
+                onMoveExercise={moveExercise}
+                onMoveSet={moveSet}
+                onOpenExercise={(exercise) => setExerciseDetailId(exercise.id)}
+                onRemoveExercise={requestRemoveExercise}
+                onReplaceExercise={(itemId) => setExercisePicker({ mode: 'replace', itemId })}
+                onStart={startWorkout}
+                onToggleSuperset={toggleSuperset}
+                onDismissRecovery={() => setRecoveredWorkoutId(null)}
+                recovered={activeWorkout?.id === recoveredWorkoutId}
+                sets={sets}
+                workouts={workouts}
+              />
+            )}
+            {view === 'catalog' && (
+              <CatalogView
+                exercises={availableExercises}
+                onOpenExercise={(exercise) => setExerciseDetailId(exercise.id)}
+              />
+            )}
+            {view === 'progress' && (
+              <ProgressView
+                exercises={exercises}
+                measurements={measurements}
+                onDeleteMeasurement={requestDeleteMeasurement}
+                onDeleteWorkout={requestDeleteWorkout}
+                onEditWorkout={editCompletedWorkout}
+                onImportMeasurements={importMeasurements}
+                onResumeWorkout={requestResumeWorkout}
+                onSaveMeasurement={saveMeasurement}
+                sets={sets}
+                workouts={workouts}
+              />
+            )}
+            {view === 'settings' && (
+              <SettingsView
+                conflicts={conflicts}
+                onLogout={onLogout}
+                onOpenTrainer={
+                  canUseTrainerConsole(user.role)
+                    ? () => {
+                        setExerciseDetailId(null);
+                        setView('trainer');
+                      }
+                    : undefined
+                }
+                onUserUpdated={onUserUpdated}
+                relationshipRefreshKey={relationshipRefreshKey}
+                user={user}
+              />
+            )}
+            {view === 'trainer' && <TrainerDashboard onBack={() => setView('settings')} />}
+          </>
+        )}
+      </div>
 
       {view !== 'trainer' && !exerciseEditor && (
         <nav aria-label={tr(locale, 'Основная навигация', 'Primary navigation')} className="tabs">
