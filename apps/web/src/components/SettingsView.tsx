@@ -84,10 +84,18 @@ export function SettingsView({
   }
 
   if (section !== null) {
+    const backToAudio = section === 'recordings';
     return (
       <section className="screen settings-detail-screen">
-        <button className="settings-back" onClick={() => setSection(null)} type="button">
-          ← {tr(locale, 'Настройки', 'Settings')}
+        <button
+          className="settings-back"
+          onClick={() => setSection(backToAudio ? 'audio' : null)}
+          type="button"
+        >
+          ←{' '}
+          {backToAudio
+            ? tr(locale, 'Аудиокоманды', 'Audio commands')
+            : tr(locale, 'Настройки', 'Settings')}
         </button>
         {section === 'preferences' && (
           <PreferenceSettings
@@ -99,7 +107,24 @@ export function SettingsView({
           />
         )}
         {section === 'notifications' && <PushReminderSettings />}
-        {section === 'audio' && <VoiceCommandSettingsPanel />}
+        {section === 'audio' && (
+          <>
+            <VoiceCommandSettingsPanel />
+            <div className="audio-command-sections">
+              <MenuItem
+                description={tr(
+                  locale,
+                  'Прослушать или удалить сохранённое аудио',
+                  'Play or delete saved audio',
+                )}
+                icon="▶"
+                onClick={() => setSection('recordings')}
+                status={`${recordingCount}`}
+                title={tr(locale, 'Записи команд', 'Command recordings')}
+              />
+            </div>
+          </>
+        )}
         {section === 'recordings' && <VoiceRecordingsPanel />}
         {section === 'coach' && (
           <>
@@ -144,18 +169,39 @@ export function SettingsView({
           />
         )}
         <MenuItem
+          description={user.email}
+          icon="R"
+          onClick={() => setSection('account')}
+          status={roleLabel(user.role, locale)}
+          title={tr(locale, 'Аккаунт', 'Account')}
+        />
+        <MenuItem
           description={tr(
             locale,
-            'Язык интерфейса и отображение веса',
-            'Interface language and weight display',
+            'Кто может видеть тренировки и замеры',
+            'Who can see workouts and measurements',
           )}
-          icon="Aa"
-          onClick={() => setSection('preferences')}
-          status={`${locale === 'ru' ? 'Русский' : 'English'} · ${
-            unitSystem === 'metric' ? tr(locale, 'кг / см', 'kg / cm') : 'lb / in'
-          }`}
-          title={tr(locale, 'Язык и единицы', 'Language and units')}
+          icon="◎"
+          onClick={() => setSection('coach')}
+          status={
+            coachName === undefined
+              ? tr(locale, 'Проверяем…', 'Checking…')
+              : (coachName ?? tr(locale, 'Не подключён', 'Not connected'))
+          }
+          title={tr(locale, 'Тренер и доступ', 'Coach and access')}
         />
+        {onOpenTrainer && (
+          <MenuItem
+            description={tr(
+              locale,
+              'Приглашения и read-only просмотр',
+              'Invitations and read-only access',
+            )}
+            icon="↗"
+            onClick={onOpenTrainer}
+            title={tr(locale, 'Подопечные', 'Athletes')}
+          />
+        )}
         <MenuItem
           description={tr(locale, 'Расписание и тихие часы', 'Schedule and quiet hours')}
           icon="◷"
@@ -191,49 +237,18 @@ export function SettingsView({
         <MenuItem
           description={tr(
             locale,
-            'Прослушать или удалить сохранённое аудио',
-            'Play or delete saved audio',
+            'Язык интерфейса и отображение веса',
+            'Interface language and weight display',
           )}
-          icon="▶"
-          onClick={() => setSection('recordings')}
-          status={`${recordingCount}`}
-          title={tr(locale, 'Записи команд', 'Command recordings')}
-        />
-        <MenuItem
-          description={tr(
-            locale,
-            'Кто может видеть тренировки и замеры',
-            'Who can see workouts and measurements',
-          )}
-          icon="◎"
-          onClick={() => setSection('coach')}
-          status={
-            coachName === undefined
-              ? tr(locale, 'Проверяем…', 'Checking…')
-              : (coachName ?? tr(locale, 'Не подключён', 'Not connected'))
-          }
-          title={tr(locale, 'Тренер и доступ', 'Coach and access')}
-        />
-        {onOpenTrainer && (
-          <MenuItem
-            description={tr(
-              locale,
-              'Приглашения и read-only просмотр',
-              'Invitations and read-only access',
-            )}
-            icon="↗"
-            onClick={onOpenTrainer}
-            title={tr(locale, 'Подопечные', 'Athletes')}
-          />
-        )}
-        <MenuItem
-          description={user.email}
-          icon="R"
-          onClick={() => setSection('account')}
-          status={roleLabel(user.role, locale)}
-          title={tr(locale, 'Аккаунт', 'Account')}
+          icon="Aa"
+          onClick={() => setSection('preferences')}
+          status={`${locale === 'ru' ? 'Русский' : 'English'} · ${
+            unitSystem === 'metric' ? tr(locale, 'кг / см', 'kg / cm') : 'lb / in'
+          }`}
+          title={tr(locale, 'Язык и единицы измерения', 'Language and units')}
         />
       </div>
+      <AboutMightyCringe />
     </section>
   );
 }
@@ -257,7 +272,7 @@ function PreferenceSettings({
   return (
     <>
       <p className="eyebrow">{tr(locale, 'Интерфейс', 'Interface')}</p>
-      <h1>{tr(locale, 'Язык и единицы', 'Language and units')}</h1>
+      <h1>{tr(locale, 'Язык и единицы измерения', 'Language and units')}</h1>
       <fieldset className="settings-choice-group">
         <legend>{tr(locale, 'Язык', 'Language')}</legend>
         <div className="segmented-control">
@@ -294,6 +309,46 @@ function PreferenceSettings({
       </fieldset>
       {error && <p className="auth-error">{error}</p>}
     </>
+  );
+}
+
+function AboutMightyCringe() {
+  const { locale } = usePreferences();
+  return (
+    <section className="about-mighty-cringe">
+      <img
+        alt={tr(
+          locale,
+          'Медоед MightyCringe с гантелями',
+          'MightyCringe honey badger with dumbbells',
+        )}
+        src="/icon-512.png"
+      />
+      <div>
+        <p className="eyebrow">{tr(locale, 'О приложении', 'About')}</p>
+        <h2>MightyCringe</h2>
+        <p>
+          {tr(
+            locale,
+            'Приложение для интенсивных силовых тренировок и учёта прогресса, разработанное Романом Барановым.',
+            'An app for intense strength training and progress tracking, developed by Roman Baranov.',
+          )}
+        </p>
+        <p>
+          {tr(
+            locale,
+            'Название родилось из шутки: все силовые упражнения можно поделить на «Эпичные» — Mighty — и «Унизительные» — Cringe.',
+            'The name comes from a joke: every strength exercise can be either epic — Mighty — or humiliating — Cringe.',
+          )}
+        </p>
+        <div className="about-mighty-cringe-links">
+          <a href="https://t.me/rbaranov" rel="noreferrer" target="_blank">
+            tg @rbaranov
+          </a>
+          <a href="mailto:rbaranov@me.com">rbaranov@me.com</a>
+        </div>
+      </div>
+    </section>
   );
 }
 

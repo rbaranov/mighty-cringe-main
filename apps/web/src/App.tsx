@@ -19,7 +19,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 
 import { SetSheet } from './components/SetSheet';
 import { ExerciseDiscoveryPanel } from './components/ExerciseDiscoveryPanel';
-import { ExerciseEditorSheet } from './components/ExerciseEditorSheet';
+import { ExerciseEditorView } from './components/ExerciseEditorView';
 import type { MeasurementDraft } from './components/BodyMeasurementsSection';
 import { ProgressView } from './components/ProgressView';
 import { SettingsView } from './components/SettingsView';
@@ -915,7 +915,15 @@ function AuthenticatedAppContent({
         </p>
       ) : null}
 
-      {exerciseDetail ? (
+      {exerciseEditor ? (
+        <ExerciseEditorView
+          exercise={exerciseEditor}
+          onClose={() => setExerciseEditor(null)}
+          onSaved={async (exercise) => {
+            await db.exercises.put(exercise);
+          }}
+        />
+      ) : exerciseDetail ? (
         <ExerciseDetailView
           activeWorkout={workoutContext}
           exercise={exerciseDetail}
@@ -1006,7 +1014,7 @@ function AuthenticatedAppContent({
         </>
       )}
 
-      {view !== 'trainer' && (
+      {view !== 'trainer' && !exerciseEditor && (
         <nav aria-label={tr(locale, 'Основная навигация', 'Primary navigation')} className="tabs">
           <Tab
             active={view === 'workout'}
@@ -1083,13 +1091,6 @@ function AuthenticatedAppContent({
         onChoose={chooseExercise}
         onClose={() => setExercisePicker(null)}
       />
-      <ExerciseEditorSheet
-        exercise={exerciseEditor}
-        onClose={() => setExerciseEditor(null)}
-        onSaved={async (exercise) => {
-          await db.exercises.put(exercise);
-        }}
-      />
       <ConfirmationSheet
         confirmation={confirmation}
         onClose={() => setConfirmation(null)}
@@ -1102,6 +1103,12 @@ function AuthenticatedAppContent({
           onApplyCommand={executeWorkoutCommand}
           onClose={() => setExplainContext(null)}
           onSave={saveNaturalSet}
+          onStartWorkout={async () => {
+            await startWorkout();
+            setExplainContext(null);
+            setExerciseDetailId(null);
+            setView('workout');
+          }}
           scopedExercise={explainContext.exercise}
           sets={sets}
         />
@@ -2239,6 +2246,7 @@ function ExplainSheet({
   onClose,
   onApplyCommand,
   onSave,
+  onStartWorkout,
 }: {
   activeWorkout: LocalWorkout | undefined;
   catalog: Exercise[];
@@ -2246,6 +2254,7 @@ function ExplainSheet({
   sets: LocalSet[];
   onClose: () => void;
   onApplyCommand: (command: NaturalWorkoutCommand) => Promise<void>;
+  onStartWorkout: () => Promise<void>;
   onSave: (
     exercise: Exercise,
     input: NaturalSetDraft,
@@ -2366,6 +2375,68 @@ function ExplainSheet({
           .filter((set) => set.exerciseId === result.exercise.id && !set.deleted)
           .sort((left, right) => right.performedAt.localeCompare(left.performedAt))[0]
       : null;
+
+  async function startWorkoutFromCommand() {
+    if (saving) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await onStartWorkout();
+    } catch {
+      setSaveError(
+        tr(
+          locale,
+          'Не удалось начать тренировку. Попробуй ещё раз.',
+          'Could not start the workout. Try again.',
+        ),
+      );
+      setSaving(false);
+    }
+  }
+
+  if (!activeWorkout) {
+    return (
+      <div className="sheet-backdrop" role="presentation" onMouseDown={onClose}>
+        <section
+          aria-modal="true"
+          className="sheet explain-sheet workout-required-sheet"
+          onMouseDown={(event) => event.stopPropagation()}
+          role="dialog"
+        >
+          <div className="sheet-handle" />
+          <p className="eyebrow">{tr(locale, 'Пояснить', 'Describe')}</p>
+          <h2>
+            {tr(locale, 'Команды работают во время тренировки', 'Commands work during a workout')}
+          </h2>
+          <p className="explain-context">
+            {tr(
+              locale,
+              'Начни тренировку — тогда голосом или текстом можно будет записывать подходы и менять план.',
+              'Start a workout, then use voice or text to log sets and change the plan.',
+            )}
+          </p>
+          {saveError && (
+            <p className="clarification compact" role="alert">
+              {saveError}
+            </p>
+          )}
+          <button
+            className="button primary full"
+            disabled={saving}
+            onClick={() => void startWorkoutFromCommand()}
+            type="button"
+          >
+            {saving
+              ? tr(locale, 'Начинаю…', 'Starting…')
+              : tr(locale, 'Начать тренировку', 'Start workout')}
+          </button>
+          <button className="button ghost full" onClick={onClose} type="button">
+            {tr(locale, 'Закрыть', 'Close')}
+          </button>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="sheet-backdrop" role="presentation" onMouseDown={onClose}>

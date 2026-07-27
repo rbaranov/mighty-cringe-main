@@ -17,12 +17,13 @@ const user: CurrentUser = {
 };
 
 describe('SettingsView', () => {
-  it('shows concise sections and styled preference entry points instead of native selects', () => {
+  it('shows the requested section order, nests recordings, and includes the product story', () => {
     const html = renderToStaticMarkup(
       <PreferencesProvider locale="ru" unitSystem="metric">
         <SettingsView
           conflicts={[]}
           onLogout={vi.fn()}
+          onOpenTrainer={vi.fn()}
           onUserUpdated={vi.fn()}
           relationshipRefreshKey={0}
           user={user}
@@ -30,11 +31,23 @@ describe('SettingsView', () => {
       </PreferencesProvider>,
     );
 
-    expect(html).toContain('Язык и единицы');
-    expect(html).toContain('Уведомления');
-    expect(html).toContain('Аудиокоманды');
-    expect(html).toContain('Записи команд');
-    expect(html).toContain('Тренер и доступ');
+    const account = html.indexOf('Аккаунт');
+    const coach = html.indexOf('Тренер и доступ');
+    const athletes = html.indexOf('Подопечные');
+    const notifications = html.indexOf('Уведомления');
+    const audio = html.indexOf('Аудиокоманды');
+    const preferences = html.indexOf('Язык и единицы измерения');
+
+    expect(account).toBeGreaterThan(-1);
+    expect(coach).toBeGreaterThan(account);
+    expect(athletes).toBeGreaterThan(coach);
+    expect(notifications).toBeGreaterThan(athletes);
+    expect(audio).toBeGreaterThan(notifications);
+    expect(preferences).toBeGreaterThan(audio);
+    expect(html).not.toContain('Записи команд');
+    expect(html).toContain('интенсивных силовых тренировок');
+    expect(html).toContain('tg @rbaranov');
+    expect(html).toContain('rbaranov@me.com');
     expect(html).not.toContain('<select');
   });
 });
