@@ -18,6 +18,7 @@ import type {
   TrainerAthleteSummary,
   TrainerInviteRecord,
   TrainerSummary,
+  UpdateExerciseInput,
   UpdateMeasurementInput,
   UpdateNotificationPreferences,
   UpdateSetInput,
@@ -145,6 +146,8 @@ export class RepositoryInviteError extends Error {
 export interface WorkoutRepository {
   listExercises(userId: string): Promise<Exercise[]>;
   createExercise(userId: string, input: CreateExerciseInput): Promise<Exercise>;
+  updateExercise(userId: string, exerciseId: string, input: UpdateExerciseInput): Promise<Exercise>;
+  deleteExercise(userId: string, exerciseId: string, now: Date): Promise<Exercise>;
   listWorkouts(userId: string): Promise<WorkoutRecord[]>;
   createWorkout(userId: string, input: CreateWorkoutInput): Promise<WorkoutMutationResult>;
   updateWorkout(userId: string, input: UpdateWorkoutInput): Promise<WorkoutMutationResult>;
@@ -273,8 +276,30 @@ export class MemoryRepository implements WorkoutRepository {
     if (catalog.some((exercise) => exercise.id === input.id)) {
       throw new RepositoryConflictError(null);
     }
-    const exercise: MemoryExercise = { ...input, scope: 'user', userId };
+    const exercise: MemoryExercise = { ...input, scope: 'user', deletedAt: null, userId };
     this.personalExercises.set(input.id, exercise);
+    const { userId: _userId, ...publicExercise } = exercise;
+    return publicExercise;
+  }
+
+  async updateExercise(
+    userId: string,
+    exerciseId: string,
+    input: UpdateExerciseInput,
+  ): Promise<Exercise> {
+    const exercise = this.personalExercises.get(exerciseId);
+    if (!exercise || exercise.userId !== userId || exercise.deletedAt) {
+      throw new RepositoryNotFoundError();
+    }
+    Object.assign(exercise, input);
+    const { userId: _userId, ...publicExercise } = exercise;
+    return publicExercise;
+  }
+
+  async deleteExercise(userId: string, exerciseId: string, now: Date): Promise<Exercise> {
+    const exercise = this.personalExercises.get(exerciseId);
+    if (!exercise || exercise.userId !== userId) throw new RepositoryNotFoundError();
+    exercise.deletedAt ??= now.toISOString();
     const { userId: _userId, ...publicExercise } = exercise;
     return publicExercise;
   }
@@ -907,6 +932,7 @@ export class PostgresRepository implements WorkoutRepository {
           videos: exercise.videos ?? [],
           sources: [],
           notes: null,
+          deletedAt: null,
         })
         .onConflictDoUpdate({
           target: exercises.id,
@@ -953,6 +979,49 @@ export class PostgresRepository implements WorkoutRepository {
     const records = await this.db
       .insert(exercises)
       .values({ ...input, scope: 'user', ownerId: userId })
+      .returning();
+    return toExercise(records[0]);
+  }
+
+  async updateExercise(
+    userId: string,
+    exerciseId: string,
+    input: UpdateExerciseInput,
+  ): Promise<Exercise> {
+    const records = await this.db
+      .update(exercises)
+      .set({ ...input, updatedAt: new Date() })
+      .where(
+        and(
+          eq(exercises.id, exerciseId),
+          eq(exercises.scope, 'user'),
+          eq(exercises.ownerId, userId),
+          isNull(exercises.deletedAt),
+        ),
+      )
+      .returning();
+    if (!records[0]) throw new RepositoryNotFoundError();
+    return toExercise(records[0]);
+  }
+
+  async deleteExercise(userId: string, exerciseId: string, now: Date): Promise<Exercise> {
+    const existing = await this.db
+      .select()
+      .from(exercises)
+      .where(
+        and(
+          eq(exercises.id, exerciseId),
+          eq(exercises.scope, 'user'),
+          eq(exercises.ownerId, userId),
+        ),
+      )
+      .limit(1);
+    if (!existing[0]) throw new RepositoryNotFoundError();
+    if (existing[0].deletedAt) return toExercise(existing[0]);
+    const records = await this.db
+      .update(exercises)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(eq(exercises.id, exerciseId))
       .returning();
     return toExercise(records[0]);
   }
@@ -2248,6 +2317,7 @@ function toExercise(record: typeof exercises.$inferSelect): Exercise {
   return {
     id: record.id,
     scope: record.scope,
+    deletedAt: record.deletedAt?.toISOString() ?? null,
     nameRu: record.nameRu,
     nameEn: record.nameEn,
     aliases: record.aliases,

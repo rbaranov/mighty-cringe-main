@@ -48,6 +48,7 @@ export const exerciseLinkSchema = z.object({
 export const exerciseSchema = z.object({
   id: z.string().uuid(),
   scope: z.enum(['global', 'user']).optional(),
+  deletedAt: z.string().datetime().nullable().optional(),
   nameRu: z.string().min(1),
   nameEn: z.string().min(1),
   aliases: z.array(z.string()),
@@ -76,6 +77,11 @@ const exerciseDetailsSchema = z.object({
 export const createExerciseSchema = exerciseDetailsSchema.extend({
   id: z.string().uuid(),
 });
+
+export const updateExerciseSchema = exerciseDetailsSchema.extend({
+  sources: z.array(exerciseLinkSchema).max(8),
+});
+export const exerciseIdSchema = z.string().uuid();
 
 export const exerciseDiscoveryQuerySchema = z.object({
   query: z.string().trim().min(2).max(200),
@@ -398,6 +404,7 @@ export const workoutRecordSchema = z.object({
 
 export type Exercise = z.infer<typeof exerciseSchema>;
 export type CreateExerciseInput = z.infer<typeof createExerciseSchema>;
+export type UpdateExerciseInput = z.infer<typeof updateExerciseSchema>;
 export type ExerciseDiscoveryCandidate = z.infer<typeof exerciseDiscoveryCandidateSchema>;
 export type ExerciseDiscoveryResult = z.infer<typeof exerciseDiscoveryResultSchema>;
 export type WorkoutExercise = z.infer<typeof workoutExerciseSchema>;

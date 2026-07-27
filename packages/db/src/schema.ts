@@ -152,6 +152,7 @@ export const exercises = pgTable(
     videos: jsonb('videos').notNull().$type<Array<{ title: string; url: string }>>().default([]),
     sources: jsonb('sources').notNull().$type<Array<{ title: string; url: string }>>().default([]),
     notes: text('notes'),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
     ...timestamps,
   },
   (table) => [index('exercise_scope_owner_idx').on(table.scope, table.ownerId)],

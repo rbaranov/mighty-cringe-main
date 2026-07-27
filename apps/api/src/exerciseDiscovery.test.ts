@@ -172,9 +172,49 @@ test('API discovers, confirms and stores an exercise in the current user catalog
   assert.equal(created.statusCode, 201);
   assert.equal(created.json().exercise.scope, 'user');
 
+  const corrected = await app.inject({
+    method: 'PUT',
+    url: `/api/v1/exercises/${exerciseId}`,
+    payload: {
+      nameRu: 'Тяга Арнольда',
+      nameEn: candidate.nameEn,
+      aliases: candidate.aliases,
+      tag: candidate.tag,
+      primaryMuscles: candidate.primaryMuscles,
+      secondaryMuscles: candidate.secondaryMuscles,
+      equipment: candidate.equipment,
+      videos: candidate.videos,
+      sources: candidate.sources,
+      notes: candidate.notes,
+    },
+  });
+  assert.equal(corrected.statusCode, 200);
+  assert.equal(corrected.json().exercise.nameRu, 'Тяга Арнольда');
+
+  const globalEdit = await app.inject({
+    method: 'PUT',
+    url: '/api/v1/exercises/10000000-0000-4000-8000-000000000001',
+    payload: corrected.json().exercise,
+  });
+  assert.equal(globalEdit.statusCode, 404);
+
+  const deleted = await app.inject({
+    method: 'DELETE',
+    url: `/api/v1/exercises/${exerciseId}`,
+  });
+  assert.equal(deleted.statusCode, 200);
+  assert.ok(deleted.json().exercise.deletedAt);
+
   const catalog = await app.inject({ method: 'GET', url: '/api/v1/exercises' });
   assert.equal(catalog.statusCode, 200);
-  assert.ok(catalog.json().items.some((exercise: { id: string }) => exercise.id === exerciseId));
+  assert.ok(
+    catalog
+      .json()
+      .items.some(
+        (exercise: { id: string; deletedAt: string | null }) =>
+          exercise.id === exerciseId && exercise.deletedAt,
+      ),
+  );
 
   await app.close();
 });
