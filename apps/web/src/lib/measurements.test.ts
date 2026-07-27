@@ -56,6 +56,70 @@ describe('body measurement history', () => {
     });
   });
 
+  it('understands descriptive rows with dates across columns', () => {
+    const result = parseMeasurementCsv(
+      [
+        'Повторные замеры:,23.03.2025,13.06.2025,06.08.2025,11.09.2025,22.01.2026',
+        '⁃ Объем шеи (в самом узком месте ниже кадыка),41,"41,5","39,5",40,40',
+        '⁃ Грудь. Измеряется подмышками при расслабленном состоянии.,108,109,112,"110,5","110,5"',
+        '"⁃ Бицепс. Измеряется при согнутом предплечье на 90°, без напряжения.","35,5","38,5","38,5",38,"38,5"',
+        '"⁃ Бедро (одно). Стоя, расслабленно, с лентой на середине бедра.",Л63 П60,Л66 П62,"Л62,5 П58,5","Л62 П58,5",Л64 П62',
+        '⁃ Икра. В самом широком месте.,"43,5","43,5","42,5",42,43',
+        '⁃ Живот. В самом широком месте ниже пупка.,106,"102,5","100 (почти 98,5)","98,5",96',
+        '- Вес,"96,8",96,95,"91,6","91,5"',
+        ',,,,,самозамер',
+      ].join('\n'),
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.rows).toHaveLength(5);
+    expect(result.rows[0]).toMatchObject({
+      dateKey: '2025-03-23',
+      isSelfMeasured: false,
+      values: {
+        weightKg: 96.8,
+        neckCm: 41,
+        chestCm: 108,
+        bicepsCm: 35.5,
+        thighLeftCm: 63,
+        thighRightCm: 60,
+        calfCm: 43.5,
+        waistCm: 106,
+      },
+    });
+    expect(result.rows[2]?.values.waistCm).toBe(100);
+    expect(result.rows[4]).toMatchObject({
+      dateKey: '2026-01-22',
+      isSelfMeasured: true,
+      values: { thighLeftCm: 64, thighRightCm: 62, weightKg: 91.5, waistCm: 96 },
+    });
+  });
+
+  it('finds a pasted TSV table after notes and honors units in headers', () => {
+    const result = parseMeasurementCsv(
+      [
+        'Export from another app',
+        '',
+        'Date\tWeight lb\tWaist in',
+        'March 23, 2025\t182\t35.8',
+      ].join('\n'),
+      { locale: 'en', unitSystem: 'metric' },
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.rows[0]).toMatchObject({
+      dateKey: '2025-03-23',
+      values: { weightKg: 82.55, waistCm: 90.93 },
+    });
+  });
+
+  it('rejects a duplicate date in a table with dates across columns', () => {
+    const result = parseMeasurementCsv(['Замеры,23.03.2025,23.03.2025', 'Вес,82,81'].join('\n'));
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.errors).toEqual(['Строка 1: дата 2025-03-23 повторяется в файле.']);
+  });
+
   it('rejects duplicate dates and out-of-range values before import', () => {
     const result = parseMeasurementCsv(
       ['date,weight', '2026-01-22,80', '22.01.2026,81', '2026-02-20,900'].join('\n'),

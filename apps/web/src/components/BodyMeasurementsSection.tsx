@@ -61,7 +61,7 @@ export function BodyMeasurementsSection({
         </div>
         <div className="body-actions">
           <button className="button ghost small" onClick={() => setImporting(true)} type="button">
-            {tr(locale, 'Импорт CSV', 'Import CSV')}
+            {tr(locale, 'Импорт таблицы', 'Import table')}
           </button>
           <button className="button primary small" onClick={() => setEditing('new')} type="button">
             + {tr(locale, 'Замер', 'Measurement')}
@@ -173,6 +173,8 @@ function MeasurementImportSheet({
   const { locale, unitSystem } = usePreferences();
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
   const [text, setText] = useState('');
+  const [fileName, setFileName] = useState('');
+  const [fileError, setFileError] = useState('');
   const [saving, setSaving] = useState(false);
   const parsed = useMemo(
     () => parseMeasurementCsv(text, { locale, unitSystem }),
@@ -190,7 +192,7 @@ function MeasurementImportSheet({
         `Row ${row.line}: an entry already exists for ${row.dateKey}.`,
       ),
     );
-  const errors = [...parsed.errors, ...duplicateErrors];
+  const errors = fileError ? [fileError] : [...parsed.errors, ...duplicateErrors];
 
   return (
     <div
@@ -205,39 +207,74 @@ function MeasurementImportSheet({
       >
         <div className="sheet-handle" />
         <p className="eyebrow">{tr(locale, 'История тела', 'Body history')}</p>
-        <h2 id="measurement-import-title">{tr(locale, 'Импорт CSV', 'Import CSV')}</h2>
+        <h2 id="measurement-import-title">{tr(locale, 'Импорт таблицы', 'Import table')}</h2>
         <p className="intro">
           {tr(
             locale,
-            'Вставь строки из таблицы. Разделитель — точка с запятой, десятичная часть — запятая или точка. Обязательны «Дата» и хотя бы один замер.',
-            'Paste rows from a spreadsheet. Use a semicolon separator and either a decimal comma or point. “Date” and at least one measurement are required.',
+            'Выбери CSV, TSV или TXT либо вставь таблицу целиком. Даты могут идти вниз или по горизонтали — подписи, пояснения и единицы распознаются автоматически.',
+            'Choose a CSV, TSV, or TXT file, or paste the whole table. Dates may run down or across; labels, notes, and units are detected automatically.',
           )}
         </p>
-        <pre>
-          {tr(
-            locale,
-            unitSystem === 'imperial'
-              ? 'Дата;Вес lb;Рост in;Шея in;Грудь in;Бицепс in;Бедро левое in;Бедро правое in;Икра in;Талия in;Самозамер'
-              : 'Дата;Вес кг;Рост см;Шея см;Грудь см;Бицепс см;Бедро левое см;Бедро правое см;Икра см;Талия см;Самозамер',
-            unitSystem === 'imperial'
-              ? 'Date;Weight lb;Height in;Neck in;Chest in;Biceps in;Left thigh in;Right thigh in;Calf in;Waist in;Self measured'
-              : 'Date;Weight kg;Height cm;Neck cm;Chest cm;Biceps cm;Left thigh cm;Right thigh cm;Calf cm;Waist cm;Self measured',
-          )}
-        </pre>
+        <label className="measurement-import-picker">
+          <span>{tr(locale, 'Выбрать файл', 'Choose file')}</span>
+          <input
+            accept=".csv,.tsv,.txt,text/csv,text/plain,text/tab-separated-values"
+            aria-label={tr(locale, 'Выбрать файл с замерами', 'Choose measurement file')}
+            onChange={async (event) => {
+              const file = event.target.files?.[0];
+              if (!file) return;
+              setFileName(file.name);
+              setFileError('');
+              if (file.size > 2_000_000) {
+                setText('');
+                setFileError(
+                  tr(
+                    locale,
+                    'Файл больше 2 МБ. Сохрани только лист с замерами в CSV, TSV или TXT.',
+                    'The file is larger than 2 MB. Save only the measurement sheet as CSV, TSV, or TXT.',
+                  ),
+                );
+                return;
+              }
+              try {
+                setText(await file.text());
+              } catch {
+                setText('');
+                setFileError(
+                  tr(
+                    locale,
+                    'Не удалось прочитать файл. Сохрани его как CSV, TSV или TXT.',
+                    'Could not read the file. Save it as CSV, TSV, or TXT.',
+                  ),
+                );
+              }
+            }}
+            onClick={(event) => {
+              event.currentTarget.value = '';
+            }}
+            type="file"
+          />
+        </label>
+        {fileName && <small className="measurement-import-file-name">{fileName}</small>}
+        <div className="measurement-import-divider">
+          <span>{tr(locale, 'или вставить', 'or paste')}</span>
+        </div>
         <textarea
-          aria-label={tr(locale, 'CSV с историей замеров', 'Measurement history CSV')}
-          onChange={(event) => setText(event.target.value)}
+          aria-label={tr(locale, 'Таблица с историей замеров', 'Measurement history table')}
+          onChange={(event) => {
+            setText(event.target.value);
+            setFileName('');
+            setFileError('');
+          }}
           placeholder={
             locale === 'en'
-              ? unitSystem === 'imperial'
-                ? 'Date;Weight lb;Chest in;Waist in;Self measured\n2025-03-23;182;40.5;35.8;yes'
-                : 'Date;Weight kg;Chest cm;Waist cm;Self measured\n2025-03-23;82.5;103;91;yes'
-              : 'Дата;Вес;Грудь;Талия;Самозамер\n23.03.2025;82,5;103;91;да'
+              ? 'Date;Weight;Chest;Waist\n2025-03-23;82.5;103;91\n\n—or—\nMeasurements,2025-03-23\nWeight,82.5\nWaist,91'
+              : 'Дата;Вес;Грудь;Талия\n23.03.2025;82,5;103;91\n\n— или —\nЗамеры,23.03.2025\nВес,"82,5"\nЖивот,91'
           }
-          rows={8}
+          rows={7}
           value={text}
         />
-        {text && (
+        {(text || fileError) && (
           <div className={errors.length ? 'import-result error' : 'import-result'}>
             <strong>
               {errors.length
@@ -251,6 +288,25 @@ function MeasurementImportSheet({
             {errors.slice(0, 5).map((error, index) => (
               <span key={`${index}-${error}`}>{error}</span>
             ))}
+          </div>
+        )}
+        {!errors.length && parsed.rows.length > 0 && (
+          <div className="measurement-import-preview">
+            {parsed.rows.slice(0, 5).map((row) => (
+              <div key={row.dateKey}>
+                <strong>{formatImportDate(row.dateKey, locale)}</strong>
+                <span>{formatImportSummary(row.values, locale, unitSystem)}</span>
+              </div>
+            ))}
+            {parsed.rows.length > 5 && (
+              <small>
+                {tr(
+                  locale,
+                  `И ещё дат: ${parsed.rows.length - 5}`,
+                  `And ${parsed.rows.length - 5} more dates`,
+                )}
+              </small>
+            )}
           </div>
         )}
         <div className="sheet-actions">
@@ -288,6 +344,42 @@ function MeasurementImportSheet({
       </section>
     </div>
   );
+}
+
+function formatImportDate(dateKey: string, locale: 'ru' | 'en'): string {
+  return new Intl.DateTimeFormat(locale === 'ru' ? 'ru-RU' : 'en-US', {
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+    year: 'numeric',
+  }).format(new Date(`${dateKey}T12:00:00Z`));
+}
+
+function formatImportSummary(
+  values: MeasurementValues,
+  locale: 'ru' | 'en',
+  unitSystem: 'metric' | 'imperial',
+): string {
+  const recorded = measurementDefinitions.filter(({ key }) => values[key] !== null);
+  const visible = recorded.slice(0, 4).map((definition) => {
+    const value = values[definition.key]!;
+    return `${measurementCopy(definition, locale).shortLabel}: ${displayMeasurement(
+      definition.key,
+      value,
+      locale,
+      unitSystem,
+    )}`;
+  });
+  if (recorded.length > visible.length) {
+    visible.push(
+      tr(
+        locale,
+        `ещё ${recorded.length - visible.length}`,
+        `+${recorded.length - visible.length} more`,
+      ),
+    );
+  }
+  return visible.join(' · ');
 }
 
 function MeasurementTrendCard({
