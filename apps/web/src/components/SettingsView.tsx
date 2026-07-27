@@ -347,12 +347,37 @@ function AboutMightyCringe() {
         <p>
           {tr(
             locale,
-            'Приложение для интенсивных силовых тренировок и учёта прогресса. Всем известно, что все силовые упражнения можно поделить на «Эпичные» (⚡ Mighty) и «Унизительные» (😬 Cringe).',
-            'An app for intense strength training and progress tracking. Everyone knows that every strength exercise can be either “Epic” (⚡ Mighty) or “Humiliating” (😬 Cringe).',
+            'Приложение для интенсивных силовых тренировок и учёта прогресса. Здесь можно быстро записывать подходы, следить за весами, повторами, замерами и личными рекордами.',
+            'An app for intense strength training and progress tracking. Quickly log sets and follow weights, reps, measurements, and personal records.',
+          )}
+        </p>
+        <p>
+          {tr(
+            locale,
+            'Главная идея проста: в зале приложение не должно мешать тренировке. Минимум лишних действий — максимум честно зафиксированной работы.',
+            'The main idea is simple: an app should not get in the way at the gym. Fewer unnecessary actions — more honestly recorded work.',
+          )}
+        </p>
+        <p>
+          {tr(
+            locale,
+            'Всем известно, что все силовые упражнения можно поделить на «Эпичные» (⚡ Mighty) и «Унизительные» (😬 Cringe). Отсюда и название 😁',
+            'Everyone knows that every strength exercise can be either “Epic” (⚡ Mighty) or “Humiliating” (😬 Cringe). That is where the name comes from 😁',
+          )}
+        </p>
+        <p>
+          {tr(
+            locale,
+            'MightyCringe создан для людей, которые относятся к тренировкам серьёзно, но не слишком серьёзно относятся к себе.',
+            'MightyCringe is made for people who take training seriously, but do not take themselves too seriously.',
           )}
         </p>
         <p className="about-mighty-cringe-author">
-          {tr(locale, 'Автор — Роман Баранов.', 'Author — Roman Baranov.')}
+          {tr(
+            locale,
+            'Автор — Роман Баранов. Связаться с автором:',
+            'Author — Roman Baranov. Contact the author:',
+          )}
         </p>
         <div className="about-mighty-cringe-links">
           <a href="https://t.me/rbaranov" rel="noreferrer" target="_blank">
