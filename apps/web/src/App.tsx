@@ -189,6 +189,7 @@ function AuthenticatedAppContent({
   const [inviteNotice, setInviteNotice] = useState<string | null>(null);
   const [relationshipRefreshKey, setRelationshipRefreshKey] = useState(0);
   const inviteHandled = useRef(false);
+  const syncStatusRef = useRef<HTMLDetailsElement>(null);
   const syncStatus = useSyncExternalStore(subscribeSyncStatus, getSyncStatus, getSyncStatus);
 
   const storedWorkouts = useLiveQuery(
@@ -323,6 +324,28 @@ function AuthenticatedAppContent({
     return () => {
       window.removeEventListener('online', sync);
       window.removeEventListener('offline', sync);
+    };
+  }, []);
+
+  useEffect(() => {
+    function closeSyncStatus(event: PointerEvent) {
+      const details = syncStatusRef.current;
+      if (!details?.open || !(event.target instanceof Node) || details.contains(event.target))
+        return;
+      details.open = false;
+    }
+
+    function closeSyncStatusOnEscape(event: KeyboardEvent) {
+      if (event.key !== 'Escape' || !syncStatusRef.current?.open) return;
+      syncStatusRef.current.open = false;
+      syncStatusRef.current.querySelector('summary')?.focus();
+    }
+
+    document.addEventListener('pointerdown', closeSyncStatus);
+    document.addEventListener('keydown', closeSyncStatusOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeSyncStatus);
+      document.removeEventListener('keydown', closeSyncStatusOnEscape);
     };
   }, []);
 
@@ -852,6 +875,7 @@ function AuthenticatedAppContent({
         </div>
         <details
           className={conflicts.length ? 'sync-status conflict' : `sync-status ${syncStatus.phase}`}
+          ref={syncStatusRef}
         >
           <summary
             aria-label={syncStatusLabel(syncStatus.phase, outboxCount, conflicts.length, locale)}

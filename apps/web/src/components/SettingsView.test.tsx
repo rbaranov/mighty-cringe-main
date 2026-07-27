@@ -46,6 +46,12 @@ describe('SettingsView', () => {
     expect(preferences).toBeGreaterThan(audio);
     expect(html).not.toContain('Записи команд');
     expect(html).toContain('интенсивных силовых тренировок');
+    expect(html).toContain('⚡ Mighty');
+    expect(html).toContain('😬 Cringe');
+    expect(html).toContain('Автор — Роман Баранов.');
+    expect(html).toContain('href="#about-mighty-cringe"');
+    expect(html).toContain('id="about-mighty-cringe"');
+    expect(html).not.toContain('class="profile-card"');
     expect(html).toContain('tg @rbaranov');
     expect(html).toContain('rbaranov@me.com');
     expect(html).not.toContain('<select');

@@ -150,9 +150,27 @@ export function SettingsView({
 
   return (
     <section className="screen settings-home">
-      <p className="eyebrow">{tr(locale, 'Профиль', 'Profile')}</p>
-      <h1>{tr(locale, 'Настройки', 'Settings')}</h1>
-      <ProfileCard user={user} />
+      <div className="settings-home-heading">
+        <div>
+          <p className="eyebrow">{tr(locale, 'Профиль', 'Profile')}</p>
+          <h1>{tr(locale, 'Настройки', 'Settings')}</h1>
+        </div>
+        <a
+          className="settings-about-link"
+          href="#about-mighty-cringe"
+          onClick={(event) => {
+            event.preventDefault();
+            document.getElementById('about-mighty-cringe')?.scrollIntoView({
+              behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+                ? 'auto'
+                : 'smooth',
+              block: 'start',
+            });
+          }}
+        >
+          {tr(locale, 'О приложении ↓', 'About ↓')}
+        </a>
+      </div>
       <div className="settings-menu">
         {conflicts.length > 0 && (
           <MenuItem
@@ -315,7 +333,7 @@ function PreferenceSettings({
 function AboutMightyCringe() {
   const { locale } = usePreferences();
   return (
-    <section className="about-mighty-cringe">
+    <section className="about-mighty-cringe" id="about-mighty-cringe">
       <img
         alt={tr(
           locale,
@@ -326,20 +344,15 @@ function AboutMightyCringe() {
       />
       <div>
         <p className="eyebrow">{tr(locale, 'О приложении', 'About')}</p>
-        <h2>MightyCringe</h2>
         <p>
           {tr(
             locale,
-            'Приложение для интенсивных силовых тренировок и учёта прогресса, разработанное Романом Барановым.',
-            'An app for intense strength training and progress tracking, developed by Roman Baranov.',
+            'Приложение для интенсивных силовых тренировок и учёта прогресса. Всем известно, что все силовые упражнения можно поделить на «Эпичные» (⚡ Mighty) и «Унизительные» (😬 Cringe).',
+            'An app for intense strength training and progress tracking. Everyone knows that every strength exercise can be either “Epic” (⚡ Mighty) or “Humiliating” (😬 Cringe).',
           )}
         </p>
-        <p>
-          {tr(
-            locale,
-            'Название родилось из шутки: все силовые упражнения можно поделить на «Эпичные» — Mighty — и «Унизительные» — Cringe.',
-            'The name comes from a joke: every strength exercise can be either epic — Mighty — or humiliating — Cringe.',
-          )}
+        <p className="about-mighty-cringe-author">
+          {tr(locale, 'Автор — Роман Баранов.', 'Author — Roman Baranov.')}
         </p>
         <div className="about-mighty-cringe-links">
           <a href="https://t.me/rbaranov" rel="noreferrer" target="_blank">
