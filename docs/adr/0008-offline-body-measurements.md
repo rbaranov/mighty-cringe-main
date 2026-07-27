@@ -29,9 +29,11 @@ the current user ID; clients never supply an owner ID. PostgreSQL stores the cur
 and revision, while `client_mutations` makes retries idempotent within the same transaction.
 
 The Progress screen derives trends and deltas from local history so pending offline changes are visible
-immediately. CSV import is parsed and validated on-device, accepts Russian and English headers and
-historical dates, rejects duplicate dates, and enqueues each accepted row through the normal create
-path. Manual entry also prevents a second entry on an existing local date.
+immediately. Table import is parsed and validated on-device from CSV, TSV, or plain text. It accepts
+Russian and English labels, dates running down rows or across columns, descriptive measurement labels,
+explicit units, and historical dates. The client shows the normalized preview before saving, rejects
+duplicate dates, and enqueues each accepted date through the normal create path. Manual entry also
+prevents a second entry on an existing local date.
 
 ## Consequences
 
