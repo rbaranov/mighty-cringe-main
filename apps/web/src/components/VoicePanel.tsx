@@ -491,7 +491,7 @@ export function VoiceProcessingStage({
       </span>
       <strong>{tr(locale, 'Распознаю команду', 'Transcribing command')}</strong>
       <div className="voice-processing-signal" aria-hidden="true">
-        {Array.from({ length: 9 }, (_, index) => (
+        {Array.from({ length: 15 }, (_, index) => (
           <i key={index} />
         ))}
       </div>
