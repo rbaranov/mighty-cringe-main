@@ -4883,6 +4883,8 @@ body {
 .workout-live .exercise-list {
   gap: 5px;
   padding: 0 1px 3px;
+  overscroll-behavior-y: none;
+  touch-action: pan-y;
 }
 
 .workout-live .exercise-card {
@@ -5576,6 +5578,8 @@ body {
 /* The app chrome stays anchored; each screen owns its scroll instead of moving the whole PWA. */
 .app-shell {
   display: flex;
+  position: fixed;
+  inset: 0;
   height: 100dvh;
   min-height: 0;
   padding-bottom: 0;
@@ -5688,13 +5692,16 @@ body {
 
 .voice-processing-signal {
   display: flex;
+  width: 100%;
   height: 42px;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 4px;
   border-block: 1px solid rgb(255 249 236 / 24%);
 }
 
 .voice-processing-signal i {
+  flex: 0 0 5px;
   width: 5px;
   height: 24%;
   background: var(--accent);
