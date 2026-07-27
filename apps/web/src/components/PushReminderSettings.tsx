@@ -164,6 +164,8 @@ export function PushReminderSettings() {
 
   return (
     <section className="push-settings" aria-live="polite">
+      <p className="eyebrow">{tr(locale, 'Расписание', 'Schedule')}</p>
+      <h1>{tr(locale, 'Уведомления', 'Notifications')}</h1>
       <div className="setting">
         <span>{tr(locale, 'Напоминания', 'Reminders')}</span>
         <strong>

@@ -1,14 +1,18 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import type { CurrentUser, Exercise, ExerciseDiscoveryCandidate } from '@mighty-cringe/contracts';
 
 import { createPersonalExercise, discoverExercises } from '../lib/exercises';
 
 export function ExerciseDiscoveryPanel({
+  autoSearch = false,
+  existingExercises = [],
   initialQuery = '',
   locale,
   onExerciseSaved,
 }: {
+  autoSearch?: boolean;
+  existingExercises?: Exercise[];
   initialQuery?: string;
   locale: CurrentUser['locale'];
   onExerciseSaved: (exercise: Exercise) => Promise<void>;
@@ -19,22 +23,32 @@ export function ExerciseDiscoveryPanel({
   const [savingIndex, setSavingIndex] = useState<number | null>(null);
   const [savedName, setSavedName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const automaticSearch = useRef('');
 
   useEffect(() => {
     setQuery(initialQuery);
     setCandidates(null);
     setSavedName(null);
     setError(null);
-  }, [initialQuery]);
+    const normalizedInitialQuery = initialQuery.trim();
+    if (
+      autoSearch &&
+      normalizedInitialQuery.length >= 2 &&
+      automaticSearch.current !== normalizedInitialQuery
+    ) {
+      automaticSearch.current = normalizedInitialQuery;
+      void search(normalizedInitialQuery);
+    }
+  }, [autoSearch, initialQuery]);
 
-  async function search() {
-    if (searching || query.trim().length < 2) return;
+  async function search(searchQuery = query) {
+    if (searching || searchQuery.trim().length < 2) return;
     setSearching(true);
     setCandidates(null);
     setSavedName(null);
     setError(null);
     try {
-      const result = await discoverExercises(query.trim(), locale);
+      const result = await discoverExercises(searchQuery.trim(), locale);
       setCandidates(result.candidates);
     } catch (caught) {
       setError(discoveryError(caught, locale));
@@ -62,6 +76,12 @@ export function ExerciseDiscoveryPanel({
     } finally {
       setSavingIndex(null);
     }
+  }
+
+  async function useExisting(exercise: Exercise) {
+    setError(null);
+    await onExerciseSaved(exercise);
+    setSavedName(exerciseName(exercise, locale));
   }
 
   return (
@@ -141,69 +161,95 @@ export function ExerciseDiscoveryPanel({
           )}
         </p>
       )}
-      {candidates?.map((candidate, index) => (
-        <article className="discovery-candidate" key={`${candidate.nameEn}-${index}`}>
-          <div className="discovery-candidate-head">
-            <div>
-              <strong>{exerciseName(candidate, locale)}</strong>
-              <small>{locale === 'en' ? candidate.nameRu : candidate.nameEn}</small>
+      {candidates?.map((candidate, index) => {
+        const existing = findExistingExercise(candidate, existingExercises);
+        return (
+          <article className="discovery-candidate" key={`${candidate.nameEn}-${index}`}>
+            <div className="discovery-candidate-head">
+              <div>
+                <strong>{exerciseName(candidate, locale)}</strong>
+                <small>{locale === 'en' ? candidate.nameRu : candidate.nameEn}</small>
+              </div>
+              <span className={`confidence ${candidate.confidence}`}>
+                {confidenceLabel(candidate.confidence, locale)}
+              </span>
             </div>
-            <span className={`confidence ${candidate.confidence}`}>
-              {confidenceLabel(candidate.confidence, locale)}
-            </span>
-          </div>
-          <p>{candidate.matchReason}</p>
-          <dl className="discovery-facts">
-            <div>
-              <dt>{tr(locale, 'Мышцы', 'Muscles')}</dt>
-              <dd>{candidate.primaryMuscles.join(', ')}</dd>
+            <p>{candidate.matchReason}</p>
+            <dl className="discovery-facts">
+              <div>
+                <dt>{tr(locale, 'Мышцы', 'Muscles')}</dt>
+                <dd>{candidate.primaryMuscles.join(', ')}</dd>
+              </div>
+              <div>
+                <dt>{tr(locale, 'Оборудование', 'Equipment')}</dt>
+                <dd>{candidate.equipment.join(', ') || '—'}</dd>
+              </div>
+            </dl>
+            {candidate.notes && <p className="discovery-notes">{candidate.notes}</p>}
+            {candidate.videos.map((video) => {
+              const embed = youtubeEmbedUrl(video.url);
+              return embed ? (
+                <iframe
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                  className="exercise-video"
+                  key={video.url}
+                  loading="lazy"
+                  src={embed}
+                  title={video.title}
+                />
+              ) : (
+                <a href={video.url} key={video.url} rel="noreferrer" target="_blank">
+                  {video.title}
+                </a>
+              );
+            })}
+            <div className="discovery-sources">
+              <span>{tr(locale, 'Источники:', 'Sources:')}</span>
+              {candidate.sources.map((source) => (
+                <a href={source.url} key={source.url} rel="noreferrer" target="_blank">
+                  {source.title}
+                </a>
+              ))}
             </div>
-            <div>
-              <dt>{tr(locale, 'Оборудование', 'Equipment')}</dt>
-              <dd>{candidate.equipment.join(', ') || '—'}</dd>
-            </div>
-          </dl>
-          {candidate.notes && <p className="discovery-notes">{candidate.notes}</p>}
-          {candidate.videos.map((video) => {
-            const embed = youtubeEmbedUrl(video.url);
-            return embed ? (
-              <iframe
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-                className="exercise-video"
-                key={video.url}
-                loading="lazy"
-                src={embed}
-                title={video.title}
-              />
-            ) : (
-              <a href={video.url} key={video.url} rel="noreferrer" target="_blank">
-                {video.title}
-              </a>
-            );
-          })}
-          <div className="discovery-sources">
-            <span>{tr(locale, 'Источники:', 'Sources:')}</span>
-            {candidate.sources.map((source) => (
-              <a href={source.url} key={source.url} rel="noreferrer" target="_blank">
-                {source.title}
-              </a>
-            ))}
-          </div>
-          <button
-            className="button primary full"
-            disabled={savingIndex !== null || Boolean(savedName)}
-            onClick={() => void save(candidate, index)}
-            type="button"
-          >
-            {savingIndex === index
-              ? tr(locale, 'Добавляю…', 'Adding…')
-              : tr(locale, 'Добавить и использовать', 'Add and use')}
-          </button>
-        </article>
-      ))}
+            <button
+              className="button primary full"
+              disabled={savingIndex !== null || Boolean(savedName)}
+              onClick={() => void (existing ? useExisting(existing) : save(candidate, index))}
+              type="button"
+            >
+              {existing
+                ? tr(locale, 'Уже в каталоге — использовать', 'Already in catalog — use')
+                : savingIndex === index
+                  ? tr(locale, 'Добавляю…', 'Adding…')
+                  : tr(locale, 'Добавить и использовать', 'Add and use')}
+            </button>
+          </article>
+        );
+      })}
     </section>
   );
+}
+
+function findExistingExercise(
+  candidate: ExerciseDiscoveryCandidate,
+  exercises: Exercise[],
+): Exercise | undefined {
+  const candidateNames = new Set(
+    [candidate.nameRu, candidate.nameEn].map((name) => normalizeName(name)),
+  );
+  return exercises.find((exercise) =>
+    [exercise.nameRu, exercise.nameEn].some((name) => candidateNames.has(normalizeName(name))),
+  );
+}
+
+function normalizeName(value: string) {
+  return value
+    .trim()
+    .toLocaleLowerCase('ru-RU')
+    .replaceAll('ё', 'е')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim();
 }
 
 function exerciseName(exercise: Pick<Exercise, 'nameRu' | 'nameEn'>, locale: 'ru' | 'en') {

@@ -402,10 +402,98 @@ export function VoicePanel({
   );
 }
 
-export function VoiceSettingsPanel() {
+export function VoiceCommandSettingsPanel() {
   const { locale } = usePreferences();
   const [config, setConfig] = useState<VoiceConfig | null | undefined>(undefined);
   const [consented, setConsented] = useState(false);
+
+  useEffect(() => {
+    void loadVoiceConfig().then(async (next) => {
+      setConfig(next);
+      setConsented(next ? await hasAcceptedVoiceConsent(next.consentVersion) : false);
+    });
+  }, []);
+
+  return (
+    <section className="voice-settings-panel">
+      <div className="section-head">
+        <div>
+          <p className="eyebrow">{tr(locale, 'Приватность', 'Privacy')}</p>
+          <h2>{tr(locale, 'Аудиокоманды', 'Audio commands')}</h2>
+        </div>
+        {config?.enabled && (
+          <span className={consented ? 'voice-consent-status accepted' : 'voice-consent-status'}>
+            {consented
+              ? tr(locale, 'включены', 'on')
+              : tr(locale, 'нужно согласие', 'consent needed')}
+          </span>
+        )}
+      </div>
+      <p className="voice-settings-copy">
+        {tr(
+          locale,
+          'Запись начинается только после твоего действия. Аудио хранится приватно до удаления и используется для расшифровки команды.',
+          'Recording starts only after your action. Audio stays private until deletion and is used to transcribe the command.',
+        )}
+      </p>
+      {config === undefined && (
+        <p className="detail-empty">{tr(locale, 'Проверяем настройки…', 'Checking settings…')}</p>
+      )}
+      {config && (
+        <dl className="voice-config-facts">
+          <div>
+            <dt>{tr(locale, 'Обработка', 'Processing')}</dt>
+            <dd>{config.provider ?? tr(locale, 'Не настроена', 'Not configured')}</dd>
+          </div>
+          <div>
+            <dt>{tr(locale, 'Максимум записи', 'Recording limit')}</dt>
+            <dd>
+              {config.maximumSeconds} {tr(locale, 'сек.', 'sec.')}
+            </dd>
+          </div>
+        </dl>
+      )}
+      {config && !config.enabled && (
+        <p className="auth-error">
+          {tr(
+            locale,
+            'Аудиокоманды пока выключены на сервере.',
+            'Audio commands are currently disabled on the server.',
+          )}
+        </p>
+      )}
+      {config?.enabled &&
+        (consented ? (
+          <button
+            className="button ghost small"
+            onClick={() =>
+              void revokeVoiceConsent().then(() => {
+                setConsented(false);
+              })
+            }
+            type="button"
+          >
+            {tr(locale, 'Отозвать согласие', 'Revoke consent')}
+          </button>
+        ) : (
+          <button
+            className="button primary small"
+            onClick={() =>
+              void acceptVoiceConsent(config.consentVersion).then(() => {
+                setConsented(true);
+              })
+            }
+            type="button"
+          >
+            {tr(locale, 'Принять и включить', 'Accept and enable')}
+          </button>
+        ))}
+    </section>
+  );
+}
+
+export function VoiceRecordingsPanel() {
+  const { locale } = usePreferences();
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const entries = useLiveQuery(
     () => db.voiceEntries.orderBy('createdAt').reverse().toArray(),
@@ -414,10 +502,6 @@ export function VoiceSettingsPanel() {
   );
 
   useEffect(() => {
-    void loadVoiceConfig().then(async (next) => {
-      setConfig(next);
-      setConsented(next ? await hasAcceptedVoiceConsent(next.consentVersion) : false);
-    });
     void refreshVoiceEntries();
   }, []);
 
@@ -430,39 +514,26 @@ export function VoiceSettingsPanel() {
     <section className="voice-settings-panel">
       <div className="section-head">
         <div>
-          <p className="eyebrow">{tr(locale, 'Приватность', 'Privacy')}</p>
-          <h2>{tr(locale, 'Голос и записи', 'Voice and recordings')}</h2>
+          <p className="eyebrow">{tr(locale, 'Хранилище', 'Storage')}</p>
+          <h2>{tr(locale, 'Записи команд', 'Command recordings')}</h2>
         </div>
-        {config?.enabled && (
-          <span className={consented ? 'voice-consent-status accepted' : 'voice-consent-status'}>
-            {consented
-              ? tr(locale, 'согласие принято', 'consent accepted')
-              : tr(locale, 'не принято', 'not accepted')}
-          </span>
-        )}
+        <span className="voice-consent-status accepted">
+          {entries.length}{' '}
+          {tr(
+            locale,
+            entries.length === 1 ? 'запись' : 'записей',
+            entries.length === 1 ? 'record' : 'records',
+          )}
+        </span>
       </div>
       <p className="voice-settings-copy">
         {tr(
           locale,
-          'Записи хранятся приватно до удаления. Согласие действует для текущей версии условий и не спрашивается перед каждым подходом.',
-          'Recordings stay private until deletion. Consent applies to the current terms and is not requested before every set.',
+          'Здесь можно прослушать и удалить аудио с устройства и сервера. Удаление не стирает уже подтверждённый подход.',
+          'Play or delete audio from the device and server here. Deleting audio does not erase an already confirmed set.',
         )}
       </p>
-      {consented && (
-        <button
-          className="button ghost small"
-          onClick={() =>
-            void revokeVoiceConsent().then(() => {
-              setConsented(false);
-            })
-          }
-          type="button"
-        >
-          {tr(locale, 'Отозвать согласие', 'Revoke consent')}
-        </button>
-      )}
       <div className="voice-history">
-        <strong>{tr(locale, 'Архив записей', 'Recording archive')}</strong>
         {!entries.length && (
           <p className="detail-empty">{tr(locale, 'Записей пока нет.', 'No recordings yet.')}</p>
         )}
@@ -504,6 +575,15 @@ export function VoiceSettingsPanel() {
         ))}
       </div>
     </section>
+  );
+}
+
+export function VoiceSettingsPanel() {
+  return (
+    <>
+      <VoiceCommandSettingsPanel />
+      <VoiceRecordingsPanel />
+    </>
   );
 }
 

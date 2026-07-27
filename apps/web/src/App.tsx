@@ -19,11 +19,12 @@ import { useLiveQuery } from 'dexie-react-hooks';
 
 import { SetSheet } from './components/SetSheet';
 import { ExerciseDiscoveryPanel } from './components/ExerciseDiscoveryPanel';
+import { ExerciseEditorSheet } from './components/ExerciseEditorSheet';
 import type { MeasurementDraft } from './components/BodyMeasurementsSection';
 import { ProgressView } from './components/ProgressView';
-import { PushReminderSettings } from './components/PushReminderSettings';
-import { TrainerDashboard, TrainerRelationshipCard } from './components/TrainerAccess';
-import { VoicePanel, VoiceSettingsPanel } from './components/VoicePanel';
+import { SettingsView } from './components/SettingsView';
+import { TrainerDashboard } from './components/TrainerAccess';
+import { VoicePanel } from './components/VoicePanel';
 import {
   activateLocalUser,
   cacheCurrentUser,
@@ -37,6 +38,7 @@ import {
   type SyncConflict,
 } from './lib/db';
 import { fallbackCatalog, retiredGlobalExerciseIds } from './lib/fallbackCatalog';
+import { softDeletePersonalExercise } from './lib/exercises';
 import { hasPendingRemoteLogout, requestRemoteLogout } from './lib/logout';
 import { parseNaturalSet, type NaturalSetDraft, type NaturalSetResult } from './lib/naturalSet';
 import {
@@ -51,7 +53,6 @@ import {
   formatWeight,
   PreferencesProvider,
   tr,
-  updateProfilePreferences,
   usePreferences,
 } from './lib/preferences';
 import { setEntrySourceSuffix } from './lib/setEntrySource';
@@ -61,7 +62,6 @@ import {
   flushOutbox,
   getSyncStatus,
   queueMutation,
-  resolveConflict,
   subscribeSyncStatus,
   syncAll,
 } from './lib/sync';
@@ -181,6 +181,7 @@ function AuthenticatedAppContent({
   const [sheet, setSheet] = useState<{ exercise: Exercise; set: LocalSet | null } | null>(null);
   const [exercisePicker, setExercisePicker] = useState<ExercisePickerMode | null>(null);
   const [exerciseDetailId, setExerciseDetailId] = useState<string | null>(null);
+  const [exerciseEditor, setExerciseEditor] = useState<Exercise | null>(null);
   const [confirmation, setConfirmation] = useState<PendingConfirmation | null>(null);
   const [explainContext, setExplainContext] = useState<{ exercise: Exercise | null } | null>(null);
   const [editingWorkoutId, setEditingWorkoutId] = useState<string | null>(null);
@@ -198,7 +199,10 @@ function AuthenticatedAppContent({
   const sets = useLiveQuery(() => db.sets.toArray(), [], []);
   const exercises = useLiveQuery(() => db.exercises.toArray(), [], []);
   const availableExercises = useMemo(
-    () => exercises.filter((exercise) => !retiredGlobalExerciseIds.has(exercise.id)),
+    () =>
+      exercises.filter(
+        (exercise) => !exercise.deletedAt && !retiredGlobalExerciseIds.has(exercise.id),
+      ),
     [exercises],
   );
   const measurements = useLiveQuery(
@@ -759,6 +763,35 @@ function AuthenticatedAppContent({
     });
   }
 
+  async function deleteCatalogExercise(exercise: Exercise) {
+    try {
+      const deleted = await softDeletePersonalExercise(exercise.id);
+      await db.exercises.put(deleted);
+      setExerciseDetailId(null);
+    } catch {
+      setInviteNotice(
+        tr(
+          locale,
+          'Не удалось удалить упражнение из каталога. Проверь подключение и попробуй ещё раз.',
+          'Could not remove the exercise from the catalog. Check your connection and try again.',
+        ),
+      );
+    }
+  }
+
+  function requestDeleteCatalogExercise(exercise: Exercise) {
+    setConfirmation({
+      title: tr(locale, 'Удалить из каталога?', 'Remove from catalog?'),
+      message: tr(
+        locale,
+        'Упражнение исчезнет из каталога и новых вариантов замены. Подходы, тренировки и название в истории сохранятся. Это удаление, а не архивация.',
+        'The exercise will disappear from the catalog and new replacement choices. Sets, workouts, and its name in history will stay. This is deletion, not archiving.',
+      ),
+      confirmLabel: tr(locale, 'Удалить из каталога', 'Remove from catalog'),
+      action: () => deleteCatalogExercise(exercise),
+    });
+  }
+
   function confirmPendingAction() {
     const action = confirmation?.action;
     setConfirmation(null);
@@ -889,6 +922,8 @@ function AuthenticatedAppContent({
           onAddSet={(exercise) => setSheet({ exercise, set: null })}
           onBack={() => setExerciseDetailId(null)}
           onDeleteSet={requestDeleteSet}
+          onDeleteExercise={requestDeleteCatalogExercise}
+          onEditExercise={setExerciseEditor}
           onEditSet={(exercise, set) => setSheet({ exercise, set })}
           onMoveSet={moveSet}
           onReplaceExercise={() => {
@@ -1047,6 +1082,13 @@ function AuthenticatedAppContent({
         mode={exercisePicker}
         onChoose={chooseExercise}
         onClose={() => setExercisePicker(null)}
+      />
+      <ExerciseEditorSheet
+        exercise={exerciseEditor}
+        onClose={() => setExerciseEditor(null)}
+        onSaved={async (exercise) => {
+          await db.exercises.put(exercise);
+        }}
       />
       <ConfirmationSheet
         confirmation={confirmation}
@@ -1620,6 +1662,8 @@ function ExerciseDetailView({
   onEditSet,
   onMoveSet,
   onDeleteSet,
+  onDeleteExercise,
+  onEditExercise,
   onReplaceExercise,
 }: {
   exercise: Exercise;
@@ -1631,6 +1675,8 @@ function ExerciseDetailView({
   onEditSet: (exercise: Exercise, set: LocalSet) => void;
   onMoveSet: (set: LocalSet, direction: -1 | 1) => void;
   onDeleteSet: (set: LocalSet) => void;
+  onDeleteExercise: (exercise: Exercise) => void;
+  onEditExercise: (exercise: Exercise) => void;
   onReplaceExercise: () => void;
 }) {
   const { locale, unitSystem } = usePreferences();
@@ -1687,6 +1733,32 @@ function ExerciseDetailView({
         </span>
         <span>{exercise.equipment.join(', ')}</span>
       </div>
+      {exercise.scope === 'user' && (
+        <div className="personal-exercise-actions">
+          {exercise.deletedAt ? (
+            <span>
+              {tr(locale, 'Удалено из личного каталога', 'Removed from personal catalog')}
+            </span>
+          ) : (
+            <>
+              <button
+                className="button ghost small"
+                onClick={() => onEditExercise(exercise)}
+                type="button"
+              >
+                {tr(locale, 'Исправить данные', 'Edit details')}
+              </button>
+              <button
+                className="button danger small"
+                onClick={() => onDeleteExercise(exercise)}
+                type="button"
+              >
+                {tr(locale, 'Удалить из каталога', 'Remove from catalog')}
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       <section className="exercise-detail-section">
         <div className="section-head">
@@ -1910,6 +1982,7 @@ function CatalogView({
       </button>
       {adding && (
         <ExerciseDiscoveryPanel
+          existingExercises={exercises}
           locale={locale}
           onExerciseSaved={async (exercise) => {
             await db.exercises.put(exercise);
@@ -1948,156 +2021,6 @@ function CatalogView({
   );
 }
 
-function SettingsView({
-  user,
-  conflicts,
-  onLogout,
-  onOpenTrainer,
-  onUserUpdated,
-  relationshipRefreshKey,
-}: {
-  user: CurrentUser;
-  conflicts: SyncConflict[];
-  onLogout: () => void;
-  onOpenTrainer?: () => void;
-  onUserUpdated: (user: CurrentUser) => Promise<void>;
-  relationshipRefreshKey: number;
-}) {
-  const { locale, unitSystem } = usePreferences();
-  const [preferencesError, setPreferencesError] = useState<string | null>(null);
-  const [savingPreferences, setSavingPreferences] = useState(false);
-
-  async function savePreferences(next: {
-    locale: CurrentUser['locale'];
-    unitSystem: CurrentUser['unitSystem'];
-  }) {
-    setPreferencesError(null);
-    setSavingPreferences(true);
-    try {
-      const result = await updateProfilePreferences(next);
-      await onUserUpdated(result.user);
-    } catch (error) {
-      setPreferencesError(
-        error instanceof Error
-          ? error.message
-          : tr(locale, 'Не удалось сохранить настройки.', 'Could not save preferences.'),
-      );
-    } finally {
-      setSavingPreferences(false);
-    }
-  }
-
-  return (
-    <section className="screen">
-      <p className="eyebrow">{tr(locale, 'Профиль', 'Profile')}</p>
-      <h1>{tr(locale, 'Настройки', 'Settings')}</h1>
-      <div className="profile-card">
-        {user.avatarUrl && <img alt="" referrerPolicy="no-referrer" src={user.avatarUrl} />}
-        <div>
-          <strong>{user.displayName}</strong>
-          <small>{user.email}</small>
-        </div>
-        <span>{roleLabel(user.role, locale)}</span>
-      </div>
-      {conflicts.length > 0 && (
-        <section className="conflict-panel" aria-live="polite">
-          <p className="eyebrow">{tr(locale, 'Нужен выбор', 'Choose a version')}</p>
-          <h2>{tr(locale, 'Изменения с двух устройств', 'Changes from two devices')}</h2>
-          <p className="intro">
-            {tr(
-              locale,
-              'Ничего не перезаписано автоматически. Выбери версию для каждой записи.',
-              'Nothing was overwritten automatically. Choose a version for each entry.',
-            )}
-          </p>
-          {conflicts.map((conflict) => (
-            <article className="conflict-card" key={conflict.id}>
-              <strong>
-                {conflict.entityType === 'workout'
-                  ? tr(locale, 'Тренировка', 'Workout')
-                  : conflict.entityType === 'set'
-                    ? tr(locale, 'Подход', 'Set')
-                    : tr(locale, 'Замер тела', 'Body measurement')}
-              </strong>
-              <small>{conflict.message}</small>
-              <div>
-                <button
-                  className="button ghost small"
-                  onClick={() => void resolveConflict(conflict.id, 'server')}
-                  type="button"
-                >
-                  {conflict.current
-                    ? tr(locale, 'Оставить серверную', 'Keep server version')
-                    : tr(locale, 'Удалить локальную', 'Delete local version')}
-                </button>
-                <button
-                  className="button primary small"
-                  disabled={!canKeepMine(conflict)}
-                  onClick={() => void resolveConflict(conflict.id, 'mine')}
-                  type="button"
-                >
-                  {tr(locale, 'Сохранить мою', 'Keep mine')}
-                </button>
-              </div>
-            </article>
-          ))}
-        </section>
-      )}
-      <div className="setting">
-        <label htmlFor="profile-locale">{tr(locale, 'Язык', 'Language')}</label>
-        <select
-          disabled={savingPreferences}
-          id="profile-locale"
-          onChange={(event) =>
-            void savePreferences({
-              locale: event.target.value as CurrentUser['locale'],
-              unitSystem,
-            })
-          }
-          value={locale}
-        >
-          <option value="ru">Русский</option>
-          <option value="en">English</option>
-        </select>
-      </div>
-      <div className="setting">
-        <label htmlFor="profile-units">{tr(locale, 'Единицы измерения', 'Units')}</label>
-        <select
-          disabled={savingPreferences}
-          id="profile-units"
-          onChange={(event) =>
-            void savePreferences({
-              locale,
-              unitSystem: event.target.value as CurrentUser['unitSystem'],
-            })
-          }
-          value={unitSystem}
-        >
-          <option value="metric">{tr(locale, 'кг / см', 'kg / cm')}</option>
-          <option value="imperial">lb / in</option>
-        </select>
-      </div>
-      {preferencesError && <p className="auth-error">{preferencesError}</p>}
-      {onOpenTrainer && (
-        <button className="trainer-console-link" onClick={onOpenTrainer} type="button">
-          <span aria-hidden="true">🧑‍🏫</span>
-          <span>
-            <strong>{tr(locale, 'Подопечные', 'Athletes')}</strong>
-            <small>{tr(locale, 'Управление доступом тренера', 'Coach access management')}</small>
-          </span>
-          <span aria-hidden="true">→</span>
-        </button>
-      )}
-      <PushReminderSettings />
-      <TrainerRelationshipCard refreshKey={relationshipRefreshKey} />
-      <VoiceSettingsPanel />
-      <button className="button ghost full" onClick={onLogout} type="button">
-        {tr(locale, 'Выйти', 'Sign out')}
-      </button>
-    </section>
-  );
-}
-
 function ExercisePickerSheet({
   catalog,
   currentPlan,
@@ -2108,13 +2031,17 @@ function ExercisePickerSheet({
   catalog: Exercise[];
   currentPlan: WorkoutExercise[];
   mode: ExercisePickerMode | null;
-  onChoose: (exercise: Exercise) => void;
+  onChoose: (exercise: Exercise) => Promise<void>;
   onClose: () => void;
 }) {
   const { locale } = usePreferences();
   const [query, setQuery] = useState('');
+  const [discovering, setDiscovering] = useState(false);
 
-  useEffect(() => setQuery(''), [mode]);
+  useEffect(() => {
+    setQuery('');
+    setDiscovering(false);
+  }, [mode]);
   if (!mode) return null;
 
   const replacedItemId = mode.mode === 'replace' ? mode.itemId : null;
@@ -2180,7 +2107,10 @@ function ExercisePickerSheet({
         <input
           autoFocus
           className="exercise-search"
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setDiscovering(false);
+          }}
           placeholder={
             mode.mode === 'add'
               ? tr(locale, 'Название или синоним', 'Name or alias')
@@ -2190,25 +2120,71 @@ function ExercisePickerSheet({
           value={query}
         />
         <div className="picker-list">
-          {options.map((exercise) => (
-            <button
-              className="picker-option"
-              key={exercise.id}
-              onClick={() => onChoose(exercise)}
-              type="button"
-            >
-              <span>
-                <strong>{exerciseName(exercise, locale)}</strong>
-                <small>
-                  {locale === 'en' ? exercise.nameRu : exercise.nameEn} ·{' '}
-                  {muscleLabel(exercise.primaryMuscles[0], locale)}
-                </small>
-              </span>
-              <Tag tag={exercise.tag} />
-            </button>
-          ))}
-          {!options.length && (
-            <p className="sets-line muted">{tr(locale, 'Ничего не найдено', 'Nothing found')}</p>
+          {!discovering && (
+            <>
+              {options.map((exercise) => (
+                <button
+                  className="picker-option"
+                  key={exercise.id}
+                  onClick={() => onChoose(exercise)}
+                  type="button"
+                >
+                  <span>
+                    <strong>{exerciseName(exercise, locale)}</strong>
+                    <small>
+                      {locale === 'en' ? exercise.nameRu : exercise.nameEn} ·{' '}
+                      {muscleLabel(exercise.primaryMuscles[0], locale)}
+                    </small>
+                  </span>
+                  <Tag tag={exercise.tag} />
+                </button>
+              ))}
+              {!options.length && (
+                <div className="picker-empty">
+                  <strong>{tr(locale, 'В каталоге ничего нет', 'Nothing in the catalog')}</strong>
+                  <span>
+                    {tr(
+                      locale,
+                      'Можно сразу проверить веб-источники, добавить личное упражнение и продолжить замену.',
+                      'Check web sources, add a personal exercise, and continue the replacement here.',
+                    )}
+                  </span>
+                  <button
+                    className="button primary full"
+                    disabled={normalizedQuery.length < 2}
+                    onClick={() => setDiscovering(true)}
+                    type="button"
+                  >
+                    {tr(locale, 'Найти и добавить здесь', 'Find and add here')}
+                  </button>
+                </div>
+              )}
+              {options.length > 0 && normalizedQuery.length >= 2 && (
+                <button
+                  className="picker-discovery-link"
+                  onClick={() => setDiscovering(true)}
+                  type="button"
+                >
+                  {tr(
+                    locale,
+                    'Не то упражнение? Найти в вебе и добавить',
+                    'Not the right exercise? Find it online and add it',
+                  )}
+                </button>
+              )}
+            </>
+          )}
+          {discovering && (
+            <ExerciseDiscoveryPanel
+              autoSearch
+              existingExercises={catalog}
+              initialQuery={query}
+              locale={locale}
+              onExerciseSaved={async (exercise) => {
+                await db.exercises.put(exercise);
+                await onChoose(exercise);
+              }}
+            />
           )}
         </div>
         <button className="button ghost full" onClick={onClose} type="button">
@@ -2877,23 +2853,6 @@ function formatWorkoutDuration(startedAt: string, now: number, locale: CurrentUs
 
 function canUseTrainerConsole(role: CurrentUser['role']) {
   return role === 'trainer' || role === 'admin' || role === 'superadmin';
-}
-
-function roleLabel(role: CurrentUser['role'], locale: CurrentUser['locale']) {
-  if (role === 'trainer') return tr(locale, 'Тренер', 'Coach');
-  if (role === 'admin' || role === 'superadmin') return 'Admin';
-  return 'Athlete';
-}
-
-function canKeepMine(conflict: SyncConflict) {
-  return (
-    conflict.mutation.type === 'workout.update' ||
-    conflict.mutation.type === 'workout.delete' ||
-    conflict.mutation.type === 'set.update' ||
-    conflict.mutation.type === 'measurement.update' ||
-    (conflict.mutation.type === 'set.delete' && conflict.current !== null) ||
-    (conflict.mutation.type === 'measurement.delete' && conflict.current !== null)
-  );
 }
 
 function mutationWorkoutId(mutation: Parameters<typeof queueMutation>[0]) {

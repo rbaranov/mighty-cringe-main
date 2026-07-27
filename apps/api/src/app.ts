@@ -12,6 +12,7 @@ import {
   deleteSetSchema,
   deleteWorkoutSchema,
   exerciseDiscoveryQuerySchema,
+  exerciseIdSchema,
   syncMutationSchema,
   pushSubscriptionSchema,
   trainerAthleteIdSchema,
@@ -20,6 +21,7 @@ import {
   trainerInviteIdSchema,
   updateMeasurementSchema,
   updateNotificationPreferencesSchema,
+  updateExerciseSchema,
   updateSetSchema,
   updateUserPreferencesSchema,
   updateWorkoutSchema,
@@ -384,6 +386,38 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
     try {
       const exercise = await repository.createExercise(user.id, input.data);
       return reply.status(201).send({ exercise });
+    } catch (error) {
+      return sendRepositoryError(reply, error);
+    }
+  });
+
+  app.put('/api/v1/exercises/:exerciseId', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    const exerciseId = exerciseIdSchema.safeParse(
+      (request.params as { exerciseId?: unknown }).exerciseId,
+    );
+    if (!exerciseId.success) return reply.status(400).send({ error: 'Invalid exercise id' });
+    const input = updateExerciseSchema.safeParse(request.body);
+    if (!input.success) return reply.status(400).send({ error: input.error.flatten() });
+    try {
+      const exercise = await repository.updateExercise(user.id, exerciseId.data, input.data);
+      return reply.send({ exercise });
+    } catch (error) {
+      return sendRepositoryError(reply, error);
+    }
+  });
+
+  app.delete('/api/v1/exercises/:exerciseId', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    const exerciseId = exerciseIdSchema.safeParse(
+      (request.params as { exerciseId?: unknown }).exerciseId,
+    );
+    if (!exerciseId.success) return reply.status(400).send({ error: 'Invalid exercise id' });
+    try {
+      const exercise = await repository.deleteExercise(user.id, exerciseId.data, now());
+      return reply.send({ exercise });
     } catch (error) {
       return sendRepositoryError(reply, error);
     }
