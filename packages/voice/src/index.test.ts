@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
+  isLikelyNonSpeechTranscript,
   OpenRouterTranscriber,
   VoiceProviderError,
   voiceStorageFromEnvironment,
@@ -45,6 +46,19 @@ test('marks rate limits as retryable provider failures', async () => {
   );
 });
 
+test('treats an empty transcript as silence instead of retrying it', async () => {
+  const request: typeof fetch = async () => Response.json({ text: '   ' });
+  const transcriber = new OpenRouterTranscriber('server-secret', 'model', request);
+
+  await assert.rejects(
+    () => transcriber.transcribe({ audio: Uint8Array.from([1]), format: 'wav', language: 'ru' }),
+    (error) =>
+      error instanceof VoiceProviderError &&
+      error.message === 'No speech command detected' &&
+      !error.retryable,
+  );
+});
+
 test('does not enable private storage without a valid 32-byte SSE-C key', () => {
   const environment = {
     VOICE_S3_ENDPOINT: 'https://hel1.your-objectstorage.com',
@@ -81,4 +95,15 @@ test('rejects an STT model without the shared OpenRouter key', () => {
       }),
     /configuration is incomplete/,
   );
+});
+
+test('recognizes media-credit hallucinations from non-speech audio', () => {
+  assert.equal(isLikelyNonSpeechTranscript('Субтитры создавал DimaTorzok'), true);
+  assert.equal(isLikelyNonSpeechTranscript('Subtitles by Amara.org community'), true);
+  assert.equal(isLikelyNonSpeechTranscript('Спасибо за просмотр!'), true);
+});
+
+test('keeps real workout commands even when they are short', () => {
+  assert.equal(isLikelyNonSpeechTranscript('жим лёжа 40 на 12'), false);
+  assert.equal(isLikelyNonSpeechTranscript('добавь подход'), false);
 });

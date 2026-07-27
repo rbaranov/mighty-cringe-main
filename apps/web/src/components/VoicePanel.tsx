@@ -38,14 +38,15 @@ export function VoicePanel({
   const { locale } = usePreferences();
   const [config, setConfig] = useState<VoiceConfig | null | undefined>(undefined);
   const [consented, setConsented] = useState(false);
-  const [captureState, setCaptureState] = useState<'idle' | 'requesting' | 'recording' | 'saving'>(
-    'idle',
-  );
+  const [captureState, setCaptureState] = useState<
+    'idle' | 'requesting' | 'recording' | 'saving' | 'cancelling'
+  >('idle');
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [latestEntryId, setLatestEntryId] = useState<string | null>(null);
   const capture = useRef<Capture | null>(null);
   const autoStartAttempted = useRef(false);
+  const cancelRequested = useRef(false);
   const deliveredTranscriptId = useRef<string | null>(null);
   const mounted = useRef(true);
   const transcriptHandler = useRef(onTranscript);
@@ -60,12 +61,13 @@ export function VoicePanel({
 
   useEffect(() => {
     mounted.current = true;
-    void loadVoiceConfig().then(async (next) => {
-      if (!mounted.current) return;
-      setConfig(next);
+    void (async () => {
+      const next = await loadVoiceConfig();
       const accepted = next ? await hasAcceptedVoiceConsent(next.consentVersion) : false;
-      if (mounted.current) setConsented(accepted);
-    });
+      if (!mounted.current) return;
+      setConsented(accepted);
+      setConfig(next);
+    })();
     void refreshVoiceEntries();
     return () => {
       mounted.current = false;
@@ -126,6 +128,8 @@ export function VoicePanel({
 
   async function startRecording() {
     if (!config?.enabled || !consented || !activeWorkoutId || capture.current) return;
+    cancelRequested.current = false;
+    setLatestEntryId(null);
     setError(null);
     setCaptureState('requesting');
     let stream: MediaStream | undefined;
@@ -224,8 +228,23 @@ export function VoicePanel({
       return;
     }
 
+    if (cancelRequested.current) {
+      try {
+        await requestVoiceDeletion(entry.id);
+      } catch {
+        setError(
+          tr(
+            locale,
+            'Не удалось отменить обработку. Запись можно удалить в настройках.',
+            'Could not cancel processing. You can delete the recording in Settings.',
+          ),
+        );
+      }
+      if (mounted.current) setCaptureState('idle');
+      return;
+    }
+
     setLatestEntryId(entry.id);
-    setCaptureState('idle');
     if (audio.size > currentConfig.maximumBytes) {
       try {
         await db.voiceEntries.update(entry.id, {
@@ -247,12 +266,55 @@ export function VoicePanel({
           ),
         );
       }
+      setCaptureState('idle');
       return;
     }
 
     const syncOutcome = await flushVoiceQueue();
     if (syncOutcome === 'success') {
       await refreshVoiceEntries();
+    }
+    if (cancelRequested.current) {
+      try {
+        await requestVoiceDeletion(entry.id);
+      } catch {
+        setError(
+          tr(
+            locale,
+            'Не удалось отменить обработку. Запись можно удалить в настройках.',
+            'Could not cancel processing. You can delete the recording in Settings.',
+          ),
+        );
+      }
+      if (mounted.current) setCaptureState('idle');
+      return;
+    }
+    if (mounted.current) setCaptureState('idle');
+  }
+
+  async function cancelProcessing() {
+    cancelRequested.current = true;
+    const entryId = latestEntryId;
+    const saveInProgress = captureState === 'saving';
+    if (entryId) {
+      deliveredTranscriptId.current = entryId;
+      setLatestEntryId(null);
+    }
+    setCaptureState('cancelling');
+    if (!entryId || saveInProgress) return;
+
+    try {
+      await requestVoiceDeletion(entryId);
+    } catch {
+      setError(
+        tr(
+          locale,
+          'Не удалось отменить обработку. Запись можно удалить в настройках.',
+          'Could not cancel processing. You can delete the recording in Settings.',
+        ),
+      );
+    } finally {
+      if (mounted.current) setCaptureState('idle');
     }
   }
 
@@ -287,6 +349,13 @@ export function VoicePanel({
       </div>
     );
   }
+
+  const isProcessing =
+    captureState === 'saving' ||
+    captureState === 'cancelling' ||
+    Boolean(
+      latestEntry && ['queued', 'uploading', 'pending', 'processing'].includes(latestEntry.status),
+    );
 
   return (
     <div className="voice-panel">
@@ -367,6 +436,12 @@ export function VoicePanel({
             </button>
           </div>
         </div>
+      ) : isProcessing ? (
+        <VoiceProcessingStage
+          cancelling={captureState === 'cancelling'}
+          locale={locale}
+          onCancel={() => void cancelProcessing()}
+        />
       ) : (
         <button
           className="button primary full"
@@ -376,9 +451,7 @@ export function VoicePanel({
         >
           {captureState === 'requesting'
             ? tr(locale, 'Запрашиваем микрофон…', 'Requesting microphone…')
-            : captureState === 'saving'
-              ? tr(locale, 'Сохраняем на устройстве…', 'Saving on device…')
-              : tr(locale, 'Дать команду', 'Give a command')}
+            : tr(locale, 'Дать команду', 'Give a command')}
         </button>
       )}
       {!activeWorkoutId && (
@@ -391,7 +464,7 @@ export function VoicePanel({
           {error}
         </p>
       )}
-      {latestEntry && (
+      {latestEntry && !isProcessing && (
         <p className="voice-live-status" role="status">
           {latestEntry.status === 'confirmed' && latestEntry.transcript
             ? `«${latestEntry.transcript}»`
@@ -402,16 +475,57 @@ export function VoicePanel({
   );
 }
 
+export function VoiceProcessingStage({
+  cancelling = false,
+  locale,
+  onCancel,
+}: {
+  cancelling?: boolean;
+  locale: 'ru' | 'en';
+  onCancel: () => void;
+}) {
+  return (
+    <div className="voice-processing-stage" role="status">
+      <span className="voice-processing-kicker">
+        {tr(locale, 'Голос принят', 'Voice received')}
+      </span>
+      <strong>{tr(locale, 'Распознаю команду', 'Transcribing command')}</strong>
+      <div className="voice-processing-signal" aria-hidden="true">
+        {Array.from({ length: 9 }, (_, index) => (
+          <i key={index} />
+        ))}
+      </div>
+      <p>
+        {tr(
+          locale,
+          'Сверяю фразу с текущей тренировкой.',
+          'Matching the phrase to your current workout.',
+        )}
+      </p>
+      <button
+        className="voice-processing-cancel"
+        disabled={cancelling}
+        onClick={onCancel}
+        type="button"
+      >
+        {cancelling ? tr(locale, 'Отменяю…', 'Cancelling…') : tr(locale, 'Отменить', 'Cancel')}
+      </button>
+    </div>
+  );
+}
+
 export function VoiceCommandSettingsPanel() {
   const { locale } = usePreferences();
   const [config, setConfig] = useState<VoiceConfig | null | undefined>(undefined);
   const [consented, setConsented] = useState(false);
 
   useEffect(() => {
-    void loadVoiceConfig().then(async (next) => {
+    void (async () => {
+      const next = await loadVoiceConfig();
+      const accepted = next ? await hasAcceptedVoiceConsent(next.consentVersion) : false;
+      setConsented(accepted);
       setConfig(next);
-      setConsented(next ? await hasAcceptedVoiceConsent(next.consentVersion) : false);
-    });
+    })();
   }, []);
 
   return (
@@ -649,7 +763,11 @@ function voiceStatusLabel(entry: LocalVoiceEntry, locale: 'ru' | 'en') {
     case 'failed':
       return entry.retryable
         ? tr(locale, 'Повторим автоматически', 'Will retry automatically')
-        : tr(locale, 'Не удалось распознать', 'Transcription failed');
+        : tr(
+            locale,
+            'Не расслышал команду. Попробуй ещё раз.',
+            'Could not hear a command. Please try again.',
+          );
   }
 }
 

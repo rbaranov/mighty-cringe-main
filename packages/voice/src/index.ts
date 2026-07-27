@@ -130,8 +130,11 @@ export class OpenRouterTranscriber implements VoiceTranscriber {
       );
     }
     const payload = (await response.json()) as { text?: unknown };
-    if (typeof payload.text !== 'string' || !payload.text.trim()) {
-      throw new VoiceProviderError('OpenRouter returned an empty transcript', true);
+    if (typeof payload.text !== 'string') {
+      throw new VoiceProviderError('OpenRouter returned an invalid transcript', true);
+    }
+    if (!payload.text.trim()) {
+      throw new VoiceProviderError('No speech command detected', false);
     }
     return payload.text.trim();
   }
@@ -211,4 +214,24 @@ export function audioFormatFromMimeType(mimeType: string): AudioFormat | null {
     'audio/x-m4a': 'm4a',
   };
   return formats[normalized] ?? null;
+}
+
+const nonSpeechTranscriptPatterns = [
+  /субтитр/iu,
+  /диматорзок/iu,
+  /спасибо за просмотр/iu,
+  /подписывай(?:ся|тесь)/iu,
+  /продолжение следует/iu,
+  /\bsubtitles?\b/iu,
+  /\bcaptions?\b/iu,
+  /\btranscrib(?:ed|er|ing)\s+by\b/iu,
+  /\bthanks for watching\b/iu,
+  /\bsubscribe(?:\s+to)?\b/iu,
+  /\bamara\.org\b/iu,
+];
+
+export function isLikelyNonSpeechTranscript(transcript: string) {
+  const normalized = transcript.trim();
+  if (!normalized) return true;
+  return nonSpeechTranscriptPatterns.some((pattern) => pattern.test(normalized));
 }
