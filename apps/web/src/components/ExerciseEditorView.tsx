@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import {
+  exerciseNameIssue,
   exerciseTags,
   muscleGroups,
   type Exercise,
@@ -23,6 +24,8 @@ const muscleNames: Record<'ru' | 'en', Record<Muscle, string>> = {
     triceps: 'Трицепс',
     quadriceps: 'Квадрицепс',
     hamstrings: 'Бицепс бедра',
+    glutes: 'Ягодицы',
+    adductors: 'Приводящие мышцы',
     calves: 'Икры',
     core: 'Кор',
   },
@@ -36,6 +39,8 @@ const muscleNames: Record<'ru' | 'en', Record<Muscle, string>> = {
     triceps: 'Triceps',
     quadriceps: 'Quadriceps',
     hamstrings: 'Hamstrings',
+    glutes: 'Glutes',
+    adductors: 'Adductors',
     calves: 'Calves',
     core: 'Core',
   },
@@ -118,6 +123,16 @@ export function ExerciseEditorView({
       );
       return;
     }
+    if (exerciseNameIssue(next.nameRu) || exerciseNameIssue(next.nameEn)) {
+      setError(
+        tr(
+          locale,
+          'Название слишком общее. Укажи движение и отличительный признак: снаряд, положение, угол или хват. Короткий вариант добавь в синонимы.',
+          'The name is too broad. Include the movement and a distinguishing detail: equipment, position, angle or grip. Put the short form in aliases.',
+        ),
+      );
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -160,7 +175,7 @@ export function ExerciseEditorView({
           <label>
             {tr(locale, 'Название на русском', 'Russian name')}
             <input
-              maxLength={255}
+              maxLength={80}
               onChange={(event) => setDraft({ ...draft, nameRu: event.target.value })}
               value={draft.nameRu}
             />
@@ -168,11 +183,18 @@ export function ExerciseEditorView({
           <label>
             {tr(locale, 'Название на английском', 'English name')}
             <input
-              maxLength={255}
+              maxLength={80}
               onChange={(event) => setDraft({ ...draft, nameEn: event.target.value })}
               value={draft.nameEn}
             />
           </label>
+          <p className="field-hint">
+            {tr(
+              locale,
+              'Одно короткое, но однозначное название. Разговорные варианты — в синонимы.',
+              'Use one concise, unambiguous name. Put gym shorthand in aliases.',
+            )}
+          </p>
           <label>
             {tr(locale, 'Синонимы через запятую', 'Aliases, comma-separated')}
             <input

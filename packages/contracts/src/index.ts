@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+export { globalExerciseCatalog, retiredGlobalExerciseIds } from './globalCatalog.js';
+
 export const muscleGroups = [
   'chest',
   'back',
@@ -10,6 +12,8 @@ export const muscleGroups = [
   'triceps',
   'quadriceps',
   'hamstrings',
+  'glutes',
+  'adductors',
   'calves',
   'core',
 ] as const;
@@ -49,8 +53,8 @@ export const exerciseSchema = z.object({
   id: z.string().uuid(),
   scope: z.enum(['global', 'user']).optional(),
   deletedAt: z.string().datetime().nullable().optional(),
-  nameRu: z.string().min(1),
-  nameEn: z.string().min(1),
+  nameRu: z.string().min(1).max(80),
+  nameEn: z.string().min(1).max(80),
   aliases: z.array(z.string()),
   tag: z.enum(exerciseTags),
   primaryMuscles: z.array(z.enum(muscleGroups)).min(1),
@@ -62,8 +66,8 @@ export const exerciseSchema = z.object({
 });
 
 const exerciseDetailsSchema = z.object({
-  nameRu: z.string().trim().min(1).max(255),
-  nameEn: z.string().trim().min(1).max(255),
+  nameRu: z.string().trim().min(1).max(80),
+  nameEn: z.string().trim().min(1).max(80),
   aliases: z.array(z.string().trim().min(1).max(255)).max(20),
   tag: z.enum(exerciseTags),
   primaryMuscles: z.array(z.enum(muscleGroups)).min(1).max(4),
@@ -74,13 +78,60 @@ const exerciseDetailsSchema = z.object({
   notes: z.string().trim().min(1).max(2_000).nullable(),
 });
 
-export const createExerciseSchema = exerciseDetailsSchema.extend({
-  id: z.string().uuid(),
-});
+const ambiguousExerciseNames = new Set([
+  'пуловер',
+  'жим',
+  'тяга',
+  'сгибание рук',
+  'разгибание рук',
+  'сведение рук',
+  'разведение рук',
+  'пресс',
+  'пэк дек',
+  'пэкдэк',
+  'тренажер скотта',
+  'тренажёр скотта',
+  'чест пресс',
+  'pullover',
+  'press',
+  'row',
+  'curl',
+  'extension',
+  'fly',
+  'chest press',
+  'pec deck',
+]);
 
-export const updateExerciseSchema = exerciseDetailsSchema.extend({
-  sources: z.array(exerciseLinkSchema).max(8),
-});
+export function exerciseNameIssue(name: string): 'ambiguous' | null {
+  return ambiguousExerciseNames.has(name.trim().toLocaleLowerCase('ru-RU')) ? 'ambiguous' : null;
+}
+
+function canonicalExerciseNamesRefinement(
+  value: { nameRu: string; nameEn: string },
+  context: z.RefinementCtx,
+) {
+  for (const field of ['nameRu', 'nameEn'] as const) {
+    if (exerciseNameIssue(value[field]) === null) continue;
+    context.addIssue({
+      code: 'custom',
+      message:
+        'Exercise name must include the movement and the distinguishing equipment, position, angle or grip',
+      path: [field],
+    });
+  }
+}
+
+export const createExerciseSchema = exerciseDetailsSchema
+  .extend({
+    id: z.string().uuid(),
+  })
+  .superRefine(canonicalExerciseNamesRefinement);
+
+export const updateExerciseSchema = exerciseDetailsSchema
+  .extend({
+    sources: z.array(exerciseLinkSchema).max(8),
+  })
+  .superRefine(canonicalExerciseNamesRefinement);
 export const exerciseIdSchema = z.string().uuid();
 
 export const exerciseDiscoveryQuerySchema = z.object({
@@ -88,10 +139,12 @@ export const exerciseDiscoveryQuerySchema = z.object({
   locale: z.enum(['ru', 'en']).default('ru'),
 });
 
-export const exerciseDiscoveryCandidateSchema = exerciseDetailsSchema.extend({
-  confidence: z.enum(['high', 'medium', 'low']),
-  matchReason: z.string().trim().min(1).max(500),
-});
+export const exerciseDiscoveryCandidateSchema = exerciseDetailsSchema
+  .extend({
+    confidence: z.enum(['high', 'medium', 'low']),
+    matchReason: z.string().trim().min(1).max(500),
+  })
+  .superRefine(canonicalExerciseNamesRefinement);
 
 export const exerciseDiscoveryResultSchema = z.object({
   query: z.string().min(1),

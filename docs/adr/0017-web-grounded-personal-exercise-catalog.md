@@ -26,6 +26,11 @@ verified YouTube technique links when available. The API keeps only HTTPS source
 provider's URL-citation annotations; a video must also be both cited and hosted by YouTube. A
 candidate without any grounded source is discarded.
 
+Candidate names also follow ADR 0019: one concise canonical name per locale, at most 80 characters,
+with the distinguishing equipment, position, angle or grip whenever the movement has variants.
+Short gym phrases and the user's original wording belong in aliases. The same shared contract
+rejects ambiguous names during discovery, creation and editing.
+
 Discovery never writes data. The athlete sees all plausible candidates and explicitly selects one.
 Only then does a separate authenticated API call create an exercise with `scope=user` and
 `owner_id` taken exclusively from the current session. The client cannot choose an owner. The new
