@@ -5768,3 +5768,166 @@ body {
     height: 54%;
   }
 }
+
+/* Follow-up: safer workout actions, compact search results, and thumb-first set entry. */
+.workout-live .exercise-card-head {
+  gap: 8px;
+}
+
+.workout-live .exercise-card-actions {
+  position: relative;
+  z-index: 2;
+}
+
+.workout-live .exercise-options-trigger,
+.workout-live .add-set {
+  min-height: 44px;
+  touch-action: manipulation;
+}
+
+.workout-live .exercise-options-trigger {
+  position: relative;
+  width: 44px;
+  height: 44px;
+}
+
+.workout-live .exercise-options-trigger::before {
+  position: absolute;
+  inset: -4px 0 -4px -10px;
+  content: '';
+}
+
+.exercise-picker .picker-list {
+  align-content: start;
+  grid-auto-rows: max-content;
+}
+
+.exercise-picker .picker-option,
+.exercise-picker .picker-empty,
+.exercise-picker .picker-discovery-link,
+.exercise-picker .picker-list .exercise-discovery {
+  align-self: start;
+}
+
+.set-sheet .form-grid {
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.set-stepper-field {
+  display: grid;
+  width: min(100%, 340px);
+  justify-items: center;
+  gap: 7px;
+}
+
+.set-stepper-label {
+  display: flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.set-stepper-control {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 52px minmax(0, 1fr) 52px;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.set-stepper-control button {
+  display: grid;
+  min-height: 52px;
+  place-items: center;
+  border: 1.5px solid var(--ink);
+  border-radius: 2px;
+  background: var(--surface-soft);
+  color: var(--ink);
+  font-size: 25px;
+  font-weight: 900;
+  line-height: 1;
+  touch-action: manipulation;
+}
+
+.set-stepper-control button:active {
+  background: var(--accent-soft);
+}
+
+.set-stepper-control button:disabled {
+  cursor: default;
+  opacity: 0.32;
+}
+
+.set-sheet .set-stepper-control input {
+  min-width: 0;
+  min-height: 52px;
+  margin: 0;
+  padding: 8px;
+  font-size: 22px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.set-sheet .form-grid label.wide {
+  width: 100%;
+  grid-column: 1;
+  color: var(--ink);
+}
+
+.rir-help {
+  position: relative;
+  display: inline-flex;
+}
+
+.rir-help > button {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border: 1.5px solid var(--ink);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.rir-help [role='tooltip'] {
+  position: absolute;
+  z-index: 4;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  width: min(280px, calc(100vw - 56px));
+  padding: 10px 12px;
+  border: 1.5px solid var(--ink);
+  border-radius: 2px;
+  opacity: 0;
+  background: var(--ink);
+  color: var(--surface);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.4;
+  pointer-events: none;
+  text-align: left;
+  transform: translate(-50%, 4px);
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease;
+  visibility: hidden;
+}
+
+.rir-help:hover [role='tooltip'],
+.rir-help:focus-within [role='tooltip'] {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  visibility: visible;
+}
