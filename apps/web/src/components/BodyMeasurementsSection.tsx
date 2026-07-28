@@ -10,7 +10,9 @@ import {
   orderedMeasurements,
   parseMeasurementCsv,
   previousMeasurement,
+  resolvedMeasurementValue,
   type MeasurementDefinition,
+  type ResolvedMeasurementValue,
 } from '../lib/measurements';
 import { dateKeyInTimeZone } from '../lib/progress';
 import {
@@ -49,7 +51,9 @@ export function BodyMeasurementsSection({
   const selected = ordered.find((measurement) => measurement.id === selectedId) ?? latest;
   const previous = selected ? previousMeasurement(ordered, selected.id) : null;
   const featured = measurementDefinitions.filter(
-    (definition) => definition.featured && measurementTrend(ordered, definition.key).length,
+    (definition) =>
+      definition.featured &&
+      (definition.key === 'bodyFatPercent' || measurementTrend(ordered, definition.key).length > 0),
   );
 
   return (
@@ -116,6 +120,7 @@ export function BodyMeasurementsSection({
               onDelete={() => onDelete(selected)}
               onEdit={() => setEditing(selected)}
               previous={previous}
+              measurements={ordered}
             />
           )}
         </>
@@ -391,29 +396,45 @@ function MeasurementTrendCard({
 }) {
   const { locale, unitSystem } = usePreferences();
   const trend = measurementTrend(measurements, definition.key);
-  const latestPoint = trend.at(-1)!;
-  const latestMeasurement = measurements.find(
-    (measurement) => measurement.id === latestPoint.measurementId,
-  )!;
-  const previous = previousMeasurement(measurements, latestMeasurement.id);
-  const latestValue = latestMeasurement.values[definition.key];
-  const delta = measurementDelta(latestMeasurement, previous, definition.key);
+  const latestPoint = trend.at(-1) ?? null;
+  const latestMeasurement =
+    measurements.find((measurement) => measurement.id === latestPoint?.measurementId) ??
+    measurements.at(-1)!;
+  const resolved = resolvedMeasurementValue(latestMeasurement, definition.key, measurements);
+  const previous = latestPoint ? previousMeasurement(measurements, latestMeasurement.id) : null;
+  const delta = latestPoint
+    ? measurementDelta(latestMeasurement, previous, definition.key, measurements)
+    : null;
+  const bodyFat = definition.key === 'bodyFatPercent';
 
   return (
-    <article>
+    <article className={bodyFat ? 'body-fat-trend' : undefined}>
       <div>
         <span>{measurementCopy(definition, locale).shortLabel}</span>
         <strong>
-          {latestValue === null
+          {resolved.value === null
             ? '—'
-            : displayMeasurement(definition.key, latestValue, locale, unitSystem)}
+            : displayMeasurement(definition.key, resolved.value, locale, unitSystem)}
         </strong>
-        <small>{formatDelta(delta, definition.key, locale, unitSystem)}</small>
+        <small>
+          {bodyFat
+            ? bodyFatSourceLabel(resolved, locale)
+            : formatDelta(delta, definition.key, locale, unitSystem)}
+        </small>
+        {bodyFat && resolved.value !== null && (
+          <small>{formatDelta(delta, definition.key, locale, unitSystem)}</small>
+        )}
       </div>
-      <Sparkline
-        label={measurementCopy(definition, locale).label}
-        values={trend.map((point) => point.value)}
-      />
+      {trend.length > 0 ? (
+        <Sparkline
+          label={measurementCopy(definition, locale).label}
+          values={trend.map((point) => point.value)}
+        />
+      ) : (
+        <span className="measurement-trend-missing" aria-hidden="true">
+          %
+        </span>
+      )}
     </article>
   );
 }
@@ -441,18 +462,22 @@ function Sparkline({ values, label }: { values: number[]; label: string }) {
 
 function MeasurementDetail({
   measurement,
+  measurements,
   previous,
   onEdit,
   onDelete,
 }: {
   measurement: LocalMeasurement;
+  measurements: LocalMeasurement[];
   previous: LocalMeasurement | null;
   onEdit: () => void;
   onDelete: () => void;
 }) {
   const { locale, unitSystem } = usePreferences();
   const recorded = measurementDefinitions.filter(
-    (definition) => measurement.values[definition.key] !== null,
+    (definition) =>
+      definition.key === 'bodyFatPercent' ||
+      resolvedMeasurementValue(measurement, definition.key, measurements).value !== null,
   );
   return (
     <article className="measurement-detail">
@@ -475,13 +500,21 @@ function MeasurementDetail({
       )}
       <div className="measurement-values">
         {recorded.map((definition) => {
-          const value = measurement.values[definition.key]!;
-          const delta = measurementDelta(measurement, previous, definition.key);
+          const resolved = resolvedMeasurementValue(measurement, definition.key, measurements);
+          const delta = measurementDelta(measurement, previous, definition.key, measurements);
+          const bodyFat = definition.key === 'bodyFatPercent';
           return (
             <div key={definition.key}>
               <span>{measurementCopy(definition, locale).label}</span>
-              <strong>{displayMeasurement(definition.key, value, locale, unitSystem)}</strong>
-              <small>{formatDelta(delta, definition.key, locale, unitSystem)}</small>
+              <strong>
+                {resolved.value === null
+                  ? '—'
+                  : displayMeasurement(definition.key, resolved.value, locale, unitSystem)}
+              </strong>
+              {bodyFat && <small>{bodyFatSourceLabel(resolved, locale)}</small>}
+              {(!bodyFat || resolved.value !== null) && (
+                <small>{formatDelta(delta, definition.key, locale, unitSystem)}</small>
+              )}
             </div>
           );
         })}
@@ -769,6 +802,11 @@ const englishMeasurementCopy: Record<
     shortLabel: 'Waist',
     help: 'The widest point below the navel.',
   },
+  bodyFatPercent: {
+    label: 'Body fat',
+    shortLabel: 'Body fat',
+    help: 'Enter it directly, or leave blank for an approximate male RFM estimate from height and waist.',
+  },
 };
 
 function formatMeasurementDate(measurement: LocalMeasurement, locale: 'ru' | 'en'): string {
@@ -792,4 +830,18 @@ function formatDelta(
     maximumFractionDigits: 1,
   }).format(displayed);
   return `${value > 0 ? '+' : '−'}${formatted} ${measurementUnit(key, unitSystem, locale)}`;
+}
+
+function bodyFatSourceLabel(resolved: ResolvedMeasurementValue, locale: 'ru' | 'en'): string {
+  if (resolved.source === 'recorded') {
+    return tr(locale, 'введено вручную', 'entered manually');
+  }
+  if (resolved.source === 'rfm-estimate') {
+    return tr(locale, 'примерная оценка RFM', 'approximate RFM estimate');
+  }
+  return tr(
+    locale,
+    'добавь рост и талию или введи вручную',
+    'add height and waist, or enter manually',
+  );
 }

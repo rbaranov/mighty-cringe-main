@@ -1216,6 +1216,9 @@ small,
   border-radius: 13px;
   background: #10150e;
 }
+.measurement-trends > article.body-fat-trend {
+  grid-column: 1 / -1;
+}
 .measurement-trends span,
 .measurement-trends strong,
 .measurement-trends small {
@@ -1238,6 +1241,19 @@ small,
   font-size: 8px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.measurement-trends .body-fat-trend small {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+.measurement-trend-missing {
+  align-self: center;
+  color: var(--accent);
+  font-family: var(--font-display);
+  font-size: 36px !important;
+  line-height: 1;
+  text-align: center;
 }
 .measurement-trends svg {
   width: 100%;

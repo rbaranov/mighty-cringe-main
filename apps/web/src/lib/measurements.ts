@@ -8,10 +8,15 @@ export type MeasurementDefinition = {
   key: MeasurementKey;
   label: string;
   shortLabel: string;
-  unit: 'кг' | 'см';
+  unit: 'кг' | 'см' | '%';
   help: string;
   featured: boolean;
   maximum: number;
+};
+
+export type ResolvedMeasurementValue = {
+  value: number | null;
+  source: 'recorded' | 'rfm-estimate' | 'unavailable';
 };
 
 export type MeasurementImportRow = {
@@ -108,6 +113,15 @@ export const measurementDefinitions: MeasurementDefinition[] = [
     featured: true,
     maximum: 300,
   },
+  {
+    key: 'bodyFatPercent',
+    label: '% жира',
+    shortLabel: '% жира',
+    unit: '%',
+    help: 'Можно ввести явно. Пустое поле даст приблизительный расчёт RFM для мужчин по росту и талии.',
+    featured: true,
+    maximum: 100,
+  },
 ];
 
 export function orderedMeasurements(measurements: LocalMeasurement[]): LocalMeasurement[] {
@@ -134,10 +148,13 @@ export function measurementDelta(
   current: LocalMeasurement,
   previous: LocalMeasurement | null,
   key: MeasurementKey,
+  measurements: LocalMeasurement[] = [current, ...(previous ? [previous] : [])],
 ): number | null {
-  const currentValue = current.values[key];
-  const previousValue = previous?.values[key];
-  if (currentValue === null || previousValue === null || previousValue === undefined) return null;
+  const currentValue = resolvedMeasurementValue(current, key, measurements).value;
+  const previousValue = previous
+    ? resolvedMeasurementValue(previous, key, measurements).value
+    : null;
+  if (currentValue === null || previousValue === null) return null;
   return currentValue - previousValue;
 }
 
@@ -146,11 +163,42 @@ export function measurementTrend(
   key: MeasurementKey,
 ): Array<{ measurementId: string; measuredOn: string; value: number }> {
   return orderedMeasurements(measurements).flatMap((measurement) => {
-    const value = measurement.values[key];
+    const value = resolvedMeasurementValue(measurement, key, measurements).value;
     return value === null
       ? []
       : [{ measurementId: measurement.id, measuredOn: measurement.measuredOn, value }];
   });
+}
+
+export function resolvedMeasurementValue(
+  measurement: LocalMeasurement,
+  key: MeasurementKey,
+  measurements: LocalMeasurement[] = [measurement],
+): ResolvedMeasurementValue {
+  const recorded = measurement.values[key] ?? null;
+  if (recorded !== null) return { value: recorded, source: 'recorded' };
+  if (key !== 'bodyFatPercent') return { value: null, source: 'unavailable' };
+
+  const heightCm =
+    measurement.values.heightCm ??
+    orderedMeasurements(measurements)
+      .reverse()
+      .find(
+        (candidate) =>
+          candidate.values.heightCm !== null && candidate.values.heightCm !== undefined,
+      )?.values.heightCm ??
+    null;
+  const waistCm = measurement.values.waistCm ?? null;
+  if (heightCm === null || waistCm === null) return { value: null, source: 'unavailable' };
+
+  const estimate = 64 - 20 * (heightCm / waistCm);
+  if (!Number.isFinite(estimate) || estimate <= 0 || estimate > 100) {
+    return { value: null, source: 'unavailable' };
+  }
+  return {
+    value: Math.round((estimate + Number.EPSILON) * 10) / 10,
+    source: 'rfm-estimate',
+  };
 }
 
 export function parseMeasurementCsv(
@@ -485,7 +533,7 @@ function assignMeasurementValues(
 }
 
 function canonicalMeasurementValue(key: MeasurementKey, value: number, unitSystem: UnitSystem) {
-  if (unitSystem === 'metric') return value;
+  if (unitSystem === 'metric' || key === 'bodyFatPercent') return value;
   const canonical = key === 'weightKg' ? value / 2.2046226218 : value * 2.54;
   return Math.round((canonical + Number.EPSILON) * 100) / 100;
 }
@@ -504,6 +552,7 @@ const englishMeasurementLabels: Partial<Record<MeasurementKey, string>> = {
   thighRightCm: 'Right thigh',
   calfCm: 'Calf',
   waistCm: 'Waist',
+  bodyFatPercent: 'Body fat',
 };
 
 function emptyMeasurementValues(): MeasurementValues {
@@ -685,6 +734,13 @@ const measurementHeaderAliases: Record<string, MeasurementKey> = {
   талия_in: 'waistCm',
   живот: 'waistCm',
   живот_талия: 'waistCm',
+  body_fat: 'bodyFatPercent',
+  body_fat_percent: 'bodyFatPercent',
+  body_fat_percentage: 'bodyFatPercent',
+  fat_percent: 'bodyFatPercent',
+  жир: 'bodyFatPercent',
+  процент_жира: 'bodyFatPercent',
+  жир_percent: 'bodyFatPercent',
 };
 
 const monthNames: Record<string, number> = {
@@ -750,7 +806,8 @@ function matchMeasurementLabel(value: string): MeasurementLabelMatch | null {
       ),
     );
   let keys: MeasurementKey[] | null = null;
-  if (hasToken('height', 'рост')) keys = ['heightCm'];
+  if (hasToken('bodyfat', 'fat', 'жир')) keys = ['bodyFatPercent'];
+  else if (hasToken('height', 'рост')) keys = ['heightCm'];
   else if (hasToken('weight', 'вес', 'масса')) keys = ['weightKg'];
   else if (hasToken('neck', 'шея', 'шеи')) keys = ['neckCm'];
   else if (hasToken('chest', 'грудь', 'груди')) keys = ['chestCm'];

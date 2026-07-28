@@ -421,6 +421,7 @@ function formatMeasurements(
     waistCm: ['талия', 'waist'],
     chestCm: ['грудь', 'chest'],
     bicepsCm: ['бицепс', 'biceps'],
+    bodyFatPercent: ['% жира', 'body fat'],
   };
   return Object.entries(measurement.values)
     .filter((entry): entry is [string, number] => entry[1] !== null)

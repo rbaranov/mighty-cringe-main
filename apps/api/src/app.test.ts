@@ -376,7 +376,7 @@ test('OAuth sessions isolate athlete data, support logout, and enforce admin rol
       clientMutationId: '61000000-0000-4000-8000-000000000001',
       measuredOn: '2026-01-22T06:00:00.000Z',
       isSelfMeasured: true,
-      values: { weightKg: 82, waistCm: 91 },
+      values: { weightKg: 82, waistCm: 91, bodyFatPercent: 18.5 },
     },
   };
   const createdMeasurement = await app.inject({
@@ -388,6 +388,7 @@ test('OAuth sessions isolate athlete data, support logout, and enforce admin rol
   assert.equal(createdMeasurement.statusCode, 201);
   assert.equal(createdMeasurement.json().entity.revision, 1);
   assert.equal(createdMeasurement.json().entity.values.weightKg, 82);
+  assert.equal(createdMeasurement.json().entity.values.bodyFatPercent, 18.5);
   const repeatedMeasurement = await app.inject({
     method: 'POST',
     url: '/api/v1/sync',
