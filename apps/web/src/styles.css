@@ -297,41 +297,59 @@ small,
 .stat {
   width: 33.33%;
   display: flex;
-  min-height: 74px;
+  min-height: 112px;
   padding: 12px;
   border: 1px solid #303a2b;
   border-radius: 14px;
   flex-direction: column;
-  justify-content: space-between;
+  gap: 5px;
   background: #171c14;
   color: inherit;
   font: inherit;
   text-align: left;
-}
-.stat.active {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
 }
 .stat strong {
   color: #e9f3dd;
   font-size: 16px;
 }
 .stat span {
+  margin-top: auto;
   color: #9ba394;
   font-size: 11px;
 }
-.home-stat-tip {
-  margin: -14px 0 20px;
+.stat small {
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.25;
+}
+.home-stats-details {
+  margin: -12px 0 20px;
+}
+.home-stats-details summary {
+  width: fit-content;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-underline-offset: 4px;
+}
+.home-stats-details > div {
+  margin-top: 12px;
   padding: 12px 14px;
   border: 1.5px solid var(--ink);
   background: var(--surface-soft);
   color: var(--ink);
 }
-.home-stat-tip p {
-  margin: 5px 0 0;
+.home-stats-details p {
+  margin: 0;
   color: var(--muted);
   font-size: 12px;
   line-height: 1.45;
+}
+.home-stats-details p + p {
+  margin-top: 8px;
 }
 .button {
   border: 0;

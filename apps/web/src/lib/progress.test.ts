@@ -7,6 +7,7 @@ import {
   buildWorkoutDays,
   calculateWeeklyStreaks,
   estimateOneRepMax,
+  hasWorkoutInCurrentWeek,
   volumeForRecentDays,
   workoutCountForMonth,
   workoutCountForYear,
@@ -48,13 +49,29 @@ describe('progress metrics', () => {
     expect(buildWorkoutDays([lateWorkout], [], 'Asia/Almaty')[0].dateKey).toBe('2026-07-21');
   });
 
-  it('keeps a weekly streak alive through the unfinished current week', () => {
+  it('counts the unfinished current week as soon as it has a completed workout', () => {
+    const workoutDays = ['2026-07-20', '2026-07-28'];
+
+    expect(calculateWeeklyStreaks(workoutDays, '2026-07-28')).toEqual({
+      current: 2,
+      best: 2,
+    });
+    expect(hasWorkoutInCurrentWeek(workoutDays, '2026-07-28')).toBe(true);
+  });
+
+  it('keeps the previous streak available until the current week ends', () => {
     expect(
       calculateWeeklyStreaks(
         ['2026-06-30', '2026-07-07', '2026-07-14', '2026-07-25'],
         '2026-07-27',
       ),
     ).toEqual({ current: 4, best: 4 });
+    expect(
+      hasWorkoutInCurrentWeek(
+        ['2026-06-30', '2026-07-07', '2026-07-14', '2026-07-25'],
+        '2026-07-27',
+      ),
+    ).toBe(false);
     expect(calculateWeeklyStreaks(['2026-07-01'], '2026-07-20')).toEqual({
       current: 0,
       best: 1,

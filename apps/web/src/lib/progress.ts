@@ -120,6 +120,11 @@ export function calculateWeeklyStreaks(dayKeys: string[], todayKey: string): Str
   return { current, best };
 }
 
+export function hasWorkoutInCurrentWeek(dayKeys: string[], todayKey: string): boolean {
+  const currentWeek = weekStartDateKey(todayKey);
+  return dayKeys.some((dayKey) => weekStartDateKey(dayKey) === currentWeek);
+}
+
 export function workoutCountForMonth(days: WorkoutDay[], monthKey: string): number {
   return days
     .filter((day) => day.dateKey.startsWith(`${monthKey}-`))
