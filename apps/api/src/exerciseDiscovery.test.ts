@@ -172,6 +172,20 @@ test('API discovers, confirms and stores an exercise in the current user catalog
   assert.equal(created.statusCode, 201);
   assert.equal(created.json().exercise.scope, 'user');
 
+  const ambiguous = await app.inject({
+    method: 'POST',
+    url: '/api/v1/exercises',
+    payload: {
+      id: '70000000-0000-4000-8000-000000000099',
+      ...candidate,
+      nameRu: 'Пуловер',
+      nameEn: 'Pullover',
+      confidence: undefined,
+      matchReason: undefined,
+    },
+  });
+  assert.equal(ambiguous.statusCode, 400);
+
   const corrected = await app.inject({
     method: 'PUT',
     url: `/api/v1/exercises/${exerciseId}`,

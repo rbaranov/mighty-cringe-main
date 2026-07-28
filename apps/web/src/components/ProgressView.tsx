@@ -9,9 +9,10 @@ import {
   buildCalendarMonth,
   buildExerciseProgress,
   buildWorkoutDays,
-  calculateStreaks,
+  calculateWeeklyStreaks,
   dateKeyInTimeZone,
   volumeForRecentDays,
+  workoutCountForMonth,
   type ExerciseProgressPoint,
 } from '../lib/progress';
 import { BodyMeasurementsSection, type MeasurementDraft } from './BodyMeasurementsSection';
@@ -31,6 +32,8 @@ const muscleLabels: Record<string, [string, string]> = {
   triceps: ['Трицепс', 'Triceps'],
   quadriceps: ['Квадрицепс', 'Quadriceps'],
   hamstrings: ['Задняя поверхность бедра', 'Hamstrings'],
+  glutes: ['Ягодицы', 'Glutes'],
+  adductors: ['Приводящие мышцы', 'Adductors'],
   calves: ['Икры', 'Calves'],
   core: ['Кор', 'Core'],
 };
@@ -44,6 +47,7 @@ export function ProgressView({
   onDeleteWorkout,
   onEditWorkout,
   onImportMeasurements,
+  onRepeatWorkout,
   onResumeWorkout,
   onSaveMeasurement,
 }: {
@@ -55,6 +59,7 @@ export function ProgressView({
   onDeleteWorkout: (workout: LocalWorkout) => void;
   onEditWorkout: (workout: LocalWorkout) => void;
   onImportMeasurements: (drafts: MeasurementDraft[]) => Promise<void>;
+  onRepeatWorkout: (workout: LocalWorkout) => void;
   onResumeWorkout: (workout: LocalWorkout) => void;
   onSaveMeasurement: (draft: MeasurementDraft, existing: LocalMeasurement | null) => Promise<void>;
 }) {
@@ -68,7 +73,7 @@ export function ProgressView({
   );
   const streaks = useMemo(
     () =>
-      calculateStreaks(
+      calculateWeeklyStreaks(
         workoutDays.map((day) => day.dateKey),
         todayKey,
       ),
@@ -81,6 +86,7 @@ export function ProgressView({
     () => buildCalendarMonth(monthKey, workoutDays, todayKey),
     [monthKey, todayKey, workoutDays],
   );
+  const monthWorkoutCount = workoutCountForMonth(workoutDays, monthKey);
   const [selectedDayKey, setSelectedDayKey] = useState<string | null>(null);
   const selectedDay =
     calendar.find((day) => day.dateKey === selectedDayKey && day.workout) ??
@@ -158,11 +164,11 @@ export function ProgressView({
         />
         <SummaryMetric
           label={tr(locale, 'Текущая серия', 'Current streak')}
-          value={formatDays(streaks.current, locale)}
+          value={formatWeeks(streaks.current, locale)}
         />
         <SummaryMetric
           label={tr(locale, 'Лучшая серия', 'Best streak')}
-          value={formatDays(streaks.best, locale)}
+          value={formatWeeks(streaks.best, locale)}
         />
         <SummaryMetric
           label={tr(locale, 'Объём · 30 дней', 'Volume · 30 days')}
@@ -172,8 +178,8 @@ export function ProgressView({
       <p className="streak-note">
         {tr(
           locale,
-          'Серия остаётся текущей до конца сегодняшнего дня.',
-          'The streak stays current through the end of today.',
+          'Неделя считается в серии, если в ней есть хотя бы одна завершённая тренировка. Текущая неделя не обрывает серию, пока не закончилась.',
+          'A week counts when it has at least one completed workout. The unfinished current week does not break the streak.',
         )}
       </p>
 
@@ -201,6 +207,13 @@ export function ProgressView({
             </button>
           </div>
         </div>
+        <p className="calendar-month-count">
+          {tr(
+            locale,
+            `Тренировок в выбранном месяце: ${monthWorkoutCount}`,
+            `Workouts in the displayed month: ${monthWorkoutCount}`,
+          )}
+        </p>
         <div className="calendar-weekdays" aria-hidden="true">
           {weekdayLabels[locale].map((label) => (
             <span key={label}>{label}</span>
@@ -235,6 +248,7 @@ export function ProgressView({
             exercises={exercises}
             onDeleteWorkout={onDeleteWorkout}
             onEditWorkout={onEditWorkout}
+            onRepeatWorkout={onRepeatWorkout}
             onResumeWorkout={onResumeWorkout}
             sets={visibleSets}
             workoutIds={selectedDay.workout.workoutIds}
@@ -396,6 +410,7 @@ function DayDetails({
   exercises,
   onDeleteWorkout,
   onEditWorkout,
+  onRepeatWorkout,
   onResumeWorkout,
 }: {
   dateKey: string;
@@ -405,6 +420,7 @@ function DayDetails({
   exercises: Exercise[];
   onDeleteWorkout: (workout: LocalWorkout) => void;
   onEditWorkout: (workout: LocalWorkout) => void;
+  onRepeatWorkout: (workout: LocalWorkout) => void;
   onResumeWorkout: (workout: LocalWorkout) => void;
 }) {
   const { locale, unitSystem } = usePreferences();
@@ -448,6 +464,13 @@ function DayDetails({
                   type="button"
                 >
                   {tr(locale, 'Продолжить', 'Continue')}
+                </button>
+                <button
+                  className="button ghost small"
+                  onClick={() => onRepeatWorkout(workout)}
+                  type="button"
+                >
+                  {tr(locale, 'Повторить', 'Repeat')}
                 </button>
                 <button
                   className="button ghost small workout-delete"
@@ -590,7 +613,7 @@ function formatTime(value: string, locale: 'ru' | 'en'): string {
   }).format(new Date(value));
 }
 
-function formatDays(value: number, locale: 'ru' | 'en'): string {
-  if (locale === 'en') return `${value} ${value === 1 ? 'day' : 'days'}`;
-  return `${value} ${value % 10 === 1 && value % 100 !== 11 ? 'день' : value % 10 >= 2 && value % 10 <= 4 && (value % 100 < 10 || value % 100 >= 20) ? 'дня' : 'дней'}`;
+function formatWeeks(value: number, locale: 'ru' | 'en'): string {
+  if (locale === 'en') return `${value} ${value === 1 ? 'week' : 'weeks'}`;
+  return `${value} ${value % 10 === 1 && value % 100 !== 11 ? 'неделя' : value % 10 >= 2 && value % 10 <= 4 && (value % 100 < 10 || value % 100 >= 20) ? 'недели' : 'недель'}`;
 }

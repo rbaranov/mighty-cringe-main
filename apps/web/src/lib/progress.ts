@@ -93,14 +93,14 @@ export function buildWorkoutDays(
   return [...days.values()].sort((left, right) => left.dateKey.localeCompare(right.dateKey));
 }
 
-export function calculateStreaks(dayKeys: string[], todayKey: string): StreakSummary {
-  const unique = [...new Set(dayKeys)].sort();
+export function calculateWeeklyStreaks(dayKeys: string[], todayKey: string): StreakSummary {
+  const unique = [...new Set(dayKeys.map(weekStartDateKey))].sort();
   if (unique.length === 0) return { current: 0, best: 0 };
 
   let best = 1;
   let running = 1;
   for (let index = 1; index < unique.length; index += 1) {
-    if (daysBetween(unique[index - 1], unique[index]) === 1) {
+    if (weeksBetween(unique[index - 1], unique[index]) === 1) {
       running += 1;
       best = Math.max(best, running);
     } else {
@@ -109,15 +109,27 @@ export function calculateStreaks(dayKeys: string[], todayKey: string): StreakSum
   }
 
   const latest = unique.at(-1)!;
-  const distanceFromToday = daysBetween(latest, todayKey);
+  const distanceFromToday = weeksBetween(latest, weekStartDateKey(todayKey));
   if (distanceFromToday < 0 || distanceFromToday > 1) return { current: 0, best };
 
   let current = 1;
   for (let index = unique.length - 1; index > 0; index -= 1) {
-    if (daysBetween(unique[index - 1], unique[index]) !== 1) break;
+    if (weeksBetween(unique[index - 1], unique[index]) !== 1) break;
     current += 1;
   }
   return { current, best };
+}
+
+export function workoutCountForMonth(days: WorkoutDay[], monthKey: string): number {
+  return days
+    .filter((day) => day.dateKey.startsWith(`${monthKey}-`))
+    .reduce((total, day) => total + day.workoutCount, 0);
+}
+
+export function workoutCountForYear(days: WorkoutDay[], year: string): number {
+  return days
+    .filter((day) => day.dateKey.startsWith(`${year}-`))
+    .reduce((total, day) => total + day.workoutCount, 0);
 }
 
 export function volumeForRecentDays(days: WorkoutDay[], todayKey: string, windowDays = 30): number {
@@ -198,6 +210,15 @@ export function buildCalendarMonth(
 
 function daysBetween(earlier: string, later: string): number {
   return Math.round((dateKeyToUtc(later) - dateKeyToUtc(earlier)) / DAY_MS);
+}
+
+function weeksBetween(earlierWeek: string, laterWeek: string): number {
+  return Math.round(daysBetween(earlierWeek, laterWeek) / 7);
+}
+
+function weekStartDateKey(dateKey: string): string {
+  const weekday = new Date(dateKeyToUtc(dateKey)).getUTCDay();
+  return addDays(dateKey, -((weekday + 6) % 7));
 }
 
 function addDays(dateKey: string, amount: number): string {

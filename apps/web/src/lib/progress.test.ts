@@ -5,9 +5,11 @@ import {
   buildCalendarMonth,
   buildExerciseProgress,
   buildWorkoutDays,
-  calculateStreaks,
+  calculateWeeklyStreaks,
   estimateOneRepMax,
   volumeForRecentDays,
+  workoutCountForMonth,
+  workoutCountForYear,
 } from './progress';
 
 const firstWorkout = workout('2026-07-20T18:00:00.000Z', '2026-07-20T19:00:00.000Z', 'w1');
@@ -37,6 +39,8 @@ describe('progress metrics', () => {
       expect.objectContaining({ dateKey: '2026-07-21', setCount: 1, volumeKg: 412.5 }),
     ]);
     expect(volumeForRecentDays(days, '2026-07-22', 3)).toBe(812.5);
+    expect(workoutCountForMonth(days, '2026-07')).toBe(2);
+    expect(workoutCountForYear(days, '2026')).toBe(2);
   });
 
   it('places a late workout on its local calendar day', () => {
@@ -44,14 +48,17 @@ describe('progress metrics', () => {
     expect(buildWorkoutDays([lateWorkout], [], 'Asia/Almaty')[0].dateKey).toBe('2026-07-21');
   });
 
-  it('keeps a current streak alive through yesterday and finds the all-time best', () => {
+  it('keeps a weekly streak alive through the unfinished current week', () => {
     expect(
-      calculateStreaks(
-        ['2026-07-01', '2026-07-02', '2026-07-10', '2026-07-11', '2026-07-12'],
-        '2026-07-13',
+      calculateWeeklyStreaks(
+        ['2026-06-30', '2026-07-07', '2026-07-14', '2026-07-25'],
+        '2026-07-27',
       ),
-    ).toEqual({ current: 3, best: 3 });
-    expect(calculateStreaks(['2026-07-01'], '2026-07-13')).toEqual({ current: 0, best: 1 });
+    ).toEqual({ current: 4, best: 4 });
+    expect(calculateWeeklyStreaks(['2026-07-01'], '2026-07-20')).toEqual({
+      current: 0,
+      best: 1,
+    });
   });
 
   it('builds one comparable strength point per workout with its source set', () => {

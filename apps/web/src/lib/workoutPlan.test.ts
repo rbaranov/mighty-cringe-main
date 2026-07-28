@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { WorkoutExercise } from '@mighty-cringe/contracts';
 
-import { toggleWorkoutGroupLink } from './workoutPlan';
+import { copyWorkoutPlan, toggleWorkoutGroupLink } from './workoutPlan';
 
 function item(position: number, group: number | null): WorkoutExercise {
   return {
@@ -14,6 +14,18 @@ function item(position: number, group: number | null): WorkoutExercise {
 }
 
 describe('workout groups', () => {
+  it('copies the ordered plan with new item ids and preserved group boundaries', () => {
+    const ids = ['30000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000002'];
+    const copied = copyWorkoutPlan([item(1, 7), item(0, 7)], () => ids.shift()!);
+
+    expect(copied.map((entry) => entry.id)).toEqual([
+      '30000000-0000-4000-8000-000000000001',
+      '30000000-0000-4000-8000-000000000002',
+    ]);
+    expect(copied.map((entry) => entry.position)).toEqual([0, 1]);
+    expect(copied.map((entry) => entry.supersetGroup)).toEqual([1, 1]);
+  });
+
   it('extends a superset into a triset and quadriset', () => {
     const pair = [item(0, 1), item(1, 1), item(2, null), item(3, null)];
     const triset = toggleWorkoutGroupLink(pair, pair[1].id);

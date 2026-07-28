@@ -39,13 +39,13 @@ describe('natural workout commands', () => {
       status: 'command_ready',
       command: {
         type: 'replace',
-        source: { exercise: { nameRu: 'Тяга верхнего блока' } },
-        replacement: { nameRu: 'Румынская тяга' },
+        source: { exercise: { nameRu: 'Тяга верхнего блока прямым хватом' } },
+        replacement: { nameRu: 'Румынская тяга со штангой' },
       },
     });
     if (result.status === 'command_ready') {
       expect(workoutCommandSummary(result.command, 'ru')).toBe(
-        'Заменить «Тяга верхнего блока» на «Румынская тяга». Уже записанные подходы останутся в истории.',
+        'Заменить «Тяга верхнего блока прямым хватом» на «Румынская тяга со штангой». Уже записанные подходы останутся в истории.',
       );
       expect(
         applyWorkoutCommandToPlan(plan, result.command).map((item) => item.exerciseId),
@@ -53,7 +53,7 @@ describe('natural workout commands', () => {
     }
   });
 
-  it('recognizes the reported replace intent instead of asking for set volume', () => {
+  it('resolves the owner shorthand after it enters the global catalog', () => {
     expect(
       parseNaturalWorkoutCommand({
         text: 'Замени тягу верхнего блока на тягу арни',
@@ -61,11 +61,11 @@ describe('natural workout commands', () => {
         plan,
       }),
     ).toMatchObject({
-      status: 'command_needs_clarification',
-      role: 'target',
-      unresolvedPhrase: 'тягу арни',
-      question:
-        'Не нашёл «тягу арни» в каталоге. Выбери упражнение или сначала добавь его в каталог.',
+      status: 'command_ready',
+      command: {
+        type: 'replace',
+        replacement: { nameRu: 'Тяга одной рукой в кроссовере сидя' },
+      },
     });
   });
 
@@ -80,7 +80,7 @@ describe('natural workout commands', () => {
       status: 'command_ready',
       command: {
         type: 'replace',
-        source: { exercise: { nameRu: 'Жим лёжа' } },
+        source: { exercise: { nameRu: 'Жим штанги лёжа на горизонтальной скамье' } },
         replacement: { nameRu: 'Жим штанги лёжа на наклонной скамье' },
       },
     });
@@ -97,7 +97,7 @@ describe('natural workout commands', () => {
       status: 'command_ready',
       command: {
         type: 'replace',
-        source: { exercise: { nameRu: 'Жим лёжа' } },
+        source: { exercise: { nameRu: 'Жим штанги лёжа на горизонтальной скамье' } },
         replacement: { nameRu: 'Жим штанги лёжа на наклонной скамье' },
       },
     });
@@ -131,7 +131,7 @@ describe('natural workout commands', () => {
       command: {
         type: 'replace',
         source: { exercise: { nameRu: 'Сгибание рук' } },
-        replacement: { nameRu: 'Сгибание рук с гантелями' },
+        replacement: { nameRu: 'Сгибание рук с гантелями стоя' },
       },
     });
   });
@@ -172,12 +172,12 @@ describe('natural workout commands', () => {
       scope: 'user' as const,
       nameRu: 'Тяга гантели одной рукой',
       nameEn: 'One-arm dumbbell row',
-      aliases: ['тяга арни'],
+      aliases: ['тяга зорро'],
     };
 
     expect(
       parseNaturalWorkoutCommand({
-        text: 'Замени тягу верхнего блока на тягу арни',
+        text: 'Замени тягу верхнего блока на тягу зорро',
         catalog: [...fallbackCatalog, personalExercise],
         plan,
       }),
@@ -201,8 +201,8 @@ describe('natural workout commands', () => {
       status: 'command_ready',
       command: {
         type: 'add',
-        exercise: { nameRu: 'Румынская тяга' },
-        anchor: { exercise: { nameRu: 'Жим лёжа' } },
+        exercise: { nameRu: 'Румынская тяга со штангой' },
+        anchor: { exercise: { nameRu: 'Жим штанги лёжа на горизонтальной скамье' } },
         placement: 'after',
       },
     });
@@ -219,7 +219,7 @@ describe('natural workout commands', () => {
       status: 'command_ready',
       command: {
         type: 'remove',
-        source: { exercise: { nameRu: 'Разведения гантелей в стороны' } },
+        source: { exercise: { nameRu: 'Разведение гантелей в стороны стоя' } },
       },
     });
   });
@@ -234,8 +234,8 @@ describe('natural workout commands', () => {
       status: 'command_ready',
       command: {
         type: 'move',
-        source: { exercise: { nameRu: 'Жим лёжа' } },
-        anchor: { exercise: { nameRu: 'Тяга верхнего блока' } },
+        source: { exercise: { nameRu: 'Жим штанги лёжа на горизонтальной скамье' } },
+        anchor: { exercise: { nameRu: 'Тяга верхнего блока прямым хватом' } },
         placement: 'before',
       },
     });

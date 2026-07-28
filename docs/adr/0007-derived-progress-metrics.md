@@ -20,8 +20,10 @@ grouping uses the browser's IANA timezone and the completion date of the workout
 Use the following definitions:
 
 - a training day is a local calendar day with at least one completed workout;
-- the current streak is the consecutive run ending today or yesterday, so an unfinished current day
-  does not break it; the best streak is the longest historical run;
+- a streak is measured in consecutive local Monday–Sunday calendar weeks with at least one completed
+  workout in each week; the unfinished current week does not break a streak established through the
+  previous week, and the best streak is the longest historical run;
+- month and year counts include completed, non-deleted workouts by their local completion date;
 - training volume is the sum of `weightKg × reps`; the summary shows the inclusive trailing 30
   calendar days;
 - working weight for an exercise and workout is its heaviest recorded set;

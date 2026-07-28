@@ -8,12 +8,14 @@ import {
   useSyncExternalStore,
 } from 'react';
 
-import type {
-  CurrentUser,
-  Exercise,
-  SetEntrySource,
-  SetInput,
-  WorkoutExercise,
+import {
+  exerciseTags,
+  muscleGroups,
+  type CurrentUser,
+  type Exercise,
+  type SetEntrySource,
+  type SetInput,
+  type WorkoutExercise,
 } from '@mighty-cringe/contracts';
 import { useLiveQuery } from 'dexie-react-hooks';
 
@@ -38,6 +40,7 @@ import {
   type SyncConflict,
 } from './lib/db';
 import { fallbackCatalog, retiredGlobalExerciseIds } from './lib/fallbackCatalog';
+import { collapseExerciseCatalogDuplicates, filterExerciseCatalog } from './lib/exerciseCatalog';
 import { softDeletePersonalExercise } from './lib/exercises';
 import { hasPendingRemoteLogout, requestRemoteLogout } from './lib/logout';
 import { parseNaturalSet, type NaturalSetDraft, type NaturalSetResult } from './lib/naturalSet';
@@ -56,6 +59,13 @@ import {
   usePreferences,
 } from './lib/preferences';
 import { setEntrySourceSuffix } from './lib/setEntrySource';
+import {
+  buildWorkoutDays,
+  calculateWeeklyStreaks,
+  dateKeyInTimeZone,
+  workoutCountForMonth,
+  workoutCountForYear,
+} from './lib/progress';
 import { resolveSession } from './lib/session';
 import { acceptTrainerInviteFromUrl, currentLoginReturnTo } from './lib/trainer';
 import {
@@ -67,6 +77,7 @@ import {
 } from './lib/sync';
 import {
   applyWorkoutCommandToPlan,
+  copyWorkoutPlan,
   normalizeWorkoutPlan,
   toggleWorkoutGroupLink,
 } from './lib/workoutPlan';
@@ -206,6 +217,10 @@ function AuthenticatedAppContent({
       ),
     [exercises],
   );
+  const catalogChoices = useMemo(
+    () => collapseExerciseCatalogDuplicates(availableExercises),
+    [availableExercises],
+  );
   const measurements = useLiveQuery(
     () => db.measurements.orderBy('measuredOn').reverse().toArray(),
     [],
@@ -269,8 +284,8 @@ function AuthenticatedAppContent({
     : undefined;
   const workoutContext = editingWorkout ?? activeWorkout;
   const suggested = useMemo(
-    () => buildSuggestedExercises({ catalog: availableExercises, workouts }),
-    [availableExercises, workouts],
+    () => buildSuggestedExercises({ catalog: catalogChoices, workouts }),
+    [catalogChoices, workouts],
   );
   const setDefaults = useMemo(() => {
     if (!sheet || sheet.set) return null;
@@ -349,17 +364,11 @@ function AuthenticatedAppContent({
     };
   }, []);
 
-  async function startWorkout() {
+  async function createWorkoutWithPlan(workoutExercises: WorkoutExercise[]) {
     setEditingWorkoutId(null);
     const id = crypto.randomUUID();
     const clientMutationId = crypto.randomUUID();
     const startedAt = new Date().toISOString();
-    const workoutExercises = suggested.map((exercise, position) => ({
-      id: crypto.randomUUID(),
-      exerciseId: exercise.id,
-      position,
-      supersetGroup: Math.floor(position / 2) + 1,
-    }));
     await db.workouts.put({
       id,
       startedAt,
@@ -384,6 +393,44 @@ function AuthenticatedAppContent({
       },
     });
     await flushOutbox();
+  }
+
+  async function startWorkout() {
+    await createWorkoutWithPlan(
+      suggested.map((exercise, position) => ({
+        id: crypto.randomUUID(),
+        exerciseId: exercise.id,
+        position,
+        supersetGroup: Math.floor(position / 2) + 1,
+      })),
+    );
+  }
+
+  async function repeatWorkout(workout: LocalWorkout) {
+    if (activeWorkout || workout.endedAt === null) return;
+    await createWorkoutWithPlan(copyWorkoutPlan(workout.exercises));
+    setExerciseDetailId(null);
+    setView('workout');
+  }
+
+  function requestRepeatWorkout(workout: LocalWorkout) {
+    if (!activeWorkout) {
+      void repeatWorkout(workout);
+      return;
+    }
+    setConfirmation({
+      title: tr(locale, 'Уже идёт тренировка', 'A workout is already active'),
+      message: tr(
+        locale,
+        'Повтор не запущен: текущая тренировка и её план сохранены без изменений. Сначала заверши её.',
+        'The repeat was not started: your current workout and its plan remain unchanged. Finish it first.',
+      ),
+      confirmLabel: tr(locale, 'К текущей тренировке', 'Open current workout'),
+      action: async () => {
+        setEditingWorkoutId(null);
+        setView('workout');
+      },
+    });
   }
 
   async function saveSet(input: {
@@ -1000,7 +1047,7 @@ function AuthenticatedAppContent({
             )}
             {view === 'catalog' && (
               <CatalogView
-                exercises={availableExercises}
+                exercises={catalogChoices}
                 onOpenExercise={(exercise) => setExerciseDetailId(exercise.id)}
               />
             )}
@@ -1012,6 +1059,7 @@ function AuthenticatedAppContent({
                 onDeleteWorkout={requestDeleteWorkout}
                 onEditWorkout={editCompletedWorkout}
                 onImportMeasurements={importMeasurements}
+                onRepeatWorkout={requestRepeatWorkout}
                 onResumeWorkout={requestResumeWorkout}
                 onSaveMeasurement={saveMeasurement}
                 sets={sets}
@@ -1111,7 +1159,7 @@ function AuthenticatedAppContent({
         onSave={saveSet}
       />
       <ExercisePickerSheet
-        catalog={availableExercises}
+        catalog={catalogChoices}
         currentPlan={workoutContext?.exercises ?? []}
         mode={exercisePicker}
         onChoose={chooseExercise}
@@ -1255,6 +1303,29 @@ function WorkoutView({
   const { locale, unitSystem } = usePreferences();
   const [elapsedAt, setElapsedAt] = useState(() => Date.now());
   const [optionsItemId, setOptionsItemId] = useState<string | null>(null);
+  const [homeTip, setHomeTip] = useState<'month' | 'streak' | 'mode' | null>(null);
+  const timeZone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', []);
+  const todayKey = dateKeyInTimeZone(new Date(), timeZone);
+  const workoutDays = useMemo(
+    () =>
+      buildWorkoutDays(
+        workouts,
+        sets.filter((set) => !set.deleted),
+        timeZone,
+      ),
+    [sets, timeZone, workouts],
+  );
+  const weeklyStreak = useMemo(
+    () =>
+      calculateWeeklyStreaks(
+        workoutDays.map((day) => day.dateKey),
+        todayKey,
+      ),
+    [todayKey, workoutDays],
+  );
+  const currentMonth = todayKey.slice(0, 7);
+  const workoutsThisMonth = workoutCountForMonth(workoutDays, currentMonth);
+  const workoutsThisYear = workoutCountForYear(workoutDays, todayKey.slice(0, 4));
 
   useEffect(() => {
     if (!activeWorkout || editingHistory) return;
@@ -1277,12 +1348,58 @@ function WorkoutView({
         </p>
         <div className="stat-row">
           <Stat
-            label={tr(locale, 'Тренировок', 'Workouts')}
-            value={String(workouts.filter((workout) => workout.endedAt).length)}
+            active={homeTip === 'month'}
+            label={tr(locale, 'За месяц', 'This month')}
+            onClick={() => setHomeTip((current) => (current === 'month' ? null : 'month'))}
+            value={String(workoutsThisMonth)}
           />
-          <Stat label={tr(locale, 'Серия', 'Streak')} value={tr(locale, '1 день', '1 day')} />
-          <Stat label={tr(locale, 'Режим', 'Mode')} value="Full body" />
+          <Stat
+            active={homeTip === 'streak'}
+            label={tr(locale, 'Серия', 'Streak')}
+            onClick={() => setHomeTip((current) => (current === 'streak' ? null : 'streak'))}
+            value={formatWeeks(weeklyStreak.current, locale)}
+          />
+          <Stat
+            active={homeTip === 'mode'}
+            label={tr(locale, 'Режим', 'Mode')}
+            onClick={() => setHomeTip((current) => (current === 'mode' ? null : 'mode'))}
+            value="Full body"
+          />
         </div>
+        {homeTip && (
+          <div className="home-stat-tip" role="status">
+            <strong>
+              {homeTip === 'month'
+                ? tr(
+                    locale,
+                    `За текущий год: ${workoutsThisYear}`,
+                    `This year: ${workoutsThisYear}`,
+                  )
+                : homeTip === 'streak'
+                  ? tr(locale, 'Серия считается неделями', 'The streak is counted in weeks')
+                  : tr(locale, 'Пока только Full body', 'Full body for now')}
+            </strong>
+            <p>
+              {homeTip === 'month'
+                ? tr(
+                    locale,
+                    'Учитываются завершённые и не удалённые тренировки по твоему местному времени.',
+                    'Completed, non-deleted workouts are counted in your local time.',
+                  )
+                : homeTip === 'streak'
+                  ? tr(
+                      locale,
+                      'Нужна хотя бы одна завершённая тренировка в каждой календарной неделе. Текущая незавершённая неделя серию не обрывает.',
+                      'Complete at least one workout in every calendar week. The unfinished current week does not break the streak.',
+                    )
+                  : tr(
+                      locale,
+                      'Приложение пока по умолчанию поддерживает только Full body, но состав, порядок и связки упражнений можно свободно менять до и во время тренировки.',
+                      'The app currently defaults to Full body only, but you can freely change exercise selection, order and groups before or during a workout.',
+                    )}
+            </p>
+          </div>
+        )}
         <button className="button primary action" onClick={onStart} type="button">
           {tr(locale, 'Начать тренировку', 'Start workout')}
         </button>
@@ -2008,6 +2125,31 @@ function CatalogView({
 }) {
   const { locale } = usePreferences();
   const [adding, setAdding] = useState(false);
+  const [query, setQuery] = useState('');
+  const [selectedMuscle, setSelectedMuscle] = useState<Exercise['primaryMuscles'][number] | 'all'>(
+    'all',
+  );
+  const [selectedTag, setSelectedTag] = useState<Exercise['tag'] | 'all'>('all');
+  const filteredExercises = filterExerciseCatalog(exercises, {
+    query,
+    muscle: selectedMuscle,
+    tag: selectedTag,
+  });
+  const hasFilters = query.trim() !== '' || selectedMuscle !== 'all' || selectedTag !== 'all';
+  const activeFilterDescription = [
+    query.trim() ? tr(locale, `поиск «${query.trim()}»`, `search “${query.trim()}”`) : null,
+    selectedMuscle !== 'all'
+      ? tr(
+          locale,
+          `мышца «${muscleLabel(selectedMuscle, locale)}»`,
+          `muscle “${muscleLabel(selectedMuscle, locale)}”`,
+        )
+      : null,
+    selectedTag !== 'all' ? `tag “${selectedTag}”` : null,
+  ]
+    .filter(Boolean)
+    .join(', ');
+
   return (
     <section className="screen">
       <p className="eyebrow">{tr(locale, 'Общий + личный', 'Shared + personal')}</p>
@@ -2026,8 +2168,80 @@ function CatalogView({
           }}
         />
       )}
+      <div className="catalog-filters">
+        <label>
+          <span>{tr(locale, 'Поиск', 'Search')}</span>
+          <input
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={tr(
+              locale,
+              'Название, синоним или оборудование',
+              'Name, alias or equipment',
+            )}
+            type="search"
+            value={query}
+          />
+        </label>
+        <div
+          aria-label={tr(locale, 'Характер упражнения', 'Exercise tag')}
+          className="catalog-filter-chips"
+        >
+          <CatalogFilterChip
+            active={selectedTag === 'all'}
+            label={tr(locale, 'Любой характер', 'Any tag')}
+            onClick={() => setSelectedTag('all')}
+          />
+          {exerciseTags.map((tag) => (
+            <CatalogFilterChip
+              active={selectedTag === tag}
+              key={tag}
+              label={tag === 'mighty' ? '⚡ Mighty' : tag === 'cringe' ? '😬 Cringe' : '• Normal'}
+              onClick={() => setSelectedTag(tag)}
+            />
+          ))}
+        </div>
+        <div
+          aria-label={tr(locale, 'Основная группа мышц', 'Primary muscle group')}
+          className="catalog-filter-chips"
+        >
+          <CatalogFilterChip
+            active={selectedMuscle === 'all'}
+            label={tr(locale, 'Все мышцы', 'All muscles')}
+            onClick={() => setSelectedMuscle('all')}
+          />
+          {muscleGroups.map((muscle) => (
+            <CatalogFilterChip
+              active={selectedMuscle === muscle}
+              key={muscle}
+              label={muscleLabel(muscle, locale)}
+              onClick={() => setSelectedMuscle(muscle)}
+            />
+          ))}
+        </div>
+        <div className="catalog-filter-summary">
+          <span>
+            {tr(
+              locale,
+              `Найдено: ${filteredExercises.length}`,
+              `Found: ${filteredExercises.length}`,
+            )}
+          </span>
+          {hasFilters && (
+            <button
+              onClick={() => {
+                setQuery('');
+                setSelectedMuscle('all');
+                setSelectedTag('all');
+              }}
+              type="button"
+            >
+              {tr(locale, 'Сбросить', 'Clear')}
+            </button>
+          )}
+        </div>
+      </div>
       <div className="exercise-list catalog-list">
-        {exercises.map((exercise) => (
+        {filteredExercises.map((exercise) => (
           <button
             className="exercise-row catalog catalog-exercise-link"
             key={exercise.id}
@@ -2038,7 +2252,9 @@ function CatalogView({
               {exercise.tag === 'mighty' ? '⚡' : exercise.tag === 'cringe' ? '😬' : '•'}
             </span>
             <div>
-              <strong>{exerciseName(exercise, locale)}</strong>
+              <strong title={exerciseName(exercise, locale)}>
+                {exerciseName(exercise, locale)}
+              </strong>
               <small>
                 {locale === 'en' ? exercise.nameRu : exercise.nameEn} ·{' '}
                 {muscleLabel(exercise.primaryMuscles[0], locale)}
@@ -2053,6 +2269,18 @@ function CatalogView({
             </span>
           </button>
         ))}
+        {filteredExercises.length === 0 && (
+          <div className="catalog-empty">
+            <strong>{tr(locale, 'Ничего не найдено', 'Nothing found')}</strong>
+            <p>
+              {tr(
+                locale,
+                `Активные условия: ${activeFilterDescription || 'нет'}. Попробуй другой синоним, мышцу или сбрось фильтры.`,
+                `Active conditions: ${activeFilterDescription || 'none'}. Try another alias or muscle, or clear the filters.`,
+              )}
+            </p>
+          </div>
+        )}
       </div>
     </section>
   );
@@ -2874,12 +3102,61 @@ function SyncStatusIcon({
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({
+  active = false,
+  label,
+  onClick,
+  value,
+}: {
+  active?: boolean;
+  label: string;
+  onClick?: () => void;
+  value: string;
+}) {
+  if (onClick) {
+    return (
+      <button
+        aria-expanded={active}
+        className={active ? 'stat active' : 'stat'}
+        onClick={onClick}
+        type="button"
+      >
+        <strong>{value}</strong>
+        <span>{label} · ?</span>
+      </button>
+    );
+  }
   return (
     <div className="stat">
       <strong>{value}</strong>
       <span>{label}</span>
     </div>
+  );
+}
+
+function formatWeeks(value: number, locale: CurrentUser['locale']) {
+  if (locale === 'en') return `${value} ${value === 1 ? 'week' : 'weeks'}`;
+  return `${value} ${value % 10 === 1 && value % 100 !== 11 ? 'неделя' : value % 10 >= 2 && value % 10 <= 4 && (value % 100 < 10 || value % 100 >= 20) ? 'недели' : 'недель'}`;
+}
+
+function CatalogFilterChip({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      aria-pressed={active}
+      className={active ? 'active' : ''}
+      onClick={onClick}
+      type="button"
+    >
+      {label}
+    </button>
   );
 }
 
@@ -2902,6 +3179,8 @@ function muscleLabel(
     front_delt: ['Передняя дельта', 'Front delts'],
     rear_delt: ['Задняя дельта', 'Rear delts'],
     hamstrings: ['Бицепс бедра', 'Hamstrings'],
+    glutes: ['Ягодицы', 'Glutes'],
+    adductors: ['Приводящие мышцы', 'Adductors'],
     calves: ['Икры', 'Calves'],
     core: ['Кор', 'Core'],
   };

@@ -2,6 +2,22 @@ import type { WorkoutExercise } from '@mighty-cringe/contracts';
 
 import type { NaturalWorkoutCommand } from './naturalWorkoutCommand';
 
+export function copyWorkoutPlan(
+  plan: WorkoutExercise[],
+  createId: () => string = () => crypto.randomUUID(),
+): WorkoutExercise[] {
+  return normalizeWorkoutPlan(
+    [...plan]
+      .sort((left, right) => left.position - right.position)
+      .map((item) => ({
+        id: createId(),
+        exerciseId: item.exerciseId,
+        position: item.position,
+        supersetGroup: item.supersetGroup,
+      })),
+  );
+}
+
 export function applyWorkoutCommandToPlan(
   plan: WorkoutExercise[],
   command: NaturalWorkoutCommand,

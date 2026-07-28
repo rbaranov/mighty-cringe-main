@@ -33,7 +33,7 @@ describe('natural set parsing', () => {
       }),
     ).toMatchObject({
       status: 'ready',
-      exercise: { nameRu: 'Румынская тяга' },
+      exercise: { nameRu: 'Румынская тяга со штангой' },
       draft: { weightKg: 72.5, reps: 8, rir: 2, comment: 'техника чистая' },
     });
   });
@@ -80,7 +80,7 @@ describe('natural set parsing', () => {
       }),
     ).toMatchObject({
       status: 'ready',
-      exercise: { nameEn: 'Romanian deadlift' },
+      exercise: { nameEn: 'Barbell Romanian deadlift' },
       draft: { weightKg: 100, reps: 6, rir: 0 },
     });
   });
@@ -95,7 +95,7 @@ describe('natural set parsing', () => {
       }),
     ).toMatchObject({
       status: 'ready',
-      exercise: { nameEn: 'Romanian deadlift' },
+      exercise: { nameEn: 'Barbell Romanian deadlift' },
       draft: { weightKg: 99.79, reps: 6, rir: 2, comment: 'smooth tempo' },
     });
 
