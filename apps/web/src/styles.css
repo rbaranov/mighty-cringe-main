@@ -294,6 +294,10 @@ small,
 .stat-row {
   margin: 24px 0;
 }
+.stat-popover {
+  position: relative;
+  min-width: 0;
+}
 .stat {
   width: 33.33%;
   display: flex;
@@ -305,8 +309,17 @@ small,
   gap: 5px;
   background: #171c14;
   color: inherit;
+  cursor: pointer;
   font: inherit;
   text-align: left;
+}
+.stat-popover > .stat {
+  width: 100%;
+  height: 100%;
+}
+.stat.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
 }
 .stat strong {
   color: #e9f3dd;
@@ -322,34 +335,49 @@ small,
   font-size: 9px;
   line-height: 1.25;
 }
-.home-stats-details {
-  margin: -12px 0 20px;
-}
-.home-stats-details summary {
-  width: fit-content;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 11px;
-  font-weight: 800;
-  text-decoration: underline;
-  text-decoration-color: var(--accent);
-  text-underline-offset: 4px;
-}
-.home-stats-details > div {
-  margin-top: 12px;
+.stat-tooltip {
+  position: absolute;
+  top: calc(100% + 10px);
+  z-index: 30;
+  display: block;
+  width: min(300px, calc(100vw - 40px));
   padding: 12px 14px;
   border: 1.5px solid var(--ink);
-  background: var(--surface-soft);
-  color: var(--ink);
-}
-.home-stats-details p {
-  margin: 0;
-  color: var(--muted);
+  background: var(--ink);
+  box-shadow: 7px 7px 0 var(--accent);
+  color: var(--surface);
   font-size: 12px;
   line-height: 1.45;
 }
-.home-stats-details p + p {
-  margin-top: 8px;
+.stat-popover.start .stat-tooltip {
+  left: 0;
+}
+.stat-popover.center .stat-tooltip {
+  left: 50%;
+  transform: translateX(-50%);
+}
+.stat-popover.end .stat-tooltip {
+  right: 0;
+}
+.stat-tooltip::before {
+  position: absolute;
+  top: -7px;
+  width: 12px;
+  height: 12px;
+  border-top: 1.5px solid var(--ink);
+  border-left: 1.5px solid var(--ink);
+  background: var(--ink);
+  content: '';
+  transform: rotate(45deg);
+}
+.stat-popover.start .stat-tooltip::before {
+  left: 28px;
+}
+.stat-popover.center .stat-tooltip::before {
+  left: calc(50% - 6px);
+}
+.stat-popover.end .stat-tooltip::before {
+  right: 28px;
 }
 .button {
   border: 0;
