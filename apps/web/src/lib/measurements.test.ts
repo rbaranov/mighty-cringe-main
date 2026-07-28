@@ -7,6 +7,7 @@ import {
   orderedMeasurements,
   parseMeasurementCsv,
   previousMeasurement,
+  resolvedMeasurementValue,
 } from './measurements';
 
 const older = measurement('older', '2026-01-22T06:00:00.000Z', 82, 91);
@@ -39,12 +40,48 @@ describe('body measurement history', () => {
     ]);
   });
 
+  it('uses a manual body-fat value first and otherwise estimates male RFM from height and waist', () => {
+    const withHeight = {
+      ...older,
+      values: { ...older.values, heightCm: 180 },
+    };
+    const estimated = resolvedMeasurementValue(newer, 'bodyFatPercent', [withHeight, newer]);
+    const manual = {
+      ...newer,
+      values: { ...newer.values, bodyFatPercent: 18.2 },
+    };
+
+    expect(estimated).toEqual({ value: 23.3, source: 'rfm-estimate' });
+    expect(resolvedMeasurementValue(manual, 'bodyFatPercent', [withHeight, manual])).toEqual({
+      value: 18.2,
+      source: 'recorded',
+    });
+    expect(measurementTrend([newer, withHeight], 'bodyFatPercent')).toEqual([
+      { measurementId: 'older', measuredOn: older.measuredOn, value: 24.4 },
+      { measurementId: 'newer', measuredOn: newer.measuredOn, value: 23.3 },
+    ]);
+    expect(measurementDelta(newer, withHeight, 'bodyFatPercent', [withHeight, newer])).toBeCloseTo(
+      -1.1,
+    );
+  });
+
+  it('keeps body fat visible as unavailable until height and waist or a manual value exist', () => {
+    const withoutInputs = {
+      ...newer,
+      values: { ...newer.values, waistCm: null },
+    };
+    expect(resolvedMeasurementValue(withoutInputs, 'bodyFatPercent')).toEqual({
+      value: null,
+      source: 'unavailable',
+    });
+  });
+
   it('imports semicolon CSV with Russian headers, decimal commas and historic dates', () => {
     const result = parseMeasurementCsv(
       [
-        'Дата;Вес;Грудь;Бедро левое;Бедро правое;Талия;Самозамер',
-        '23.03.2025;82,5;103;57;57,5;91;да',
-        '2026-01-22;80,2;101;;;;нет',
+        'Дата;Вес;Процент жира;Грудь;Бедро левое;Бедро правое;Талия;Самозамер',
+        '23.03.2025;82,5;18,5;103;57;57,5;91;да',
+        '2026-01-22;80,2;;101;;;;нет',
       ].join('\n'),
     );
     expect(result.errors).toEqual([]);
@@ -52,7 +89,12 @@ describe('body measurement history', () => {
     expect(result.rows[0]).toMatchObject({
       dateKey: '2025-03-23',
       isSelfMeasured: true,
-      values: { weightKg: 82.5, thighRightCm: 57.5, waistCm: 91 },
+      values: {
+        weightKg: 82.5,
+        bodyFatPercent: 18.5,
+        thighRightCm: 57.5,
+        waistCm: 91,
+      },
     });
   });
 
@@ -153,6 +195,7 @@ function measurement(
       thighRightCm: null,
       calfCm: null,
       waistCm,
+      bodyFatPercent: null,
     },
     revision: 1,
     updatedAt: measuredOn,

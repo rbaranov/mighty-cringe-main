@@ -81,6 +81,7 @@ export function displayMeasurement(
   locale: Locale,
   unitSystem: UnitSystem,
 ) {
+  if (key === 'bodyFatPercent') return `${formatNumber(value, locale)} %`;
   return key === 'weightKg'
     ? formatWeight(value, locale, unitSystem)
     : formatLength(value, locale, unitSystem);
@@ -91,6 +92,7 @@ export function displayMeasurementNumber(
   value: number,
   unitSystem: UnitSystem,
 ) {
+  if (key === 'bodyFatPercent') return value;
   return key === 'weightKg' ? displayWeight(value, unitSystem) : displayLength(value, unitSystem);
 }
 
@@ -99,6 +101,7 @@ export function canonicalMeasurementNumber(
   value: number,
   unitSystem: UnitSystem,
 ) {
+  if (key === 'bodyFatPercent') return value;
   return key === 'weightKg'
     ? canonicalWeight(value, unitSystem)
     : canonicalLength(value, unitSystem);
@@ -109,6 +112,7 @@ export function measurementUnit(
   unitSystem: UnitSystem,
   locale: Locale = 'ru',
 ) {
+  if (key === 'bodyFatPercent') return '%';
   return key === 'weightKg' ? weightUnit(unitSystem, locale) : lengthUnit(unitSystem, locale);
 }
 

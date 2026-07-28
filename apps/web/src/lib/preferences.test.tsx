@@ -2,10 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import {
   canonicalLength,
+  canonicalMeasurementNumber,
   canonicalWeight,
   displayLength,
+  displayMeasurement,
+  displayMeasurementNumber,
   displayWeight,
   exerciseName,
+  measurementUnit,
   tr,
 } from './preferences';
 
@@ -31,5 +35,12 @@ describe('profile preferences', () => {
     expect(canonicalWeight(220.5, 'imperial')).toBeCloseTo(100, 1);
     expect(displayLength(180, 'imperial')).toBe(70.9);
     expect(canonicalLength(70.9, 'imperial')).toBe(180.09);
+  });
+
+  it('keeps body-fat percentage independent from the selected unit system', () => {
+    expect(displayMeasurement('bodyFatPercent', 18.5, 'ru', 'imperial')).toBe('18,5 %');
+    expect(displayMeasurementNumber('bodyFatPercent', 18.5, 'imperial')).toBe(18.5);
+    expect(canonicalMeasurementNumber('bodyFatPercent', 18.5, 'imperial')).toBe(18.5);
+    expect(measurementUnit('bodyFatPercent', 'imperial')).toBe('%');
   });
 });

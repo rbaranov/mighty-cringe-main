@@ -234,6 +234,7 @@ export const measurementValuesSchema = z
     thighRightCm: optionalMeasurement(200),
     calfCm: optionalMeasurement(150),
     waistCm: optionalMeasurement(300),
+    bodyFatPercent: optionalMeasurement(100),
   })
   .refine((values) => Object.values(values).some((value) => value !== null), {
     message: 'At least one measurement value is required',

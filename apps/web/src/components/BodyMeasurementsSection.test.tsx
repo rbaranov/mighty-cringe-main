@@ -23,6 +23,9 @@ describe('BodyMeasurementsSection', () => {
     expect(html).toContain('Вся история замеров');
     expect(html).toContain('80,5 кг');
     expect(html).toContain('−1,5 кг');
+    expect(html).toContain('% жира');
+    expect(html).toContain('23,3 %');
+    expect(html).toContain('примерная оценка RFM');
     expect(html).toContain('Самозамер');
     expect(html).toContain('Изменить');
     expect(html).toContain('Удалить');
@@ -49,6 +52,7 @@ function measurement(
       thighRightCm: null,
       calfCm: null,
       waistCm,
+      bodyFatPercent: null,
     },
     revision: 1,
     updatedAt: measuredOn,

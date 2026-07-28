@@ -26,6 +26,7 @@ const mutation = {
       thighRightCm: null,
       calfCm: null,
       waistCm: 90,
+      bodyFatPercent: null,
     },
   },
 } satisfies SyncMutation;

@@ -32,13 +32,14 @@ type Props = {
   }) => void;
 };
 
+export const setWeightStep = 1;
+
 export function SetSheet({ exercise, initial, defaults, onClose, onExplain, onSave }: Props) {
   const { locale, unitSystem } = usePreferences();
   const [weight, setWeight] = useState('');
   const [reps, setReps] = useState('');
   const [rir, setRir] = useState('');
   const [comment, setComment] = useState('');
-  const weightStep = unitSystem === 'imperial' ? 5 : 2.5;
   const maximumDisplayWeight = displayWeight(1000, unitSystem);
   const weightValue = parseDecimalInput(weight);
   const repsValue = parseIntegerInput(reps);
@@ -108,6 +109,7 @@ export function SetSheet({ exercise, initial, defaults, onClose, onExplain, onSa
         )}
         <div className="form-grid">
           <NumericStepper
+            allowDecimal
             decrementDisabled={weightValue !== null && weightValue <= 0}
             incrementDisabled={weightValue !== null && weightValue >= maximumDisplayWeight}
             inputLabel={`${tr(locale, 'Вес', 'Weight')}, ${weightUnit(unitSystem, locale)}`}
@@ -121,7 +123,7 @@ export function SetSheet({ exercise, initial, defaults, onClose, onExplain, onSa
             minimum={0}
             onChange={setWeight}
             placeholder="40"
-            step={weightStep}
+            step={setWeightStep}
             value={weight}
           />
           <NumericStepper
@@ -210,6 +212,7 @@ export function SetSheet({ exercise, initial, defaults, onClose, onExplain, onSa
 }
 
 function NumericStepper({
+  allowDecimal = false,
   decrementDisabled,
   incrementDisabled,
   inputLabel,
@@ -222,6 +225,7 @@ function NumericStepper({
   step,
   value,
 }: {
+  allowDecimal?: boolean;
   decrementDisabled: boolean;
   incrementDisabled: boolean;
   inputLabel: string;
@@ -249,9 +253,9 @@ function NumericStepper({
         <input
           aria-label={inputLabel}
           enterKeyHint="next"
-          inputMode={step % 1 === 0 ? 'numeric' : 'decimal'}
+          inputMode={allowDecimal ? 'decimal' : 'numeric'}
           onChange={(event) => onChange(event.target.value)}
-          pattern={step % 1 === 0 ? '[0-9]*' : '[0-9]*[.,]?[0-9]*'}
+          pattern={allowDecimal ? '[0-9]*[.,]?[0-9]*' : '[0-9]*'}
           placeholder={placeholder}
           type="text"
           value={value}

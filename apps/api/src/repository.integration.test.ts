@@ -189,6 +189,7 @@ test(
       thighRightCm: null,
       calfCm: null,
       waistCm: 91,
+      bodyFatPercent: null,
     };
     const createMeasurement = {
       id: measurementId,

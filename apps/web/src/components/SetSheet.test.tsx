@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Exercise } from '@mighty-cringe/contracts';
 
-import { SetSheet } from './SetSheet';
+import { SetSheet, setWeightStep } from './SetSheet';
 import { parseDecimalInput, stepNumericInput } from './setSheetNumbers';
 
 const exercise: Exercise = {
@@ -39,13 +39,14 @@ describe('SetSheet', () => {
     expect(html).not.toContain('autofocus');
   });
 
-  it('accepts a decimal comma and formats weight steps for the active locale', () => {
+  it('accepts a decimal comma and changes weight by one displayed unit', () => {
     expect(parseDecimalInput('17,5')).toBe(17.5);
     expect(parseDecimalInput('17.5')).toBe(17.5);
     expect(parseDecimalInput('17,5,2')).toBeNull();
 
-    expect(stepNumericInput('15', 1, 2.5, 0, 1000, 'ru')).toBe('17,5');
-    expect(stepNumericInput('17,5', -1, 2.5, 0, 1000, 'ru')).toBe('15');
+    expect(setWeightStep).toBe(1);
+    expect(stepNumericInput('17,5', 1, setWeightStep, 0, 1000, 'ru')).toBe('18,5');
+    expect(stepNumericInput('17,5', -1, setWeightStep, 0, 1000, 'ru')).toBe('16,5');
     expect(stepNumericInput('99', 1, 1, 1, 100, 'en')).toBe('100');
     expect(stepNumericInput('100', 1, 1, 1, 100, 'en')).toBe('100');
   });
