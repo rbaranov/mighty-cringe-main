@@ -59,14 +59,6 @@ import {
   usePreferences,
 } from './lib/preferences';
 import { setEntrySourceSuffix } from './lib/setEntrySource';
-import {
-  buildWorkoutDays,
-  calculateWeeklyStreaks,
-  dateKeyInTimeZone,
-  hasWorkoutInCurrentWeek,
-  workoutCountForMonth,
-  workoutCountForYear,
-} from './lib/progress';
 import { resolveSession } from './lib/session';
 import { acceptTrainerInviteFromUrl, currentLoginReturnTo } from './lib/trainer';
 import {
@@ -1256,8 +1248,6 @@ function LoginScreen({ googleEnabled }: { googleEnabled: boolean }) {
   );
 }
 
-type HomeStatTip = 'month' | 'streak' | 'mode';
-
 function WorkoutView({
   activeWorkout,
   catalog,
@@ -1305,36 +1295,7 @@ function WorkoutView({
 }) {
   const { locale, unitSystem } = usePreferences();
   const [elapsedAt, setElapsedAt] = useState(() => Date.now());
-  const [homeTip, setHomeTip] = useState<HomeStatTip | null>(null);
   const [optionsItemId, setOptionsItemId] = useState<string | null>(null);
-  const homeStatsRef = useRef<HTMLDivElement | null>(null);
-  const timeZone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', []);
-  const todayKey = dateKeyInTimeZone(new Date(), timeZone);
-  const workoutDays = useMemo(
-    () =>
-      buildWorkoutDays(
-        workouts,
-        sets.filter((set) => !set.deleted),
-        timeZone,
-      ),
-    [sets, timeZone, workouts],
-  );
-  const weeklyStreak = useMemo(
-    () =>
-      calculateWeeklyStreaks(
-        workoutDays.map((day) => day.dateKey),
-        todayKey,
-      ),
-    [todayKey, workoutDays],
-  );
-  const currentMonth = todayKey.slice(0, 7);
-  const currentYear = todayKey.slice(0, 4);
-  const workoutsThisMonth = workoutCountForMonth(workoutDays, currentMonth);
-  const workoutsThisYear = workoutCountForYear(workoutDays, currentYear);
-  const currentWeekHasWorkout = hasWorkoutInCurrentWeek(
-    workoutDays.map((day) => day.dateKey),
-    todayKey,
-  );
 
   useEffect(() => {
     if (!activeWorkout || editingHistory) return;
@@ -1342,30 +1303,6 @@ function WorkoutView({
     const interval = window.setInterval(() => setElapsedAt(Date.now()), 30_000);
     return () => window.clearInterval(interval);
   }, [activeWorkout?.id, editingHistory]);
-
-  useEffect(() => {
-    if (!homeTip) return;
-
-    function closeHomeTip(event: PointerEvent) {
-      if (!(event.target instanceof Node) || homeStatsRef.current?.contains(event.target)) return;
-      setHomeTip(null);
-    }
-
-    function closeHomeTipOnEscape(event: KeyboardEvent) {
-      if (event.key !== 'Escape') return;
-      setHomeTip(null);
-      homeStatsRef.current
-        ?.querySelector<HTMLButtonElement>(`[data-stat-id="${homeTip}"]`)
-        ?.focus();
-    }
-
-    document.addEventListener('pointerdown', closeHomeTip);
-    document.addEventListener('keydown', closeHomeTipOnEscape);
-    return () => {
-      document.removeEventListener('pointerdown', closeHomeTip);
-      document.removeEventListener('keydown', closeHomeTipOnEscape);
-    };
-  }, [homeTip]);
 
   if (!activeWorkout) {
     return (
@@ -1379,64 +1316,6 @@ function WorkoutView({
             'A flexible full-body workout. Change anything as you go — the app will adapt.',
           )}
         </p>
-        <div className="stat-row" ref={homeStatsRef}>
-          <Stat
-            active={homeTip === 'month'}
-            align="start"
-            detail={tr(
-              locale,
-              `${workoutsThisYear} за ${currentYear} год`,
-              `${workoutsThisYear} in ${currentYear}`,
-            )}
-            id="month"
-            label={formatMonthlyWorkoutLabel(workoutsThisMonth, currentMonth, locale)}
-            onToggle={() => setHomeTip((current) => (current === 'month' ? null : 'month'))}
-            tooltip={tr(
-              locale,
-              `За ${currentYear} год: ${workoutsThisYear}. Учитываются только завершённые и не удалённые тренировки по твоему местному времени.`,
-              `${workoutsThisYear} in ${currentYear}. Only completed, non-deleted workouts are counted in your local time.`,
-            )}
-            value={String(workoutsThisMonth)}
-          />
-          <Stat
-            active={homeTip === 'streak'}
-            align="center"
-            detail={
-              currentWeekHasWorkout
-                ? tr(locale, 'Эта неделя засчитана ✓', 'This week counts ✓')
-                : weeklyStreak.current > 0
-                  ? tr(
-                      locale,
-                      'Чтобы продлить: 1 тренировка до воскресенья',
-                      'To continue: 1 workout by Sunday',
-                    )
-                  : tr(locale, 'Начни серию на этой неделе', 'Start a streak this week')
-            }
-            id="streak"
-            label={tr(locale, 'подряд', 'in a row')}
-            onToggle={() => setHomeTip((current) => (current === 'streak' ? null : 'streak'))}
-            tooltip={tr(
-              locale,
-              'Неделя засчитывается сразу после первой завершённой тренировки. Для продолжения нужна хотя бы одна тренировка в каждой следующей календарной неделе.',
-              'A week counts immediately after its first completed workout. Continue with at least one workout in every following calendar week.',
-            )}
-            value={formatWeeks(weeklyStreak.current, locale)}
-          />
-          <Stat
-            active={homeTip === 'mode'}
-            align="end"
-            detail={tr(locale, 'План можно менять', 'The plan is flexible')}
-            id="mode"
-            label={tr(locale, 'базовый режим', 'base mode')}
-            onToggle={() => setHomeTip((current) => (current === 'mode' ? null : 'mode'))}
-            tooltip={tr(
-              locale,
-              'Full body — базовый режим, но состав, порядок и связки упражнений можно свободно менять до и во время тренировки.',
-              'Full body is the base mode, but you can freely change exercise selection, order, and groups before or during a workout.',
-            )}
-            value="Full body"
-          />
-        </div>
         <button className="button primary action" onClick={onStart} type="button">
           {tr(locale, 'Начать тренировку', 'Start workout')}
         </button>
@@ -3137,94 +3016,6 @@ function SyncStatusIcon({
       {(pending > 0 || conflicts > 0) && <i>{conflicts || pending}</i>}
     </span>
   );
-}
-
-function Stat({
-  active,
-  align,
-  detail,
-  id,
-  label,
-  onToggle,
-  tooltip,
-  value,
-}: {
-  active: boolean;
-  align: 'start' | 'center' | 'end';
-  detail: string;
-  id: HomeStatTip;
-  label: string;
-  onToggle: () => void;
-  tooltip: string;
-  value: string;
-}) {
-  const tooltipId = `home-stat-tooltip-${id}`;
-  return (
-    <div className={`stat-popover ${align}`}>
-      <button
-        aria-describedby={active ? tooltipId : undefined}
-        aria-expanded={active}
-        className={active ? 'stat active' : 'stat'}
-        data-stat-id={id}
-        onClick={onToggle}
-        type="button"
-      >
-        <strong>{value}</strong>
-        <span>{label}</span>
-        <small>{detail}</small>
-      </button>
-      {active && (
-        <span className="stat-tooltip" id={tooltipId} role="tooltip">
-          {tooltip}
-        </span>
-      )}
-    </div>
-  );
-}
-
-function formatMonthlyWorkoutLabel(
-  workoutCount: number,
-  monthKey: string,
-  locale: CurrentUser['locale'],
-) {
-  const [year, month] = monthKey.split('-').map(Number);
-  const date = new Date(Date.UTC(year, month - 1, 1));
-  if (locale === 'en') {
-    const monthName = new Intl.DateTimeFormat('en-US', {
-      month: 'long',
-      timeZone: 'UTC',
-    }).format(date);
-    return `${workoutCount === 1 ? 'workout' : 'workouts'} in ${monthName}`;
-  }
-
-  const monthName = [
-    'январе',
-    'феврале',
-    'марте',
-    'апреле',
-    'мае',
-    'июне',
-    'июле',
-    'августе',
-    'сентябре',
-    'октябре',
-    'ноябре',
-    'декабре',
-  ][month - 1];
-  const workoutWord =
-    workoutCount % 10 === 1 && workoutCount % 100 !== 11
-      ? 'тренировка'
-      : workoutCount % 10 >= 2 &&
-          workoutCount % 10 <= 4 &&
-          (workoutCount % 100 < 10 || workoutCount % 100 >= 20)
-        ? 'тренировки'
-        : 'тренировок';
-  return `${workoutWord} в ${monthName}`;
-}
-
-function formatWeeks(value: number, locale: CurrentUser['locale']) {
-  if (locale === 'en') return `${value} ${value === 1 ? 'week' : 'weeks'}`;
-  return `${value} ${value % 10 === 1 && value % 100 !== 11 ? 'неделя' : value % 10 >= 2 && value % 10 <= 4 && (value % 100 < 10 || value % 100 >= 20) ? 'недели' : 'недель'}`;
 }
 
 function CatalogFilterChip({

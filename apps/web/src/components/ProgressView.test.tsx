@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { Exercise } from '@mighty-cringe/contracts';
 
@@ -8,6 +8,10 @@ import { PreferencesProvider } from '../lib/preferences';
 import { ProgressView } from './ProgressView';
 
 describe('ProgressView', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('renders source-backed calendar and strength details', () => {
     const exercise: Exercise = {
       id: '10000000-0000-4000-8000-000000000003',
@@ -134,5 +138,44 @@ describe('ProgressView', () => {
     expect(html).toContain('Workout calendar');
     expect(html).toContain('Bench press');
     expect(html).toContain('220.5 lb×5');
+  });
+
+  it('opens on the current month even when the latest workout is older', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-15T12:00:00.000Z'));
+    const workout: LocalWorkout = {
+      id: '20000000-0000-4000-8000-000000000001',
+      startedAt: '2026-07-21T17:00:00.000Z',
+      endedAt: '2026-07-21T18:00:00.000Z',
+      notes: null,
+      locale: 'ru',
+      revision: 1,
+      updatedAt: '2026-07-21T18:00:00.000Z',
+      exercises: [],
+      syncState: 'synced',
+    };
+
+    const html = renderToStaticMarkup(
+      <ProgressView
+        exercises={[]}
+        measurements={[]}
+        onDeleteMeasurement={() => {}}
+        onDeleteWorkout={() => {}}
+        onEditWorkout={() => {}}
+        onImportMeasurements={async () => {}}
+        onRepeatWorkout={() => {}}
+        onResumeWorkout={() => {}}
+        onSaveMeasurement={async () => {}}
+        sets={[]}
+        workouts={[workout]}
+      />,
+    );
+
+    expect(html).toContain('тренировки в августе');
+    expect(html).toContain('1 за 2026 год');
+    expect(html).toContain('август 2026');
+    expect(html).toContain('aria-label="Следующий месяц" disabled=""');
+    expect(html).toContain('В этом месяце пока нет завершённых тренировок.');
+    expect(html).not.toContain('Лучшая серия');
   });
 });

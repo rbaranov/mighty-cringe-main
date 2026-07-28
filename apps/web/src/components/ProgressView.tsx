@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type { Exercise } from '@mighty-cringe/contracts';
 
@@ -12,7 +12,9 @@ import {
   calculateWeeklyStreaks,
   dateKeyInTimeZone,
   volumeForRecentDays,
+  volumeForPreviousDays,
   workoutCountForMonth,
+  workoutCountForYear,
   type ExerciseProgressPoint,
 } from '../lib/progress';
 import { BodyMeasurementsSection, type MeasurementDraft } from './BodyMeasurementsSection';
@@ -37,6 +39,8 @@ const muscleLabels: Record<string, [string, string]> = {
   calves: ['Икры', 'Calves'],
   core: ['Кор', 'Core'],
 };
+
+type ProgressSummaryTip = 'month' | 'streak';
 
 export function ProgressView({
   workouts,
@@ -79,13 +83,18 @@ export function ProgressView({
       ),
     [todayKey, workoutDays],
   );
+  const [summaryTip, setSummaryTip] = useState<ProgressSummaryTip | null>(null);
+  const summaryRef = useRef<HTMLDivElement | null>(null);
   const [monthOverride, setMonthOverride] = useState<string | null>(null);
-  const latestDay = workoutDays.at(-1)?.dateKey;
-  const monthKey = monthOverride ?? (latestDay ?? todayKey).slice(0, 7);
+  const currentMonth = todayKey.slice(0, 7);
+  const currentYear = todayKey.slice(0, 4);
+  const monthKey = monthOverride ?? currentMonth;
   const calendar = useMemo(
     () => buildCalendarMonth(monthKey, workoutDays, todayKey),
     [monthKey, todayKey, workoutDays],
   );
+  const currentMonthWorkoutCount = workoutCountForMonth(workoutDays, currentMonth);
+  const currentYearWorkoutCount = workoutCountForYear(workoutDays, currentYear);
   const monthWorkoutCount = workoutCountForMonth(workoutDays, monthKey);
   const [selectedDayKey, setSelectedDayKey] = useState<string | null>(null);
   const selectedDay =
@@ -125,12 +134,44 @@ export function ProgressView({
     null,
   );
   const volume30Days = volumeForRecentDays(workoutDays, todayKey);
+  const previousVolume30Days = volumeForPreviousDays(workoutDays, todayKey);
   const hasUnsyncedData = workoutDays.some((day) => day.hasUnsyncedData);
 
   function showAdjacentMonth(amount: number) {
-    setMonthOverride(moveMonth(monthKey, amount));
+    const candidate = moveMonth(monthKey, amount);
+    if (candidate > currentMonth) return;
+    setMonthOverride(candidate);
     setSelectedDayKey(null);
   }
+
+  function showCurrentMonth() {
+    setMonthOverride(null);
+    setSelectedDayKey(null);
+  }
+
+  useEffect(() => {
+    if (!summaryTip) return;
+
+    function closeSummaryTip(event: PointerEvent) {
+      if (!(event.target instanceof Node) || summaryRef.current?.contains(event.target)) return;
+      setSummaryTip(null);
+    }
+
+    function closeSummaryTipOnEscape(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return;
+      setSummaryTip(null);
+      summaryRef.current
+        ?.querySelector<HTMLButtonElement>(`[data-progress-summary-id="${summaryTip}"]`)
+        ?.focus();
+    }
+
+    document.addEventListener('pointerdown', closeSummaryTip);
+    document.addEventListener('keydown', closeSummaryTipOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeSummaryTip);
+      document.removeEventListener('keydown', closeSummaryTipOnEscape);
+    };
+  }, [summaryTip]);
 
   return (
     <section className="screen progress-screen">
@@ -157,31 +198,45 @@ export function ProgressView({
       <div
         className="progress-summary"
         aria-label={tr(locale, 'Сводка прогресса', 'Progress summary')}
+        ref={summaryRef}
       >
         <SummaryMetric
-          label={tr(locale, 'Тренировок', 'Workouts')}
-          value={String(completedWorkouts.length)}
+          active={summaryTip === 'month'}
+          align="start"
+          detail={tr(
+            locale,
+            `${currentYearWorkoutCount} за ${currentYear} год`,
+            `${currentYearWorkoutCount} in ${currentYear}`,
+          )}
+          id="month"
+          label={formatMonthlyWorkoutLabel(currentMonth, locale)}
+          onToggle={() => setSummaryTip((current) => (current === 'month' ? null : 'month'))}
+          tooltip={tr(
+            locale,
+            `За ${currentYear} год: ${currentYearWorkoutCount}. Учитываются только завершённые и не удалённые тренировки по твоему местному времени.`,
+            `${currentYearWorkoutCount} in ${currentYear}. Only completed, non-deleted workouts are counted in your local time.`,
+          )}
+          value={String(currentMonthWorkoutCount)}
         />
         <SummaryMetric
+          active={summaryTip === 'streak'}
+          align="end"
+          detail={tr(
+            locale,
+            `рекорд: ${formatWeeks(streaks.best, locale)}`,
+            `record: ${formatWeeks(streaks.best, locale)}`,
+          )}
+          id="streak"
           label={tr(locale, 'Текущая серия', 'Current streak')}
+          onToggle={() => setSummaryTip((current) => (current === 'streak' ? null : 'streak'))}
+          tooltip={tr(
+            locale,
+            'Неделя засчитывается сразу после первой завершённой тренировки. Для продолжения нужна хотя бы одна тренировка в каждой следующей календарной неделе.',
+            'A week counts immediately after its first completed workout. Continue with at least one workout in every following calendar week.',
+          )}
           value={formatWeeks(streaks.current, locale)}
         />
-        <SummaryMetric
-          label={tr(locale, 'Лучшая серия', 'Best streak')}
-          value={formatWeeks(streaks.best, locale)}
-        />
-        <SummaryMetric
-          label={tr(locale, 'Объём · 30 дней', 'Volume · 30 days')}
-          value={formatWeight(volume30Days, locale, unitSystem)}
-        />
       </div>
-      <p className="streak-note">
-        {tr(
-          locale,
-          'Неделя считается в серии, если в ней есть хотя бы одна завершённая тренировка. Текущая неделя не обрывает серию, пока не закончилась.',
-          'A week counts when it has at least one completed workout. The unfinished current week does not break the streak.',
-        )}
-      </p>
 
       <section className="progress-section" aria-labelledby="calendar-heading">
         <div className="section-head progress-heading">
@@ -189,31 +244,33 @@ export function ProgressView({
             <p className="eyebrow">{tr(locale, 'Ритм', 'Rhythm')}</p>
             <h2 id="calendar-heading">{tr(locale, 'Календарь тренировок', 'Workout calendar')}</h2>
           </div>
-          <div className="month-controls">
-            <button
-              aria-label={tr(locale, 'Предыдущий месяц', 'Previous month')}
-              onClick={() => showAdjacentMonth(-1)}
-              type="button"
-            >
-              ←
-            </button>
-            <strong>{formatMonth(monthKey, locale)}</strong>
-            <button
-              aria-label={tr(locale, 'Следующий месяц', 'Next month')}
-              onClick={() => showAdjacentMonth(1)}
-              type="button"
-            >
-              →
-            </button>
+          <div className="month-navigation">
+            <div className="month-controls">
+              <button
+                aria-label={tr(locale, 'Предыдущий месяц', 'Previous month')}
+                onClick={() => showAdjacentMonth(-1)}
+                type="button"
+              >
+                ←
+              </button>
+              <strong>{formatMonth(monthKey, locale)}</strong>
+              <button
+                aria-label={tr(locale, 'Следующий месяц', 'Next month')}
+                disabled={monthKey >= currentMonth}
+                onClick={() => showAdjacentMonth(1)}
+                type="button"
+              >
+                →
+              </button>
+            </div>
+            {monthKey !== currentMonth && (
+              <button className="current-month-button" onClick={showCurrentMonth} type="button">
+                {tr(locale, 'К текущему месяцу', 'Current month')}
+              </button>
+            )}
           </div>
         </div>
-        <p className="calendar-month-count">
-          {tr(
-            locale,
-            `Тренировок в выбранном месяце: ${monthWorkoutCount}`,
-            `Workouts in the displayed month: ${monthWorkoutCount}`,
-          )}
-        </p>
+        <p className="calendar-month-count">{formatWorkoutCount(monthWorkoutCount, locale)}</p>
         <div className="calendar-weekdays" aria-hidden="true">
           {weekdayLabels[locale].map((label) => (
             <span key={label}>{label}</span>
@@ -274,6 +331,11 @@ export function ProgressView({
             </h2>
           </div>
         </div>
+        <article className="training-volume-card">
+          <span>{tr(locale, 'Объём за 30 дней', 'Volume over 30 days')}</span>
+          <strong>{formatWeight(volume30Days, locale, unitSystem)}</strong>
+          <small>{formatVolumeComparison(volume30Days, previousVolume30Days, locale)}</small>
+        </article>
         {trackedExercises.length ? (
           <>
             <div className="muscle-filters" aria-label={tr(locale, 'Группа мышц', 'Muscle group')}>
@@ -377,12 +439,46 @@ export function ProgressView({
   );
 }
 
-function SummaryMetric({ label, value }: { label: string; value: string }) {
+function SummaryMetric({
+  active,
+  align,
+  detail,
+  id,
+  label,
+  onToggle,
+  tooltip,
+  value,
+}: {
+  active: boolean;
+  align: 'start' | 'end';
+  detail: string;
+  id: ProgressSummaryTip;
+  label: string;
+  onToggle: () => void;
+  tooltip: string;
+  value: string;
+}) {
+  const tooltipId = `progress-summary-tooltip-${id}`;
   return (
-    <article>
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </article>
+    <div className={`progress-summary-popover ${align}`}>
+      <button
+        aria-describedby={active ? tooltipId : undefined}
+        aria-expanded={active}
+        className={active ? 'progress-summary-card active' : 'progress-summary-card'}
+        data-progress-summary-id={id}
+        onClick={onToggle}
+        type="button"
+      >
+        <strong>{value}</strong>
+        <span>{label}</span>
+        <small>{detail}</small>
+      </button>
+      {active && (
+        <span className="progress-summary-tooltip" id={tooltipId} role="tooltip">
+          {tooltip}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -616,4 +712,67 @@ function formatTime(value: string, locale: 'ru' | 'en'): string {
 function formatWeeks(value: number, locale: 'ru' | 'en'): string {
   if (locale === 'en') return `${value} ${value === 1 ? 'week' : 'weeks'}`;
   return `${value} ${value % 10 === 1 && value % 100 !== 11 ? 'неделя' : value % 10 >= 2 && value % 10 <= 4 && (value % 100 < 10 || value % 100 >= 20) ? 'недели' : 'недель'}`;
+}
+
+function formatMonthlyWorkoutLabel(monthKey: string, locale: 'ru' | 'en'): string {
+  const [year, month] = monthKey.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, 1));
+  if (locale === 'en') {
+    const monthName = new Intl.DateTimeFormat('en-US', {
+      month: 'long',
+      timeZone: 'UTC',
+    }).format(date);
+    return `workouts in ${monthName}`;
+  }
+
+  const monthName = [
+    'январе',
+    'феврале',
+    'марте',
+    'апреле',
+    'мае',
+    'июне',
+    'июле',
+    'августе',
+    'сентябре',
+    'октябре',
+    'ноябре',
+    'декабре',
+  ][month - 1];
+  return `тренировки в ${monthName}`;
+}
+
+function formatWorkoutCount(value: number, locale: 'ru' | 'en'): string {
+  if (locale === 'en') return `${value} ${value === 1 ? 'workout' : 'workouts'}`;
+  const noun =
+    value % 10 === 1 && value % 100 !== 11
+      ? 'тренировка'
+      : value % 10 >= 2 && value % 10 <= 4 && (value % 100 < 10 || value % 100 >= 20)
+        ? 'тренировки'
+        : 'тренировок';
+  return `${value} ${noun}`;
+}
+
+function formatVolumeComparison(current: number, previous: number, locale: 'ru' | 'en'): string {
+  if (current === 0 && previous === 0) {
+    return tr(locale, 'Пока нет данных за этот период', 'No data for this period yet');
+  }
+  if (previous === 0) {
+    return tr(
+      locale,
+      'Первые данные — сравнение появится через 30 дней',
+      'First data — comparison will appear after 30 days',
+    );
+  }
+
+  const change = Math.round(((current - previous) / previous) * 100);
+  if (change === 0) {
+    return tr(locale, 'Без изменений к предыдущим 30 дням', 'No change from the previous 30 days');
+  }
+  const prefix = change > 0 ? '+' : '−';
+  return tr(
+    locale,
+    `${prefix}${Math.abs(change)}% к предыдущим 30 дням`,
+    `${prefix}${Math.abs(change)}% vs the previous 30 days`,
+  );
 }

@@ -8,6 +8,7 @@ import {
   calculateWeeklyStreaks,
   estimateOneRepMax,
   hasWorkoutInCurrentWeek,
+  volumeForPreviousDays,
   volumeForRecentDays,
   workoutCountForMonth,
   workoutCountForYear,
@@ -42,6 +43,19 @@ describe('progress metrics', () => {
     expect(volumeForRecentDays(days, '2026-07-22', 3)).toBe(812.5);
     expect(workoutCountForMonth(days, '2026-07')).toBe(2);
     expect(workoutCountForYear(days, '2026')).toBe(2);
+  });
+
+  it('compares the latest day window with the immediately preceding window', () => {
+    const juneWorkout = workout('2026-06-15T18:00:00.000Z', '2026-06-15T19:00:00.000Z', 'june');
+    const julyWorkout = workout('2026-07-15T18:00:00.000Z', '2026-07-15T19:00:00.000Z', 'july');
+    const days = buildWorkoutDays(
+      [juneWorkout, julyWorkout],
+      [set('june-set', 'june', 'bench', 50, 10), set('july-set', 'july', 'bench', 60, 10)],
+      'UTC',
+    );
+
+    expect(volumeForRecentDays(days, '2026-07-30')).toBe(600);
+    expect(volumeForPreviousDays(days, '2026-07-30')).toBe(500);
   });
 
   it('places a late workout on its local calendar day', () => {
