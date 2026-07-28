@@ -1,8 +1,13 @@
-import type { CurrentUser, MeasurementValues, UnitSystem } from '@mighty-cringe/contracts';
+import type {
+  BodyFatMeasurement,
+  CurrentUser,
+  MeasurementValues,
+  UnitSystem,
+} from '@mighty-cringe/contracts';
 
 import type { LocalMeasurement } from './db';
 
-export type MeasurementKey = keyof MeasurementValues;
+export type MeasurementKey = Exclude<keyof MeasurementValues, 'bodyFat'>;
 
 export type MeasurementDefinition = {
   key: MeasurementKey;
@@ -153,6 +158,45 @@ export function measurementTrend(
   });
 }
 
+export function bodyFatDelta(
+  current: LocalMeasurement,
+  previous: LocalMeasurement | null,
+): number | null {
+  const currentValue = current.values.bodyFat?.percent;
+  const previousValue = previous?.values.bodyFat?.percent;
+  if (currentValue === undefined || previousValue === undefined) return null;
+  return currentValue - previousValue;
+}
+
+export function bodyFatTrend(
+  measurements: LocalMeasurement[],
+): Array<{ measurementId: string; measuredOn: string; value: number }> {
+  return orderedMeasurements(measurements).flatMap((measurement) => {
+    const value = measurement.values.bodyFat?.percent;
+    return value === undefined
+      ? []
+      : [{ measurementId: measurement.id, measuredOn: measurement.measuredOn, value }];
+  });
+}
+
+export function calculateRelativeFatMass(
+  heightCm: number,
+  waistCm: number,
+  sex: 'male' | 'female',
+): BodyFatMeasurement | null {
+  if (!Number.isFinite(heightCm) || !Number.isFinite(waistCm) || heightCm <= 0 || waistCm <= 0) {
+    return null;
+  }
+  const percent = 64 - 20 * (heightCm / waistCm) + (sex === 'female' ? 12 : 0);
+  if (!Number.isFinite(percent) || percent <= 0 || percent > 75) return null;
+  return {
+    formula: 'rfm-2018',
+    percent: Math.round((percent + Number.EPSILON) * 10) / 10,
+    sex,
+    source: 'calculated',
+  };
+}
+
 export function parseMeasurementCsv(
   text: string,
   options: { locale?: CurrentUser['locale']; unitSystem?: UnitSystem } = {},
@@ -196,10 +240,15 @@ type ParsedTableRow = {
   line: number;
 };
 
-type MeasurementLabelMatch = {
-  keys: MeasurementKey[];
-  unitSystem: UnitSystem | null;
-};
+type MeasurementLabelMatch =
+  | {
+      kind: 'measurement';
+      keys: MeasurementKey[];
+      unitSystem: UnitSystem | null;
+    }
+  | {
+      kind: 'bodyFat';
+    };
 
 type StandardLayout = {
   headerIndex: number;
@@ -458,6 +507,20 @@ function assignMeasurementValues(
   locale: CurrentUser['locale'],
 ): { ru: string; en: string } | null {
   if (!hasMeasurementValue(raw)) return null;
+  if (match.kind === 'bodyFat') {
+    const percent = parseLocalizedNumber(raw);
+    if (percent === null || !Number.isFinite(percent) || percent <= 0 || percent > 75) {
+      return {
+        ru: '«% жира» должен быть числом от 0 до 75.',
+        en: '“Body fat” must be a number between 0 and 75.',
+      };
+    }
+    values.bodyFat = {
+      percent: Math.round((percent + Number.EPSILON) * 10) / 10,
+      source: 'manual',
+    };
+    return null;
+  }
   const displayValues =
     match.keys.length === 2 ? parsePairedValues(raw) : [parseLocalizedNumber(raw)];
   const inputSystem = unitSystemFromText(raw) ?? match.unitSystem ?? defaultUnitSystem;
@@ -507,9 +570,10 @@ const englishMeasurementLabels: Partial<Record<MeasurementKey, string>> = {
 };
 
 function emptyMeasurementValues(): MeasurementValues {
-  return Object.fromEntries(
-    measurementDefinitions.map((definition) => [definition.key, null]),
-  ) as MeasurementValues;
+  return {
+    ...Object.fromEntries(measurementDefinitions.map((definition) => [definition.key, null])),
+    bodyFat: null,
+  } as MeasurementValues;
 }
 
 function parseDelimitedTable(text: string): ParsedTableRow[] {
@@ -686,6 +750,16 @@ const measurementHeaderAliases: Record<string, MeasurementKey> = {
   живот: 'waistCm',
   живот_талия: 'waistCm',
 };
+const bodyFatHeaderAliases = new Set([
+  'body_fat',
+  'body_fat_percent',
+  'bodyfat',
+  'fat_percent',
+  'процент_жира',
+  'жир',
+  'жир_%',
+  '%_жира',
+]);
 
 const monthNames: Record<string, number> = {
   january: 1,
@@ -739,8 +813,11 @@ const monthNames: Record<string, number> = {
 
 function matchMeasurementLabel(value: string): MeasurementLabelMatch | null {
   const normalized = normalizeHeader(value);
+  if (bodyFatHeaderAliases.has(normalized)) return { kind: 'bodyFat' };
   const exact = measurementHeaderAliases[normalized];
-  if (exact) return { keys: [exact], unitSystem: unitSystemFromText(value) };
+  if (exact) {
+    return { kind: 'measurement', keys: [exact], unitSystem: unitSystemFromText(value) };
+  }
 
   const tokens = normalized.split('_').filter(Boolean);
   const hasToken = (...prefixes: string[]) =>
@@ -750,6 +827,12 @@ function matchMeasurementLabel(value: string): MeasurementLabelMatch | null {
       ),
     );
   let keys: MeasurementKey[] | null = null;
+  if (
+    (hasToken('body', 'процент', '%') && hasToken('fat', 'жир')) ||
+    normalized.includes('bodyfat')
+  ) {
+    return { kind: 'bodyFat' };
+  }
   if (hasToken('height', 'рост')) keys = ['heightCm'];
   else if (hasToken('weight', 'вес', 'масса')) keys = ['weightKg'];
   else if (hasToken('neck', 'шея', 'шеи')) keys = ['neckCm'];
@@ -761,7 +844,7 @@ function matchMeasurementLabel(value: string): MeasurementLabelMatch | null {
     else keys = ['thighLeftCm', 'thighRightCm'];
   } else if (hasToken('calf', 'икра', 'икры')) keys = ['calfCm'];
   else if (hasToken('waist', 'belly', 'талия', 'талии', 'живот')) keys = ['waistCm'];
-  return keys ? { keys, unitSystem: unitSystemFromText(value) } : null;
+  return keys ? { kind: 'measurement', keys, unitSystem: unitSystemFromText(value) } : null;
 }
 
 function parseLocalizedNumber(value: string): number | null {

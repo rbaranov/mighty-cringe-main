@@ -170,6 +170,19 @@ export const setRecordSchema = setInputSchema.extend({
 const optionalMeasurement = (maximum: number) =>
   z.number().positive().max(maximum).nullable().default(null);
 
+export const bodyFatMeasurementSchema = z.discriminatedUnion('source', [
+  z.object({
+    percent: z.number().positive().max(75),
+    source: z.literal('manual'),
+  }),
+  z.object({
+    formula: z.literal('rfm-2018'),
+    percent: z.number().positive().max(75),
+    sex: z.enum(['male', 'female']),
+    source: z.literal('calculated'),
+  }),
+]);
+
 export const measurementValuesSchema = z
   .object({
     heightCm: optionalMeasurement(300),
@@ -181,10 +194,14 @@ export const measurementValuesSchema = z
     thighRightCm: optionalMeasurement(200),
     calfCm: optionalMeasurement(150),
     waistCm: optionalMeasurement(300),
+    bodyFat: bodyFatMeasurementSchema.nullable().optional(),
   })
-  .refine((values) => Object.values(values).some((value) => value !== null), {
-    message: 'At least one measurement value is required',
-  });
+  .refine(
+    (values) => Object.values(values).some((value) => value !== null && value !== undefined),
+    {
+      message: 'At least one measurement value is required',
+    },
+  );
 
 export const measurementRecordSchema = z.object({
   id: z.string().uuid(),
@@ -416,6 +433,7 @@ export type UpdateWorkoutInput = z.infer<typeof updateWorkoutSchema>;
 export type DeleteWorkoutInput = z.infer<typeof deleteWorkoutSchema>;
 export type UpdateSetInput = z.infer<typeof updateSetSchema>;
 export type DeleteSetInput = z.infer<typeof deleteSetSchema>;
+export type BodyFatMeasurement = z.infer<typeof bodyFatMeasurementSchema>;
 export type MeasurementValues = z.infer<typeof measurementValuesSchema>;
 export type MeasurementRecord = z.infer<typeof measurementRecordSchema>;
 export type VoiceEntryRecord = z.infer<typeof voiceEntryRecordSchema>;

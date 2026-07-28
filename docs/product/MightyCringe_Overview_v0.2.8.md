@@ -191,9 +191,11 @@ Tracked over time; surfaced within the **Прогресс** tab. Measurement set
 | **Thigh (Left / Right)** | Standing, relaxed, tape at mid-thigh; recorded per leg (L / R). |
 | **Calf** | Standing, relaxed, largest point. |
 | **Belly / Waist** | Widest point below the navel. |
+| **Body fat %** | Entered explicitly or estimated with RFM from height and waist after the athlete selects the formula variant; the source remains visible. |
 
 - **Trend sparklines** per key measurement in Progress; **"Вся история замеров"** opens the full dated list; tapping a date opens a **detail** with all values and **deltas vs the previous entry**.
 - Per-entry **"self-measured" flag** (the sheet marks some columns *самозамер*).
+- Body-fat values always show whether they were **entered manually** or **calculated as an estimate**.
 - **"+ Замер"** adds a new measurement session.
 - **Importable** historical data so the timeline is continuous (existing dates: 23.03.2025, 13.06.2025, 06.08.2025, 11.09.2025, 22.01.2026).
 

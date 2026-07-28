@@ -9,6 +9,7 @@ import type {
 } from '@mighty-cringe/contracts';
 
 type Locale = CurrentUser['locale'];
+export type PhysicalMeasurementKey = Exclude<keyof MeasurementValues, 'bodyFat'>;
 
 const PreferencesContext = createContext<{ locale: Locale; unitSystem: UnitSystem }>({
   locale: 'ru',
@@ -76,7 +77,7 @@ export function formatLength(lengthCm: number, locale: Locale, unitSystem: UnitS
 }
 
 export function displayMeasurement(
-  key: keyof MeasurementValues,
+  key: PhysicalMeasurementKey,
   value: number,
   locale: Locale,
   unitSystem: UnitSystem,
@@ -87,7 +88,7 @@ export function displayMeasurement(
 }
 
 export function displayMeasurementNumber(
-  key: keyof MeasurementValues,
+  key: PhysicalMeasurementKey,
   value: number,
   unitSystem: UnitSystem,
 ) {
@@ -95,7 +96,7 @@ export function displayMeasurementNumber(
 }
 
 export function canonicalMeasurementNumber(
-  key: keyof MeasurementValues,
+  key: PhysicalMeasurementKey,
   value: number,
   unitSystem: UnitSystem,
 ) {
@@ -105,7 +106,7 @@ export function canonicalMeasurementNumber(
 }
 
 export function measurementUnit(
-  key: keyof MeasurementValues,
+  key: PhysicalMeasurementKey,
   unitSystem: UnitSystem,
   locale: Locale = 'ru',
 ) {

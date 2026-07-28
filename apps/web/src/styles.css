@@ -5797,6 +5797,30 @@ body {
   content: '';
 }
 
+.workout-live .exercise-card.superset {
+  position: relative;
+}
+
+.workout-live .exercise-card.superset-linked-previous {
+  border-top-left-radius: 0;
+}
+
+.workout-live .exercise-card.superset-linked-next {
+  border-bottom-left-radius: 0;
+}
+
+.workout-live .exercise-card.superset-linked-next::after {
+  position: absolute;
+  z-index: 1;
+  bottom: -7px;
+  left: 0;
+  width: 5px;
+  height: 8px;
+  background: var(--accent);
+  content: '';
+  pointer-events: none;
+}
+
 .exercise-picker .picker-list {
   align-content: start;
   grid-auto-rows: max-content;
@@ -5930,4 +5954,217 @@ body {
   opacity: 1;
   transform: translate(-50%, 0);
   visibility: visible;
+}
+
+/* Body composition keeps estimates traceable instead of presenting them as measured facts. */
+.body-fat-entry {
+  margin-top: 14px;
+  border: 2px solid var(--ink);
+  border-radius: 3px;
+  padding: 14px;
+  background: var(--surface-soft);
+  box-shadow: 4px 4px 0 var(--accent);
+  color: var(--ink);
+  text-align: left;
+}
+
+.body-fat-entry-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.body-fat-entry-head .eyebrow {
+  margin: 0 0 2px;
+}
+
+.body-fat-entry-head h3 {
+  margin: 0;
+  font-family: var(--display-font);
+  font-size: clamp(28px, 8vw, 42px);
+  line-height: 0.92;
+  text-transform: uppercase;
+}
+
+.body-fat-entry-head > span {
+  border: 1px solid var(--ink);
+  padding: 4px 6px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.body-fat-mode,
+.body-fat-sex {
+  display: grid;
+  gap: 6px;
+}
+
+.body-fat-mode {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 14px;
+}
+
+.body-fat-sex {
+  grid-template-columns: 1fr 1fr;
+  margin-top: 10px;
+}
+
+.body-fat-mode button,
+.body-fat-sex button {
+  min-height: 42px;
+  border: 1.5px solid var(--ink);
+  border-radius: 2px;
+  padding: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 900;
+  touch-action: manipulation;
+}
+
+.body-fat-mode button.selected,
+.body-fat-sex button.selected {
+  background: var(--accent);
+  color: var(--surface);
+}
+
+.body-fat-calculation,
+.body-fat-manual {
+  display: block;
+  margin-top: 12px;
+  border-top: 1.5px dashed var(--ink);
+  padding-top: 12px;
+}
+
+.body-fat-calculation p,
+.body-fat-calculation > small,
+.body-fat-manual > em {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  font-style: normal;
+  line-height: 1.45;
+}
+
+.body-fat-calculation > small {
+  display: block;
+  margin-top: 9px;
+}
+
+.body-fat-preview {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  border: 1.5px solid var(--ink);
+  padding: 10px;
+  background: var(--ink);
+  color: var(--surface);
+}
+
+.body-fat-preview strong {
+  font-family: var(--display-font);
+  font-size: 36px;
+  line-height: 0.9;
+}
+
+.body-fat-preview span {
+  max-width: 55%;
+  color: #d7cfbe;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1.3;
+  text-align: right;
+}
+
+.body-fat-requirements {
+  margin-top: 10px !important;
+  border-left: 4px solid var(--accent);
+  padding: 8px 10px;
+  background: var(--surface);
+}
+
+.body-fat-manual > span {
+  display: block;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.body-fat-manual > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  margin: 7px 0;
+}
+
+.body-fat-manual input {
+  width: 100%;
+  min-width: 0;
+  border: 1.5px solid var(--ink);
+  border-radius: 2px;
+  padding: 11px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.body-fat-manual small {
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.body-fat-source {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 6px;
+  border: 1px solid currentColor;
+  padding: 3px 5px;
+  color: var(--muted);
+  font-size: 7px;
+  font-style: normal;
+  font-weight: 900;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+  text-transform: uppercase;
+}
+
+.body-fat-source.calculated {
+  color: var(--accent-deep);
+}
+
+.measurement-values .body-fat-value {
+  border-color: var(--accent);
+  box-shadow: inset 4px 0 0 var(--accent);
+}
+
+.measurement-trends .body-fat-trend-card {
+  border-color: var(--accent);
+}
+
+@media (max-width: 370px) {
+  .body-fat-mode {
+    grid-template-columns: 1fr;
+  }
+
+  .body-fat-mode button {
+    min-height: 38px;
+  }
+
+  .body-fat-preview {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .body-fat-preview span {
+    max-width: none;
+    text-align: left;
+  }
 }

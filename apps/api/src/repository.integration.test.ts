@@ -189,6 +189,7 @@ test(
       thighRightCm: null,
       calfCm: null,
       waistCm: 91,
+      bodyFat: { percent: 24.2, source: 'manual' as const },
     };
     const createMeasurement = {
       id: measurementId,
@@ -207,10 +208,28 @@ test(
       clientMutationId: randomUUID(),
       measurementId,
       baseRevision: 1,
-      changes: { values: { ...measurementValues, weightKg: 80.5, waistCm: 88.5 } },
+      changes: {
+        values: {
+          ...measurementValues,
+          weightKg: 80.5,
+          waistCm: 88.5,
+          bodyFat: {
+            formula: 'rfm-2018' as const,
+            percent: 22.7,
+            sex: 'male' as const,
+            source: 'calculated' as const,
+          },
+        },
+      },
     });
     assert.equal(updatedMeasurement.entity.revision, 2);
     assert.equal(updatedMeasurement.entity.values.weightKg, 80.5);
+    assert.deepEqual(updatedMeasurement.entity.values.bodyFat, {
+      formula: 'rfm-2018',
+      percent: 22.7,
+      sex: 'male',
+      source: 'calculated',
+    });
     await assert.rejects(
       repository.updateMeasurement(user.id, {
         clientMutationId: randomUUID(),

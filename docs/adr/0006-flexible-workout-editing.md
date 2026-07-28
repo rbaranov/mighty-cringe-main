@@ -17,6 +17,9 @@ stable UUID, exercise UUID, integer position, and optional superset group. A wor
 the initial plan; a workout update may atomically replace the complete plan. Superset groups must
 contain at least two consecutive plan items. PostgreSQL stores the normalized plan in
 `workout_exercises`, while API history always returns it with the workout.
+In the active workout, consecutive items from one group are joined by a continuous accent line, so
+supersets, trisets, and longer groups remain visually distinct without introducing a different data
+shape for each group size.
 
 Treat set order as revisioned set data. Each set carries a position within its exercise. Moving sets
 uses the existing optimistic set update protocol. Set deletion is a dedicated idempotent mutation:

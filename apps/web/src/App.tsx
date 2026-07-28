@@ -1413,6 +1413,9 @@ function WorkoutView({
           const linkedWithNext =
             item.supersetGroup !== null &&
             item.supersetGroup === plan[index + 1]?.item.supersetGroup;
+          const linkedWithPrevious =
+            item.supersetGroup !== null &&
+            item.supersetGroup === plan[index - 1]?.item.supersetGroup;
           const groupSize =
             item.supersetGroup === null
               ? 0
@@ -1423,6 +1426,8 @@ function WorkoutView({
               className={[
                 'exercise-card',
                 item.supersetGroup === null ? '' : 'superset',
+                linkedWithPrevious ? 'superset-linked-previous' : '',
+                linkedWithNext ? 'superset-linked-next' : '',
                 logged.length ? 'has-sets' : 'no-sets',
               ]
                 .filter(Boolean)

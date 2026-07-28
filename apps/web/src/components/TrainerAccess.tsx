@@ -18,7 +18,13 @@ import {
   revokeTrainerInvite,
   revokeTrainerRelationship,
 } from '../lib/trainer';
-import { displayMeasurement, formatWeight, tr, usePreferences } from '../lib/preferences';
+import {
+  displayMeasurement,
+  formatWeight,
+  tr,
+  usePreferences,
+  type PhysicalMeasurementKey,
+} from '../lib/preferences';
 
 export function TrainerRelationshipCard({ refreshKey = 0 }: { refreshKey?: number }) {
   const { locale } = usePreferences();
@@ -415,21 +421,34 @@ function formatMeasurements(
   locale: 'ru' | 'en',
   unitSystem: 'metric' | 'imperial',
 ) {
-  const labels: Record<string, [string, string]> = {
+  const labels: Record<PhysicalMeasurementKey, [string, string]> = {
     heightCm: ['рост', 'height'],
     weightKg: ['вес', 'weight'],
+    neckCm: ['шея', 'neck'],
     waistCm: ['талия', 'waist'],
     chestCm: ['грудь', 'chest'],
     bicepsCm: ['бицепс', 'biceps'],
+    thighLeftCm: ['левое бедро', 'left thigh'],
+    thighRightCm: ['правое бедро', 'right thigh'],
+    calfCm: ['икра', 'calf'],
   };
-  return Object.entries(measurement.values)
-    .filter((entry): entry is [string, number] => entry[1] !== null)
-    .slice(0, 4)
-    .map(([key, value]) => {
-      const label = labels[key]?.[locale === 'en' ? 1 : 0] ?? key;
-      return `${label}: ${displayMeasurement(key as keyof MeasurementRecord['values'], value, locale, unitSystem)}`;
-    })
-    .join(' · ');
+  const values = (
+    Object.entries(labels) as Array<[PhysicalMeasurementKey, [string, string]]>
+  ).flatMap(([key, label]) => {
+    const value = measurement.values[key];
+    return value === null
+      ? []
+      : [
+          `${label[locale === 'en' ? 1 : 0]}: ${displayMeasurement(key, value, locale, unitSystem)}`,
+        ];
+  });
+  if (measurement.values.bodyFat) {
+    const bodyFat = new Intl.NumberFormat(locale === 'en' ? 'en-US' : 'ru-RU', {
+      maximumFractionDigits: 1,
+    }).format(measurement.values.bodyFat.percent);
+    values.unshift(`${locale === 'en' ? 'body fat' : 'жир'}: ${bodyFat}%`);
+  }
+  return values.slice(0, 4).join(' · ');
 }
 
 function formatDate(value: string, locale: 'ru' | 'en') {

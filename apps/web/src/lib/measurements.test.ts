@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import type { LocalMeasurement } from './db';
 import {
+  bodyFatDelta,
+  bodyFatTrend,
+  calculateRelativeFatMass,
   measurementDelta,
   measurementTrend,
   orderedMeasurements,
@@ -39,6 +42,42 @@ describe('body measurement history', () => {
     ]);
   });
 
+  it('calculates RFM from height and waist with an explicit formula variant', () => {
+    expect(calculateRelativeFatMass(180, 96, 'male')).toEqual({
+      formula: 'rfm-2018',
+      percent: 26.5,
+      sex: 'male',
+      source: 'calculated',
+    });
+    expect(calculateRelativeFatMass(180, 96, 'female')?.percent).toBe(38.5);
+    expect(calculateRelativeFatMass(0, 96, 'male')).toBeNull();
+  });
+
+  it('keeps body-fat history and deltas independent from its source', () => {
+    const manual = {
+      ...older,
+      values: { ...older.values, bodyFat: { percent: 24.2, source: 'manual' as const } },
+    };
+    const calculated = {
+      ...newer,
+      values: {
+        ...newer.values,
+        bodyFat: {
+          formula: 'rfm-2018' as const,
+          percent: 22.7,
+          sex: 'male' as const,
+          source: 'calculated' as const,
+        },
+      },
+    };
+
+    expect(bodyFatDelta(calculated, manual)).toBeCloseTo(-1.5);
+    expect(bodyFatTrend([calculated, manual])).toEqual([
+      { measurementId: 'older', measuredOn: older.measuredOn, value: 24.2 },
+      { measurementId: 'newer', measuredOn: newer.measuredOn, value: 22.7 },
+    ]);
+  });
+
   it('imports semicolon CSV with Russian headers, decimal commas and historic dates', () => {
     const result = parseMeasurementCsv(
       [
@@ -53,6 +92,19 @@ describe('body measurement history', () => {
       dateKey: '2025-03-23',
       isSelfMeasured: true,
       values: { weightKg: 82.5, thighRightCm: 57.5, waistCm: 91 },
+    });
+  });
+
+  it('imports an explicit body-fat percentage as a manual value', () => {
+    const result = parseMeasurementCsv(['Дата;Вес;% жира', '23.03.2025;82,5;18,4'].join('\n'));
+
+    expect(result.errors).toEqual([]);
+    expect(result.rows[0]).toMatchObject({
+      dateKey: '2025-03-23',
+      values: {
+        bodyFat: { percent: 18.4, source: 'manual' },
+        weightKg: 82.5,
+      },
     });
   });
 

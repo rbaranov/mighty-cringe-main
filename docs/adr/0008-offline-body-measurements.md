@@ -15,9 +15,18 @@ authenticated athlete.
 
 Each measurement session is a revisioned, user-owned entity with a client-generated UUID, measurement
 timestamp, `isSelfMeasured` flag, and a validated JSON snapshot of the supported optional values:
-height, weight, neck, chest, biceps, left and right thigh, calf, and waist. At least one value is required.
+height, weight, neck, chest, biceps, left and right thigh, calf, waist, and body-fat percentage. At
+least one value is required.
 Dates chosen in the UI are serialized at local noon so their displayed calendar day remains stable in
 normal timezone and daylight-saving transitions.
+
+Body-fat percentage is stored with explicit provenance. A manually entered value stores
+`source: manual`. A calculated value stores `source: calculated`, the `rfm-2018` formula identifier,
+the explicit male/female formula variant selected by the athlete, and the rounded result. The client
+uses the Relative Fat Mass estimate `64 - 20 × height / waist`, adding 12 for the female variant. It
+may reuse the latest recorded height, but requires the current waist and never infers the formula
+variant. The UI labels calculated values as estimates and does not present them as medical
+measurements.
 
 IndexedDB is the immediate write target. Measurement create, update, and delete mutations use the same
 durable outbox, idempotency key, revision check, and explicit conflict resolution flow as workouts and
@@ -33,15 +42,23 @@ immediately. Table import is parsed and validated on-device from CSV, TSV, or pl
 Russian and English labels, dates running down rows or across columns, descriptive measurement labels,
 explicit units, and historical dates. The client shows the normalized preview before saving, rejects
 duplicate dates, and enqueues each accepted date through the normal create path. Manual entry also
-prevents a second entry on an existing local date.
+prevents a second entry on an existing local date. An imported body-fat percentage is treated as
+manual because an external table cannot prove which formula produced it.
 
 ## Consequences
 
 - Weight and circumference trends work without a separate analytics service.
 - Partial entries remain useful; a missing metric is not treated as zero and is omitted from its trend.
+- Body-fat trends can mix manual and calculated values, but every card and detail retains a visible
+  source badge so the athlete can interpret that comparison.
 - The detail view compares an entry only with the immediately previous session, so the source of every
   displayed delta is explainable.
 - Full-history reads and client-side trend calculation are acceptable for the current personal journal.
   Pagination or server-side aggregates can be added later without changing mutation semantics.
 - Date uniqueness is currently enforced by the client. If non-UI writers are introduced, the API and
   database should add an explicit per-user calendar-date constraint after defining timezone semantics.
+
+## References
+
+- Woolcott and Bergman, [Relative fat mass (RFM) as a new estimator of whole-body fat
+  percentage](https://pubmed.ncbi.nlm.nih.gov/30030479/), 2018.

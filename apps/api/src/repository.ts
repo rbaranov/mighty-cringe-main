@@ -2259,8 +2259,13 @@ function measurementChangesMatch(
 
 function sameMeasurementValues(left: unknown, right: MeasurementValues) {
   if (!left || typeof left !== 'object') return false;
-  return Object.keys(right).every(
-    (key) => (left as Record<string, unknown>)[key] === right[key as keyof MeasurementValues],
+  const leftValues = left as Record<string, unknown>;
+  const numericValuesMatch = Object.keys(right)
+    .filter((key) => key !== 'bodyFat')
+    .every((key) => leftValues[key] === right[key as keyof MeasurementValues]);
+  return (
+    numericValuesMatch &&
+    JSON.stringify(leftValues.bodyFat ?? null) === JSON.stringify(right.bodyFat ?? null)
   );
 }
 

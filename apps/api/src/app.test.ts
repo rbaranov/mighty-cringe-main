@@ -376,7 +376,11 @@ test('OAuth sessions isolate athlete data, support logout, and enforce admin rol
       clientMutationId: '61000000-0000-4000-8000-000000000001',
       measuredOn: '2026-01-22T06:00:00.000Z',
       isSelfMeasured: true,
-      values: { weightKg: 82, waistCm: 91 },
+      values: {
+        weightKg: 82,
+        waistCm: 91,
+        bodyFat: { percent: 24.2, source: 'manual' },
+      },
     },
   };
   const createdMeasurement = await app.inject({
@@ -388,6 +392,10 @@ test('OAuth sessions isolate athlete data, support logout, and enforce admin rol
   assert.equal(createdMeasurement.statusCode, 201);
   assert.equal(createdMeasurement.json().entity.revision, 1);
   assert.equal(createdMeasurement.json().entity.values.weightKg, 82);
+  assert.deepEqual(createdMeasurement.json().entity.values.bodyFat, {
+    percent: 24.2,
+    source: 'manual',
+  });
   const repeatedMeasurement = await app.inject({
     method: 'POST',
     url: '/api/v1/sync',
@@ -410,7 +418,16 @@ test('OAuth sessions isolate athlete data, support logout, and enforce admin rol
         changes: {
           measuredOn: '2026-01-22T06:00:00.000Z',
           isSelfMeasured: true,
-          values: { weightKg: 80.5, waistCm: 88.5 },
+          values: {
+            weightKg: 80.5,
+            waistCm: 88.5,
+            bodyFat: {
+              formula: 'rfm-2018',
+              percent: 22.7,
+              sex: 'male',
+              source: 'calculated',
+            },
+          },
         },
       },
     },
@@ -418,6 +435,12 @@ test('OAuth sessions isolate athlete data, support logout, and enforce admin rol
   assert.equal(updatedMeasurement.statusCode, 200);
   assert.equal(updatedMeasurement.json().entity.revision, 2);
   assert.equal(updatedMeasurement.json().entity.values.waistCm, 88.5);
+  assert.deepEqual(updatedMeasurement.json().entity.values.bodyFat, {
+    formula: 'rfm-2018',
+    percent: 22.7,
+    sex: 'male',
+    source: 'calculated',
+  });
 
   const crossUserMeasurement = await app.inject({
     method: 'POST',

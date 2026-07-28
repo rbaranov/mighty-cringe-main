@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 
-import type { MeasurementValues } from '@mighty-cringe/contracts';
+import type { BodyFatMeasurement, MeasurementValues } from '@mighty-cringe/contracts';
 
 import type { LocalMeasurement } from '../lib/db';
 import {
+  bodyFatDelta,
+  bodyFatTrend,
+  calculateRelativeFatMass,
   measurementDefinitions,
   measurementDelta,
   measurementTrend,
@@ -20,6 +23,7 @@ import {
   measurementUnit,
   tr,
   usePreferences,
+  type PhysicalMeasurementKey,
 } from '../lib/preferences';
 
 export type MeasurementDraft = {
@@ -79,6 +83,7 @@ export function BodyMeasurementsSection({
                 measurements={ordered}
               />
             ))}
+            {bodyFatTrend(ordered).length > 0 && <BodyFatTrendCard measurements={ordered} />}
           </div>
 
           <button
@@ -361,7 +366,7 @@ function formatImportSummary(
   unitSystem: 'metric' | 'imperial',
 ): string {
   const recorded = measurementDefinitions.filter(({ key }) => values[key] !== null);
-  const visible = recorded.slice(0, 4).map((definition) => {
+  const visible = recorded.slice(0, values.bodyFat ? 3 : 4).map((definition) => {
     const value = values[definition.key]!;
     return `${measurementCopy(definition, locale).shortLabel}: ${displayMeasurement(
       definition.key,
@@ -370,12 +375,18 @@ function formatImportSummary(
       unitSystem,
     )}`;
   });
-  if (recorded.length > visible.length) {
+  if (values.bodyFat) {
+    visible.unshift(
+      `${tr(locale, 'Жир', 'Body fat')}: ${formatBodyFatPercent(values.bodyFat.percent, locale)}`,
+    );
+  }
+  const recordedCount = recorded.length + (values.bodyFat ? 1 : 0);
+  if (recordedCount > visible.length) {
     visible.push(
       tr(
         locale,
-        `ещё ${recorded.length - visible.length}`,
-        `+${recorded.length - visible.length} more`,
+        `ещё ${recordedCount - visible.length}`,
+        `+${recordedCount - visible.length} more`,
       ),
     );
   }
@@ -412,6 +423,31 @@ function MeasurementTrendCard({
       </div>
       <Sparkline
         label={measurementCopy(definition, locale).label}
+        values={trend.map((point) => point.value)}
+      />
+    </article>
+  );
+}
+
+function BodyFatTrendCard({ measurements }: { measurements: LocalMeasurement[] }) {
+  const { locale } = usePreferences();
+  const trend = bodyFatTrend(measurements);
+  const latestPoint = trend.at(-1)!;
+  const latestMeasurement = measurements.find(
+    (measurement) => measurement.id === latestPoint.measurementId,
+  )!;
+  const previous = previousMeasurement(measurements, latestMeasurement.id);
+  const bodyFat = latestMeasurement.values.bodyFat!;
+  return (
+    <article className="body-fat-trend-card">
+      <div>
+        <span>{tr(locale, '% жира', 'Body fat')}</span>
+        <strong>{formatBodyFatPercent(bodyFat.percent, locale)}</strong>
+        <small>{formatBodyFatDelta(bodyFatDelta(latestMeasurement, previous), locale)}</small>
+        <BodyFatSourceBadge bodyFat={bodyFat} />
+      </div>
+      <Sparkline
+        label={tr(locale, 'Процент жира', 'Body fat percentage')}
         values={trend.map((point) => point.value)}
       />
     </article>
@@ -474,6 +510,14 @@ function MeasurementDetail({
         <p className="self-measured">{tr(locale, 'Самозамер', 'Self measured')}</p>
       )}
       <div className="measurement-values">
+        {measurement.values.bodyFat && (
+          <div className="body-fat-value">
+            <span>{tr(locale, '% жира', 'Body fat')}</span>
+            <strong>{formatBodyFatPercent(measurement.values.bodyFat.percent, locale)}</strong>
+            <small>{formatBodyFatDelta(bodyFatDelta(measurement, previous), locale)}</small>
+            <BodyFatSourceBadge bodyFat={measurement.values.bodyFat} />
+          </div>
+        )}
         {recorded.map((definition) => {
           const value = measurement.values[definition.key]!;
           const delta = measurementDelta(measurement, previous, definition.key);
@@ -517,10 +561,30 @@ function MeasurementSheet({
   const { locale, unitSystem } = usePreferences();
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
   const today = dateKeyInTimeZone(new Date(), timeZone);
+  const historicalBodyFat = useMemo(
+    () =>
+      [...orderedMeasurements(existing)].reverse().find((measurement) => measurement.values.bodyFat)
+        ?.values.bodyFat ?? null,
+    [existing],
+  );
   const [dateKey, setDateKey] = useState(today);
   const [isSelfMeasured, setIsSelfMeasured] = useState(true);
   const [values, setValues] = useState<Record<string, string>>({});
+  const [bodyFatMode, setBodyFatMode] = useState<'none' | 'calculated' | 'manual'>('none');
+  const [bodyFatSex, setBodyFatSex] = useState<'' | 'male' | 'female'>('');
+  const [manualBodyFat, setManualBodyFat] = useState('');
   const [saving, setSaving] = useState(false);
+  const historicalHeightCm = useMemo(
+    () =>
+      [...orderedMeasurements(existing)]
+        .reverse()
+        .find(
+          (measurement) =>
+            measurement.values.heightCm !== null &&
+            dateKeyInTimeZone(measurement.measuredOn, timeZone) <= dateKey,
+        )?.values.heightCm ?? null,
+    [dateKey, existing, timeZone],
+  );
 
   useEffect(() => {
     setDateKey(initial ? dateKeyInTimeZone(initial.measuredOn, timeZone) : today);
@@ -538,9 +602,46 @@ function MeasurementSheet({
         }),
       ),
     );
-  }, [initial, timeZone, today, unitSystem]);
+    const initialBodyFat = initial?.values.bodyFat;
+    setBodyFatMode(
+      initialBodyFat?.source === 'manual'
+        ? 'manual'
+        : initialBodyFat?.source === 'calculated'
+          ? 'calculated'
+          : 'none',
+    );
+    setBodyFatSex(
+      initialBodyFat?.source === 'calculated'
+        ? initialBodyFat.sex
+        : historicalBodyFat?.source === 'calculated'
+          ? historicalBodyFat.sex
+          : '',
+    );
+    setManualBodyFat(
+      initialBodyFat?.source === 'manual' ? formatBodyFatInput(initialBodyFat.percent, locale) : '',
+    );
+  }, [historicalBodyFat, initial, locale, timeZone, today, unitSystem]);
 
-  const parsedValues = parseValues(values, unitSystem);
+  const parsedMeasurements = parseMeasurementInputs(values, unitSystem);
+  const currentHeightCm = parsedMeasurements?.heightCm ?? null;
+  const calculationHeightCm = currentHeightCm ?? historicalHeightCm;
+  const currentWaistCm = parsedMeasurements?.waistCm ?? null;
+  const calculatedBodyFat =
+    bodyFatSex && calculationHeightCm !== null && currentWaistCm !== null
+      ? calculateRelativeFatMass(calculationHeightCm, currentWaistCm, bodyFatSex)
+      : null;
+  const manualBodyFatPercent = parseBodyFatInput(manualBodyFat);
+  const selectedBodyFat: BodyFatMeasurement | null =
+    bodyFatMode === 'manual' && manualBodyFatPercent !== null
+      ? { percent: manualBodyFatPercent, source: 'manual' }
+      : bodyFatMode === 'calculated'
+        ? calculatedBodyFat
+        : null;
+  const bodyFatInvalid =
+    (bodyFatMode === 'manual' && manualBodyFatPercent === null) ||
+    (bodyFatMode === 'calculated' && calculatedBodyFat === null);
+  const parsedValues =
+    parsedMeasurements && !bodyFatInvalid ? withBodyFat(parsedMeasurements, selectedBodyFat) : null;
   const invalid = parsedValues === null;
   const duplicateDate = existing.some(
     (measurement) =>
@@ -618,13 +719,140 @@ function MeasurementSheet({
             </label>
           ))}
         </div>
+        <section className="body-fat-entry" aria-labelledby="body-fat-entry-title">
+          <div className="body-fat-entry-head">
+            <div>
+              <span className="eyebrow">{tr(locale, 'Состав тела', 'Body composition')}</span>
+              <h3 id="body-fat-entry-title">{tr(locale, '% жира', 'Body fat %')}</h3>
+            </div>
+            <span>{tr(locale, 'оценка', 'estimate')}</span>
+          </div>
+          <div
+            className="body-fat-mode"
+            role="group"
+            aria-label={tr(locale, 'Источник процента жира', 'Body fat source')}
+          >
+            {(
+              [
+                ['calculated', tr(locale, 'Рассчитать', 'Calculate')],
+                ['manual', tr(locale, 'Ввести вручную', 'Enter manually')],
+                ['none', tr(locale, 'Не указывать', 'Skip')],
+              ] as const
+            ).map(([mode, label]) => (
+              <button
+                aria-pressed={bodyFatMode === mode}
+                className={bodyFatMode === mode ? 'selected' : ''}
+                key={mode}
+                onClick={() => setBodyFatMode(mode)}
+                type="button"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {bodyFatMode === 'calculated' && (
+            <div className="body-fat-calculation">
+              <p>
+                {tr(
+                  locale,
+                  'Формула RFM использует рост и текущую талию. Выбери вариант формулы:',
+                  'The RFM formula uses height and the current waist. Choose the formula variant:',
+                )}
+              </p>
+              <div
+                className="body-fat-sex"
+                role="group"
+                aria-label={tr(locale, 'Вариант формулы RFM', 'RFM formula variant')}
+              >
+                <button
+                  aria-pressed={bodyFatSex === 'male'}
+                  className={bodyFatSex === 'male' ? 'selected' : ''}
+                  onClick={() => setBodyFatSex('male')}
+                  type="button"
+                >
+                  {tr(locale, 'Мужская', 'Male')}
+                </button>
+                <button
+                  aria-pressed={bodyFatSex === 'female'}
+                  className={bodyFatSex === 'female' ? 'selected' : ''}
+                  onClick={() => setBodyFatSex('female')}
+                  type="button"
+                >
+                  {tr(locale, 'Женская', 'Female')}
+                </button>
+              </div>
+              {calculatedBodyFat ? (
+                <div className="body-fat-preview" role="status">
+                  <strong>{formatBodyFatPercent(calculatedBodyFat.percent, locale)}</strong>
+                  <span>
+                    {tr(locale, 'Рассчитано · RFM', 'Calculated · RFM')}
+                    {currentHeightCm === null && historicalHeightCm !== null
+                      ? tr(
+                          locale,
+                          ' · рост из последнего замера',
+                          ' · height from the latest measurement',
+                        )
+                      : ''}
+                  </span>
+                </div>
+              ) : (
+                <p className="body-fat-requirements">
+                  {tr(
+                    locale,
+                    'Нужны вариант формулы, рост и талия в текущем замере. Рост можно взять из последней записи.',
+                    'Formula variant, height, and a current waist are required. Height may come from the latest entry.',
+                  )}
+                </p>
+              )}
+              <small>
+                {tr(
+                  locale,
+                  'Это приблизительная оценка состава тела для взрослых, а не медицинское измерение.',
+                  'This is an approximate adult body-composition estimate, not a medical measurement.',
+                )}
+              </small>
+            </div>
+          )}
+          {bodyFatMode === 'manual' && (
+            <label className="body-fat-manual">
+              <span>{tr(locale, 'Процент жира', 'Body fat percentage')}</span>
+              <div>
+                <input
+                  inputMode="decimal"
+                  max="75"
+                  min="0.1"
+                  onChange={(event) => setManualBodyFat(event.target.value)}
+                  placeholder="—"
+                  pattern="[0-9]*[.,]?[0-9]*"
+                  step="0.1"
+                  type="text"
+                  value={manualBodyFat}
+                />
+                <small>%</small>
+              </div>
+              <em>
+                {tr(
+                  locale,
+                  'Например, значение с биоимпедансных весов или калипера.',
+                  'For example, a value from a bioimpedance scale or calipers.',
+                )}
+              </em>
+            </label>
+          )}
+        </section>
         {invalid && (
           <p className="measurement-error">
-            {tr(
-              locale,
-              'Заполни хотя бы одно поле положительным числом.',
-              'Enter a positive number in at least one field.',
-            )}
+            {bodyFatInvalid
+              ? tr(
+                  locale,
+                  'Заверши выбранный способ определения процента жира или выбери «Не указывать».',
+                  'Complete the selected body-fat method or choose “Skip”.',
+                )
+              : tr(
+                  locale,
+                  'Заполни хотя бы одно поле положительным числом.',
+                  'Enter a positive number in at least one field.',
+                )}
           </p>
         )}
         {duplicateDate && (
@@ -681,7 +909,45 @@ function SyncBadge({ measurement }: { measurement: LocalMeasurement }) {
   );
 }
 
-function parseValues(
+function BodyFatSourceBadge({ bodyFat }: { bodyFat: BodyFatMeasurement }) {
+  const { locale } = usePreferences();
+  const label =
+    bodyFat.source === 'manual'
+      ? tr(locale, 'Введено вручную', 'Entered manually')
+      : tr(
+          locale,
+          `Рассчитано · RFM · ${bodyFat.sex === 'male' ? 'муж.' : 'жен.'}`,
+          `Calculated · RFM · ${bodyFat.sex}`,
+        );
+  return (
+    <em className={`body-fat-source ${bodyFat.source}`} title={label}>
+      {label}
+    </em>
+  );
+}
+
+function formatBodyFatPercent(value: number, locale: 'ru' | 'en') {
+  const formatted = new Intl.NumberFormat(locale === 'en' ? 'en-US' : 'ru-RU', {
+    maximumFractionDigits: 1,
+  }).format(value);
+  return `${formatted}%`;
+}
+
+function formatBodyFatInput(value: number, locale: 'ru' | 'en') {
+  const formatted = String(value);
+  return locale === 'ru' ? formatted.replace('.', ',') : formatted;
+}
+
+function formatBodyFatDelta(value: number | null, locale: 'ru' | 'en') {
+  if (value === null) return tr(locale, 'нет сравнения', 'no comparison');
+  if (Math.abs(value) < 0.05) return tr(locale, 'без изменений', 'no change');
+  const formatted = new Intl.NumberFormat(locale === 'en' ? 'en-US' : 'ru-RU', {
+    maximumFractionDigits: 1,
+  }).format(Math.abs(value));
+  return `${value > 0 ? '+' : '−'}${formatted} ${tr(locale, 'п.п.', 'pp')}`;
+}
+
+function parseMeasurementInputs(
   values: Record<string, string>,
   unitSystem: 'metric' | 'imperial',
 ): MeasurementValues | null {
@@ -694,12 +960,27 @@ function parseValues(
       ];
     }),
   ) as MeasurementValues;
-  const recorded = Object.values(parsed).filter((value): value is number => value !== null);
   const valid = measurementDefinitions.every((definition) => {
     const value = parsed[definition.key];
     return value === null || (Number.isFinite(value) && value > 0 && value <= definition.maximum);
   });
-  return recorded.length && valid ? parsed : null;
+  return valid ? parsed : null;
+}
+
+function withBodyFat(
+  values: MeasurementValues,
+  bodyFat: BodyFatMeasurement | null,
+): MeasurementValues | null {
+  const recorded = measurementDefinitions.some((definition) => values[definition.key] !== null);
+  return recorded || bodyFat ? { ...values, bodyFat } : null;
+}
+
+function parseBodyFatInput(value: string): number | null {
+  const normalized = value.trim().replace(',', '.');
+  if (!/^(?:\d+(?:\.\d*)?|\.\d+)$/u.test(normalized)) return null;
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 75) return null;
+  return Math.round((parsed + Number.EPSILON) * 10) / 10;
 }
 
 function measurementSummary(
@@ -714,6 +995,12 @@ function measurementSummary(
       (definition) =>
         `${measurementCopy(definition, locale).shortLabel}: ${displayMeasurement(definition.key, measurement.values[definition.key]!, locale, unitSystem)}`,
     );
+  if (measurement.values.bodyFat) {
+    parts.unshift(
+      `${tr(locale, 'Жир', 'Body fat')}: ${formatBodyFatPercent(measurement.values.bodyFat.percent, locale)}`,
+    );
+  }
+  if (parts.length > 2) parts.length = 2;
   return parts.join(' · ') || tr(locale, 'Запись замеров', 'Measurement entry');
 }
 
@@ -729,7 +1016,7 @@ function measurementCopy(definition: MeasurementDefinition, locale: 'ru' | 'en')
 }
 
 const englishMeasurementCopy: Record<
-  keyof MeasurementValues,
+  MeasurementDefinition['key'],
   { label: string; shortLabel: string; help: string }
 > = {
   heightCm: { label: 'Height', shortLabel: 'Height', help: 'Stand straight without shoes.' },
@@ -781,7 +1068,7 @@ function formatMeasurementDate(measurement: LocalMeasurement, locale: 'ru' | 'en
 
 function formatDelta(
   value: number | null,
-  key: keyof MeasurementValues,
+  key: PhysicalMeasurementKey,
   locale: 'ru' | 'en',
   unitSystem: 'metric' | 'imperial',
 ): string {

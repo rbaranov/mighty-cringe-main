@@ -23,6 +23,8 @@ describe('BodyMeasurementsSection', () => {
     expect(html).toContain('Вся история замеров');
     expect(html).toContain('80,5 кг');
     expect(html).toContain('−1,5 кг');
+    expect(html).toContain('22,7%');
+    expect(html).toContain('Рассчитано · RFM · муж.');
     expect(html).toContain('Самозамер');
     expect(html).toContain('Изменить');
     expect(html).toContain('Удалить');
@@ -49,6 +51,15 @@ function measurement(
       thighRightCm: null,
       calfCm: null,
       waistCm,
+      bodyFat:
+        id === 'older'
+          ? { percent: 24.2, source: 'manual' }
+          : {
+              formula: 'rfm-2018',
+              percent: 22.7,
+              sex: 'male',
+              source: 'calculated',
+            },
     },
     revision: 1,
     updatedAt: measuredOn,
