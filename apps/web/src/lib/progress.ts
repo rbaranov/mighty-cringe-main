@@ -144,6 +144,18 @@ export function volumeForRecentDays(days: WorkoutDay[], todayKey: string, window
     .reduce((total, day) => total + day.volumeKg, 0);
 }
 
+export function volumeForPreviousDays(
+  days: WorkoutDay[],
+  todayKey: string,
+  windowDays = 30,
+): number {
+  const lastIncluded = addDays(todayKey, -windowDays);
+  const firstIncluded = addDays(todayKey, -(windowDays * 2 - 1));
+  return days
+    .filter((day) => day.dateKey >= firstIncluded && day.dateKey <= lastIncluded)
+    .reduce((total, day) => total + day.volumeKg, 0);
+}
+
 export function buildExerciseProgress(
   exerciseId: string,
   workouts: LocalWorkout[],

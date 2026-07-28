@@ -105,7 +105,6 @@ button {
 .topbar,
 .section-head,
 .exercise-card-head,
-.stat-row,
 .setting {
   display: flex;
   align-items: center;
@@ -290,94 +289,6 @@ small,
   max-width: 470px;
   margin: 0 0 20px;
   line-height: 1.45;
-}
-.stat-row {
-  margin: 24px 0;
-}
-.stat-popover {
-  position: relative;
-  min-width: 0;
-}
-.stat {
-  width: 33.33%;
-  display: flex;
-  min-height: 112px;
-  padding: 12px;
-  border: 1px solid #303a2b;
-  border-radius: 14px;
-  flex-direction: column;
-  gap: 5px;
-  background: #171c14;
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
-  text-align: left;
-}
-.stat-popover > .stat {
-  width: 100%;
-  height: 100%;
-}
-.stat.active {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent);
-}
-.stat strong {
-  color: #e9f3dd;
-  font-size: 16px;
-}
-.stat span {
-  margin-top: auto;
-  color: #9ba394;
-  font-size: 11px;
-}
-.stat small {
-  color: var(--muted);
-  font-size: 9px;
-  line-height: 1.25;
-}
-.stat-tooltip {
-  position: absolute;
-  top: calc(100% + 10px);
-  z-index: 30;
-  display: block;
-  width: min(300px, calc(100vw - 40px));
-  padding: 12px 14px;
-  border: 1.5px solid var(--ink);
-  background: var(--ink);
-  box-shadow: 7px 7px 0 var(--accent);
-  color: var(--surface);
-  font-size: 12px;
-  line-height: 1.45;
-}
-.stat-popover.start .stat-tooltip {
-  left: 0;
-}
-.stat-popover.center .stat-tooltip {
-  left: 50%;
-  transform: translateX(-50%);
-}
-.stat-popover.end .stat-tooltip {
-  right: 0;
-}
-.stat-tooltip::before {
-  position: absolute;
-  top: -7px;
-  width: 12px;
-  height: 12px;
-  border-top: 1.5px solid var(--ink);
-  border-left: 1.5px solid var(--ink);
-  background: var(--ink);
-  content: '';
-  transform: rotate(45deg);
-}
-.stat-popover.start .stat-tooltip::before {
-  left: 28px;
-}
-.stat-popover.center .stat-tooltip::before {
-  left: calc(50% - 6px);
-}
-.stat-popover.end .stat-tooltip::before {
-  right: 28px;
 }
 .button {
   border: 0;
@@ -806,24 +717,40 @@ small,
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
-  margin: 20px 0 8px;
+  margin: 20px 0 30px;
 }
-.progress-summary article {
+.progress-summary-popover {
+  position: relative;
   min-width: 0;
+}
+.progress-summary-card {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 126px;
   padding: 14px;
   border: 1px solid var(--progress-line);
   border-radius: 14px;
+  flex-direction: column;
+  gap: 5px;
   background: var(--progress-card);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
 }
-.progress-summary span,
+.progress-summary-card.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.progress-summary-card > span,
 .one-rep-explainer span {
   display: block;
   color: #99a491;
   font-size: 11px;
 }
-.progress-summary strong {
+.progress-summary-card strong {
   display: block;
-  margin-top: 7px;
   overflow: hidden;
   color: #edf4e4;
   font-size: clamp(18px, 5vw, 24px);
@@ -831,10 +758,48 @@ small,
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.streak-note {
-  margin: 0 2px 30px;
-  color: #7f8978;
+.progress-summary-card small {
+  margin-top: auto;
+  color: var(--muted);
   font-size: 10px;
+  line-height: 1.3;
+}
+.progress-summary-tooltip {
+  position: absolute;
+  top: calc(100% + 10px);
+  z-index: 30;
+  display: block;
+  width: min(330px, calc(100vw - 40px));
+  padding: 12px 14px;
+  border: 1.5px solid var(--ink);
+  background: var(--ink);
+  box-shadow: 7px 7px 0 var(--accent);
+  color: var(--surface);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.progress-summary-popover.start .progress-summary-tooltip {
+  left: 0;
+}
+.progress-summary-popover.end .progress-summary-tooltip {
+  right: 0;
+}
+.progress-summary-tooltip::before {
+  position: absolute;
+  top: -7px;
+  width: 12px;
+  height: 12px;
+  border-top: 1.5px solid var(--ink);
+  border-left: 1.5px solid var(--ink);
+  background: var(--ink);
+  content: '';
+  transform: rotate(45deg);
+}
+.progress-summary-popover.start .progress-summary-tooltip::before {
+  left: 28px;
+}
+.progress-summary-popover.end .progress-summary-tooltip::before {
+  right: 28px;
 }
 .progress-section {
   margin-top: 18px;
@@ -851,6 +816,11 @@ small,
   margin-top: 4px;
   font-size: 18px;
 }
+.month-navigation {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+}
 .month-controls {
   display: grid;
   grid-template-columns: 30px minmax(112px, auto) 30px;
@@ -865,11 +835,26 @@ small,
   background: #20271b;
   color: #d9e3cf;
 }
+.month-controls button:disabled {
+  cursor: default;
+  opacity: 0.3;
+}
 .month-controls strong {
   color: #dce6d1;
   font-size: 12px;
   text-align: center;
   text-transform: capitalize;
+}
+.current-month-button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 850;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
 }
 .calendar-weekdays,
 .workout-calendar {
@@ -890,6 +875,33 @@ small,
   color: var(--muted);
   font-size: 11px;
   font-weight: 750;
+}
+.training-volume-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px 12px;
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid var(--progress-line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+.training-volume-card span {
+  color: var(--muted);
+  font-size: 11px;
+}
+.training-volume-card strong {
+  grid-row: 1 / 3;
+  grid-column: 2;
+  align-self: center;
+  color: var(--ink);
+  font-size: clamp(18px, 5vw, 24px);
+  letter-spacing: -0.04em;
+  white-space: nowrap;
+}
+.training-volume-card small {
+  color: var(--muted);
+  font-size: 10px;
 }
 .calendar-day {
   position: relative;
@@ -2521,7 +2533,6 @@ small,
 /* Style B · Light minimalism */
 .auth-card,
 .profile-card,
-.stat,
 .exercise-row,
 .exercise-card,
 .progress-section,
@@ -2592,7 +2603,6 @@ small,
 .sheet h2,
 .exercise-card strong,
 .exercise-row strong,
-.stat strong,
 .setting strong,
 .progress-summary strong,
 .calendar-details > strong,
@@ -2958,7 +2968,7 @@ small,
   --progress-line: var(--line);
   --progress-card: var(--surface);
 }
-.progress-summary article,
+.progress-summary-card,
 .calendar-day,
 .calendar-details article,
 .strength-chart,
@@ -3216,7 +3226,6 @@ small,
 
 /* Exact component treatment from Style B: 15 px geometry, indigo focus, hairline depth. */
 .button,
-.stat,
 .exercise-row,
 .exercise-card,
 .workout-live .exercise-card,
@@ -4073,16 +4082,6 @@ body {
   overflow-x: hidden;
 }
 
-.stat-row {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.stat {
-  width: auto;
-  min-width: 0;
-}
-
 .exercise-list.compact,
 .exercise-list.compact .exercise-row {
   min-width: 0;
@@ -4460,18 +4459,6 @@ body {
 }
 
 @media (max-width: 390px) {
-  .stat-row {
-    gap: 7px;
-  }
-
-  .stat {
-    padding-inline: 9px;
-  }
-
-  .stat strong {
-    font-size: 14px;
-  }
-
   .settings-menu-end {
     max-width: 82px;
   }
@@ -4622,7 +4609,6 @@ body {
 }
 
 .button,
-.stat,
 .exercise-row,
 .exercise-card,
 .workout-live .exercise-card,
@@ -4690,7 +4676,6 @@ body {
 
 .auth-card,
 .profile-card,
-.stat,
 .exercise-row,
 .exercise-card,
 .progress-section,
@@ -5470,7 +5455,7 @@ body {
   --progress-card: var(--surface);
 }
 
-.progress-summary article,
+.progress-summary-card,
 .progress-section {
   border: 1.5px solid var(--ink);
   background: var(--surface);
