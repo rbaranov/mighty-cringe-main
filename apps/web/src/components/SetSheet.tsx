@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 import type { Exercise } from '@mighty-cringe/contracts';
 
@@ -11,6 +11,12 @@ import {
   usePreferences,
   weightUnit,
 } from '../lib/preferences';
+import {
+  formatNumericInput,
+  parseDecimalInput,
+  parseIntegerInput,
+  stepNumericInput,
+} from './setSheetNumbers';
 
 type Props = {
   exercise: Exercise | null;
@@ -32,10 +38,25 @@ export function SetSheet({ exercise, initial, defaults, onClose, onExplain, onSa
   const [reps, setReps] = useState('');
   const [rir, setRir] = useState('');
   const [comment, setComment] = useState('');
+  const weightStep = unitSystem === 'imperial' ? 5 : 2.5;
+  const maximumDisplayWeight = displayWeight(1000, unitSystem);
+  const weightValue = parseDecimalInput(weight);
+  const repsValue = parseIntegerInput(reps);
+  const rirValue = rir === '' ? null : parseIntegerInput(rir);
+  const canonicalWeightValue =
+    weightValue === null ? null : canonicalWeight(weightValue, unitSystem);
+  const canSave =
+    canonicalWeightValue !== null &&
+    canonicalWeightValue >= 0 &&
+    canonicalWeightValue <= 1000 &&
+    repsValue !== null &&
+    repsValue >= 1 &&
+    repsValue <= 100 &&
+    (rirValue === null || (rirValue >= 0 && rirValue <= 20));
 
   useEffect(() => {
     const source = initial ?? defaults;
-    setWeight(source ? String(displayWeight(source.weightKg, unitSystem)) : '');
+    setWeight(source ? formatNumericInput(displayWeight(source.weightKg, unitSystem), locale) : '');
     setReps(source ? String(source.reps) : '');
     setRir(source?.rir === null || source?.rir === undefined ? '' : String(source.rir));
     setComment(initial?.comment ?? '');
@@ -86,42 +107,69 @@ export function SetSheet({ exercise, initial, defaults, onClose, onExplain, onSa
           </>
         )}
         <div className="form-grid">
-          <label>
-            {tr(locale, 'Вес', 'Weight')}, {weightUnit(unitSystem, locale)}
-            <input
-              enterKeyHint="next"
-              inputMode="decimal"
-              min="0"
-              onChange={(event) => setWeight(event.target.value)}
-              placeholder="40"
-              type="number"
-              value={weight}
-            />
-          </label>
-          <label>
-            {tr(locale, 'Повторы', 'Reps')}
-            <input
-              enterKeyHint="next"
-              inputMode="numeric"
-              min="1"
-              onChange={(event) => setReps(event.target.value)}
-              placeholder="12"
-              type="number"
-              value={reps}
-            />
-          </label>
-          <label>
-            RIR
-            <input
-              enterKeyHint="next"
-              inputMode="numeric"
-              min="0"
-              onChange={(event) => setRir(event.target.value)}
-              placeholder="1"
-              type="number"
-              value={rir}
-            />
-          </label>
+          <NumericStepper
+            decrementDisabled={weightValue !== null && weightValue <= 0}
+            incrementDisabled={weightValue !== null && weightValue >= maximumDisplayWeight}
+            inputLabel={`${tr(locale, 'Вес', 'Weight')}, ${weightUnit(unitSystem, locale)}`}
+            label={
+              <>
+                {tr(locale, 'Вес', 'Weight')}, {weightUnit(unitSystem, locale)}
+              </>
+            }
+            locale={locale}
+            maximum={maximumDisplayWeight}
+            minimum={0}
+            onChange={setWeight}
+            placeholder="40"
+            step={weightStep}
+            value={weight}
+          />
+          <NumericStepper
+            decrementDisabled={repsValue !== null && repsValue <= 1}
+            incrementDisabled={repsValue !== null && repsValue >= 100}
+            inputLabel={tr(locale, 'Повторы', 'Reps')}
+            label={tr(locale, 'Повторы', 'Reps')}
+            locale={locale}
+            maximum={100}
+            minimum={1}
+            onChange={setReps}
+            placeholder="12"
+            step={1}
+            value={reps}
+          />
+          <NumericStepper
+            decrementDisabled={rirValue !== null && rirValue <= 0}
+            incrementDisabled={rirValue !== null && rirValue >= 20}
+            inputLabel="RIR"
+            label={
+              <>
+                RIR
+                <span className="rir-help">
+                  <button
+                    aria-describedby="rir-tooltip"
+                    aria-label={tr(locale, 'Что такое RIR?', 'What is RIR?')}
+                    type="button"
+                  >
+                    ?
+                  </button>
+                  <span id="rir-tooltip" role="tooltip">
+                    {tr(
+                      locale,
+                      'RIR — сколько повторов осталось бы в запасе до отказа. 0 — ни одного, 2 — ещё примерно два.',
+                      'RIR means reps left in reserve before failure. 0 means none; 2 means about two more.',
+                    )}
+                  </span>
+                </span>
+              </>
+            }
+            locale={locale}
+            maximum={20}
+            minimum={0}
+            onChange={setRir}
+            placeholder="1"
+            step={1}
+            value={rir}
+          />
           <label className="wide">
             {tr(locale, 'Комментарий', 'Comment')}
             <input
@@ -136,15 +184,16 @@ export function SetSheet({ exercise, initial, defaults, onClose, onExplain, onSa
         <div className="set-sheet-actions">
           <button
             className="button primary full"
-            disabled={!Number.isFinite(Number(weight)) || Number(reps) < 1}
-            onClick={() =>
+            disabled={!canSave}
+            onClick={() => {
+              if (!canSave || canonicalWeightValue === null || repsValue === null) return;
               onSave({
-                weightKg: canonicalWeight(Number(weight), unitSystem),
-                reps: Number(reps),
-                rir: rir === '' ? null : Number(rir),
+                weightKg: canonicalWeightValue,
+                reps: repsValue,
+                rir: rirValue,
                 comment: comment.trim() || null,
-              })
-            }
+              });
+            }}
             type="button"
           >
             {initial
@@ -156,6 +205,66 @@ export function SetSheet({ exercise, initial, defaults, onClose, onExplain, onSa
           </button>
         </div>
       </section>
+    </div>
+  );
+}
+
+function NumericStepper({
+  decrementDisabled,
+  incrementDisabled,
+  inputLabel,
+  label,
+  locale,
+  maximum,
+  minimum,
+  onChange,
+  placeholder,
+  step,
+  value,
+}: {
+  decrementDisabled: boolean;
+  incrementDisabled: boolean;
+  inputLabel: string;
+  label: ReactNode;
+  locale: 'ru' | 'en';
+  maximum: number;
+  minimum: number;
+  onChange: (value: string) => void;
+  placeholder: string;
+  step: number;
+  value: string;
+}) {
+  return (
+    <div className="set-stepper-field">
+      <div className="set-stepper-label">{label}</div>
+      <div className="set-stepper-control">
+        <button
+          aria-label={tr(locale, `Уменьшить: ${inputLabel}`, `Decrease: ${inputLabel}`)}
+          disabled={decrementDisabled}
+          onClick={() => onChange(stepNumericInput(value, -1, step, minimum, maximum, locale))}
+          type="button"
+        >
+          −
+        </button>
+        <input
+          aria-label={inputLabel}
+          enterKeyHint="next"
+          inputMode={step % 1 === 0 ? 'numeric' : 'decimal'}
+          onChange={(event) => onChange(event.target.value)}
+          pattern={step % 1 === 0 ? '[0-9]*' : '[0-9]*[.,]?[0-9]*'}
+          placeholder={placeholder}
+          type="text"
+          value={value}
+        />
+        <button
+          aria-label={tr(locale, `Увеличить: ${inputLabel}`, `Increase: ${inputLabel}`)}
+          disabled={incrementDisabled}
+          onClick={() => onChange(stepNumericInput(value, 1, step, minimum, maximum, locale))}
+          type="button"
+        >
+          +
+        </button>
+      </div>
     </div>
   );
 }

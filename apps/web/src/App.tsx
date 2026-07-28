@@ -1450,7 +1450,11 @@ function WorkoutView({
                   <button
                     aria-label={`${tr(locale, 'Настроить упражнение', 'Exercise options')}: ${exerciseName(exercise, locale)}`}
                     className="exercise-options-trigger"
-                    onClick={() => setOptionsItemId(item.id)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setOptionsItemId(item.id);
+                    }}
+                    onPointerDown={(event) => event.stopPropagation()}
                     type="button"
                   >
                     •••
@@ -2186,9 +2190,13 @@ function ExercisePickerSheet({
                     className="button primary full"
                     disabled={normalizedQuery.length < 2}
                     onClick={() => setDiscovering(true)}
+                    onPointerDown={(event) => {
+                      event.preventDefault();
+                      setDiscovering(true);
+                    }}
                     type="button"
                   >
-                    {tr(locale, 'Найти и добавить здесь', 'Find and add here')}
+                    {tr(locale, 'Найти и добавить', 'Find and add')}
                   </button>
                 </div>
               )}
@@ -2196,6 +2204,10 @@ function ExercisePickerSheet({
                 <button
                   className="picker-discovery-link"
                   onClick={() => setDiscovering(true)}
+                  onPointerDown={(event) => {
+                    event.preventDefault();
+                    setDiscovering(true);
+                  }}
                   type="button"
                 >
                   {tr(
