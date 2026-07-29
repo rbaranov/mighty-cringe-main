@@ -6,7 +6,6 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type SyncConflict } from '../lib/db';
 import { getNotificationSettings } from '../lib/notifications';
 import { tr, updateProfilePreferences, usePreferences } from '../lib/preferences';
-import { resolveConflict } from '../lib/sync';
 import { getTrainerRelationship } from '../lib/trainer';
 import { hasAcceptedVoiceConsent, loadVoiceConfig } from '../lib/voice';
 import { PushReminderSettings } from './PushReminderSettings';
@@ -21,6 +20,7 @@ export function SettingsView({
   conflicts,
   onLogout,
   onOpenTrainer,
+  onResolveConflict,
   onUserUpdated,
   relationshipRefreshKey,
 }: {
@@ -28,6 +28,7 @@ export function SettingsView({
   conflicts: SyncConflict[];
   onLogout: () => void;
   onOpenTrainer?: () => void;
+  onResolveConflict: (conflict: SyncConflict, strategy: 'server' | 'mine') => void;
   onUserUpdated: (user: CurrentUser) => Promise<void>;
   relationshipRefreshKey: number;
 }) {
@@ -133,7 +134,9 @@ export function SettingsView({
             <TrainerRelationshipCard refreshKey={relationshipRefreshKey} />
           </>
         )}
-        {section === 'sync' && <ConflictSettings conflicts={conflicts} />}
+        {section === 'sync' && (
+          <ConflictSettings conflicts={conflicts} onResolveConflict={onResolveConflict} />
+        )}
         {section === 'account' && (
           <>
             <p className="eyebrow">{tr(locale, 'Профиль', 'Profile')}</p>
@@ -484,7 +487,13 @@ function ProfileCard({ user }: { user: CurrentUser }) {
   );
 }
 
-function ConflictSettings({ conflicts }: { conflicts: SyncConflict[] }) {
+function ConflictSettings({
+  conflicts,
+  onResolveConflict,
+}: {
+  conflicts: SyncConflict[];
+  onResolveConflict: (conflict: SyncConflict, strategy: 'server' | 'mine') => void;
+}) {
   const { locale } = usePreferences();
   return (
     <section className="conflict-panel" aria-live="polite">
@@ -509,7 +518,7 @@ function ConflictSettings({ conflicts }: { conflicts: SyncConflict[] }) {
           <div>
             <button
               className="button ghost small"
-              onClick={() => void resolveConflict(conflict.id, 'server')}
+              onClick={() => onResolveConflict(conflict, 'server')}
               type="button"
             >
               {conflict.current
@@ -519,7 +528,7 @@ function ConflictSettings({ conflicts }: { conflicts: SyncConflict[] }) {
             <button
               className="button primary small"
               disabled={!canKeepMine(conflict)}
-              onClick={() => void resolveConflict(conflict.id, 'mine')}
+              onClick={() => onResolveConflict(conflict, 'mine')}
               type="button"
             >
               {tr(locale, 'Сохранить мою', 'Keep mine')}
