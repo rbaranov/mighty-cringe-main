@@ -12,7 +12,7 @@ function exercise(
   primaryMuscles: Muscle[],
   secondaryMuscles: Muscle[],
   equipment: string[],
-  video?: { title: string; url: string },
+  video: { title: string; url: string },
 ): Exercise {
   return {
     id: `10000000-0000-4000-8000-${String(number).padStart(12, '0')}`,
@@ -24,7 +24,7 @@ function exercise(
     primaryMuscles,
     secondaryMuscles,
     equipment,
-    videos: video ? [video] : [],
+    videos: [video],
   };
 }
 
@@ -273,6 +273,10 @@ export const globalExerciseCatalog: Exercise[] = [
     ['back'],
     ['triceps', 'core'],
     ['cable machine'],
+    {
+      title: 'Техника пуловера на верхнем блоке',
+      url: 'https://www.youtube.com/watch?v=32auHIqgEoM',
+    },
   ),
   exercise(
     20,
@@ -283,6 +287,10 @@ export const globalExerciseCatalog: Exercise[] = [
     ['rear_delt'],
     ['back'],
     ['dumbbells', 'incline bench'],
+    {
+      title: 'Техника разведений гантелей на наклонной скамье',
+      url: 'https://www.youtube.com/watch?v=bMD474hAjDE',
+    },
   ),
   exercise(
     21,
@@ -293,6 +301,10 @@ export const globalExerciseCatalog: Exercise[] = [
     ['biceps'],
     [],
     ['machine'],
+    {
+      title: 'Техника сгибаний рук в тренажёре Скотта',
+      url: 'https://www.youtube.com/watch?v=R-8Sa0_qiws',
+    },
   ),
   exercise(
     22,
@@ -303,6 +315,10 @@ export const globalExerciseCatalog: Exercise[] = [
     ['rear_delt'],
     ['back', 'biceps'],
     ['cable machine', 'rope'],
+    {
+      title: 'Техника тяги канатной рукояти к лицу',
+      url: 'https://www.youtube.com/watch?v=wnPX6Fwe-Fg',
+    },
   ),
   exercise(
     23,
@@ -313,6 +329,10 @@ export const globalExerciseCatalog: Exercise[] = [
     ['back'],
     ['hamstrings', 'glutes', 'core'],
     ['roman chair'],
+    {
+      title: 'Техника гиперэкстензии на римском стуле',
+      url: 'https://www.youtube.com/watch?v=EiTg8Q4KKpg',
+    },
   ),
   exercise(
     24,
@@ -323,6 +343,10 @@ export const globalExerciseCatalog: Exercise[] = [
     ['chest'],
     ['triceps', 'front_delt'],
     ['machine'],
+    {
+      title: 'Техника жима от груди в тренажёре',
+      url: 'https://www.youtube.com/watch?v=n8TOta_pfr4',
+    },
   ),
   exercise(
     25,
@@ -337,6 +361,10 @@ export const globalExerciseCatalog: Exercise[] = [
     ['triceps'],
     [],
     ['cable machine', 'rope'],
+    {
+      title: 'Техника разгибаний рук с канатной рукоятью из-за головы',
+      url: 'https://www.youtube.com/watch?v=SLYwsE_W1eM',
+    },
   ),
   exercise(
     26,
@@ -347,6 +375,10 @@ export const globalExerciseCatalog: Exercise[] = [
     ['back'],
     ['biceps', 'rear_delt'],
     ['cable machine'],
+    {
+      title: 'Техника тяги верхнего блока обратным хватом',
+      url: 'https://www.youtube.com/watch?v=IUX3RuWsYNM',
+    },
   ),
   exercise(
     27,
@@ -357,6 +389,10 @@ export const globalExerciseCatalog: Exercise[] = [
     ['front_delt', 'middle_delt'],
     ['triceps', 'core'],
     ['dumbbells'],
+    {
+      title: 'Техника жима гантелей стоя',
+      url: 'https://www.youtube.com/watch?v=B-aVuyhvLHU',
+    },
   ),
   exercise(
     28,
@@ -367,6 +403,10 @@ export const globalExerciseCatalog: Exercise[] = [
     ['hamstrings'],
     [],
     ['machine'],
+    {
+      title: 'Техника сгибания ног лёжа в тренажёре',
+      url: 'https://www.youtube.com/watch?v=vl5nUdE9mWM',
+    },
   ),
   exercise(
     29,
@@ -377,6 +417,10 @@ export const globalExerciseCatalog: Exercise[] = [
     ['back'],
     ['biceps', 'rear_delt'],
     ['cable machine'],
+    {
+      title: 'Техника тяги одной рукой в кроссовере сидя',
+      url: 'https://www.youtube.com/watch?v=1jN6qeXdvWA',
+    },
   ),
   exercise(
     30,
@@ -387,6 +431,10 @@ export const globalExerciseCatalog: Exercise[] = [
     ['rear_delt'],
     [],
     ['cable machine'],
+    {
+      title: 'Техника отведения руки в наклоне на нижнем блоке',
+      url: 'https://www.youtube.com/watch?v=MqjrUAZRNAk',
+    },
   ),
   exercise(
     31,
@@ -397,6 +445,10 @@ export const globalExerciseCatalog: Exercise[] = [
     ['triceps'],
     [],
     ['dumbbells', 'bench'],
+    {
+      title: 'Техника французского жима с гантелями лёжа',
+      url: 'https://www.youtube.com/watch?v=ernSa92jYKc',
+    },
   ),
   exercise(
     32,
@@ -407,6 +459,10 @@ export const globalExerciseCatalog: Exercise[] = [
     ['biceps'],
     [],
     ['cable machine'],
+    {
+      title: 'Техника сгибания рук на нижнем блоке',
+      url: 'https://www.youtube.com/watch?v=2MUEL4nL6hA',
+    },
   ),
   exercise(
     33,
@@ -417,6 +473,10 @@ export const globalExerciseCatalog: Exercise[] = [
     ['quadriceps'],
     [],
     ['machine'],
+    {
+      title: 'Техника разгибания ног в тренажёре',
+      url: 'https://www.youtube.com/watch?v=swZQC689o9U',
+    },
   ),
   exercise(
     34,
@@ -427,6 +487,10 @@ export const globalExerciseCatalog: Exercise[] = [
     ['back'],
     ['biceps'],
     ['pull-up bar'],
+    {
+      title: 'Техника подтягиваний обратным хватом',
+      url: 'https://www.youtube.com/watch?v=xMhMXRi7SMY',
+    },
   ),
   exercise(
     35,
@@ -437,6 +501,10 @@ export const globalExerciseCatalog: Exercise[] = [
     ['middle_delt'],
     ['biceps'],
     ['cable machine', 'rope'],
+    {
+      title: 'Техника тяги канатной рукояти к подбородку',
+      url: 'https://www.youtube.com/watch?v=XoI1t4DqBRY',
+    },
   ),
   exercise(
     36,
@@ -447,6 +515,10 @@ export const globalExerciseCatalog: Exercise[] = [
     ['rear_delt'],
     ['back'],
     ['machine'],
+    {
+      title: 'Техника разведений в тренажёре «обратная бабочка»',
+      url: 'https://www.youtube.com/watch?v=dC7jhEk-29A',
+    },
   ),
   exercise(
     37,
@@ -457,6 +529,10 @@ export const globalExerciseCatalog: Exercise[] = [
     ['glutes'],
     [],
     ['machine'],
+    {
+      title: 'Техника отведения бёдер в тренажёре',
+      url: 'https://www.youtube.com/watch?v=Nw09BzZPyVs',
+    },
   ),
   exercise(
     38,
@@ -467,6 +543,10 @@ export const globalExerciseCatalog: Exercise[] = [
     ['adductors'],
     [],
     ['machine'],
+    {
+      title: 'Техника сведения бёдер в тренажёре',
+      url: 'https://www.youtube.com/watch?v=GmRSV_n2E_0',
+    },
   ),
   exercise(
     39,
@@ -477,6 +557,10 @@ export const globalExerciseCatalog: Exercise[] = [
     ['core'],
     [],
     ['incline bench'],
+    {
+      title: 'Техника скручиваний на наклонной скамье',
+      url: 'https://www.youtube.com/watch?v=FRzQXeN1hro',
+    },
   ),
   exercise(
     40,
@@ -487,6 +571,10 @@ export const globalExerciseCatalog: Exercise[] = [
     ['biceps'],
     [],
     ['barbell'],
+    {
+      title: 'Техника сгибания рук со штангой',
+      url: 'https://www.youtube.com/watch?v=kwG2ipFRgfo',
+    },
   ),
   exercise(
     41,
@@ -497,5 +585,9 @@ export const globalExerciseCatalog: Exercise[] = [
     ['core'],
     [],
     ['machine'],
+    {
+      title: 'Техника скручиваний в тренажёре',
+      url: 'https://www.youtube.com/watch?v=_O1xunCfYEM',
+    },
   ),
 ];
