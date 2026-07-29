@@ -85,6 +85,7 @@ import {
 import {
   applyWorkoutCommandToPlan,
   copyWorkoutPlan,
+  groupWorkoutPlanForDisplay,
   normalizeWorkoutPlan,
   toggleWorkoutGroupLink,
 } from './lib/workoutPlan';
@@ -1450,6 +1451,88 @@ function WorkoutView({
   const optionsIndex = optionsSelection
     ? plan.findIndex(({ item }) => item.id === optionsSelection.item.id)
     : -1;
+  const displayGroups = groupWorkoutPlanForDisplay(plan);
+  const displayGroupSizes = new Map(
+    displayGroups.flatMap((group) =>
+      group.supersetGroup === null ? [] : [[group.supersetGroup, group.entries.length] as const],
+    ),
+  );
+  const renderPlanEntry = ({ item, exercise }: (typeof plan)[number]) => {
+    const logged = visibleSets
+      .filter((set) => set.exerciseId === exercise.id)
+      .sort(
+        (left, right) =>
+          left.position - right.position || left.performedAt.localeCompare(right.performedAt),
+      );
+
+    return (
+      <article
+        className={[
+          'exercise-card',
+          item.supersetGroup === null ? '' : 'superset-member',
+          logged.length ? 'has-sets' : 'no-sets',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+        key={item.id}
+      >
+        <div className="exercise-card-head">
+          <button
+            className="exercise-title-button"
+            onClick={() => onOpenExercise(exercise)}
+            type="button"
+          >
+            <strong>{exerciseName(exercise, locale)}</strong>
+            <span className="exercise-card-meta">
+              <small>{muscleLabel(exercise.primaryMuscles[0], locale)}</small>
+              <Tag tag={exercise.tag} />
+              {item.supersetGroup !== null && (
+                <span className="superset-label">
+                  {workoutGroupLabel(displayGroupSizes.get(item.supersetGroup) ?? 2, locale)}{' '}
+                  {item.supersetGroup}
+                </span>
+              )}
+            </span>
+          </button>
+          <div className="exercise-card-actions">
+            <button
+              aria-label={`${tr(locale, 'Настроить упражнение', 'Exercise options')}: ${exerciseName(exercise, locale)}`}
+              className="exercise-options-trigger"
+              onClick={(event) => {
+                event.stopPropagation();
+                setOptionsItemId(item.id);
+              }}
+              onPointerDown={(event) => event.stopPropagation()}
+              type="button"
+            >
+              •••
+            </button>
+            <button className="add-set" onClick={() => onAddSet(exercise)} type="button">
+              ＋ {tr(locale, 'Подход', 'Set')}
+            </button>
+          </div>
+        </div>
+        {logged.length ? (
+          <div className="sets-line compact-set-list">
+            {logged.map((set, setIndex) => (
+              <button
+                aria-label={`${tr(locale, 'Подход', 'Set')} ${setIndex + 1}: ${formatWeight(set.weightKg, locale, unitSystem)}, ${set.reps}, RIR ${set.rir ?? '—'}`}
+                className={set.syncState === 'conflict' ? 'set-chip conflict' : 'set-chip'}
+                key={set.id}
+                onClick={() => onEditSet(exercise, set)}
+                type="button"
+              >
+                {setIndex + 1}. {formatWeight(set.weightKg, locale, unitSystem)} × {set.reps}
+                {set.rir === null ? '' : ` · R${set.rir}`}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="sets-line muted">{tr(locale, 'Ещё нет подходов', 'No sets yet')}</p>
+        )}
+      </article>
+    );
+  };
 
   return (
     <section
@@ -1527,86 +1610,17 @@ function WorkoutView({
         </div>
       )}
       <div className="exercise-list">
-        {plan.map(({ item, exercise }, index) => {
-          const logged = visibleSets
-            .filter((set) => set.exerciseId === exercise.id)
-            .sort(
-              (left, right) =>
-                left.position - right.position || left.performedAt.localeCompare(right.performedAt),
-            );
-          const linkedWithNext =
-            item.supersetGroup !== null &&
-            item.supersetGroup === plan[index + 1]?.item.supersetGroup;
-          const groupSize =
-            item.supersetGroup === null
-              ? 0
-              : plan.filter(({ item: candidate }) => candidate.supersetGroup === item.supersetGroup)
-                  .length;
+        {displayGroups.map((group) => {
+          if (group.supersetGroup === null) return renderPlanEntry(group.entries[0]);
+          const groupLabel = `${workoutGroupLabel(group.entries.length, locale)} ${group.supersetGroup}`;
           return (
-            <article
-              className={[
-                'exercise-card',
-                item.supersetGroup === null ? '' : 'superset',
-                logged.length ? 'has-sets' : 'no-sets',
-              ]
-                .filter(Boolean)
-                .join(' ')}
-              key={item.id}
+            <section
+              aria-label={groupLabel}
+              className="superset-cluster"
+              key={`superset-${group.supersetGroup}`}
             >
-              <div className="exercise-card-head">
-                <button
-                  className="exercise-title-button"
-                  onClick={() => onOpenExercise(exercise)}
-                  type="button"
-                >
-                  <strong>{exerciseName(exercise, locale)}</strong>
-                  <span className="exercise-card-meta">
-                    <small>{muscleLabel(exercise.primaryMuscles[0], locale)}</small>
-                    <Tag tag={exercise.tag} />
-                    {item.supersetGroup !== null && (
-                      <span className="superset-label">
-                        {workoutGroupLabel(groupSize, locale)} {item.supersetGroup}
-                      </span>
-                    )}
-                  </span>
-                </button>
-                <div className="exercise-card-actions">
-                  <button
-                    aria-label={`${tr(locale, 'Настроить упражнение', 'Exercise options')}: ${exerciseName(exercise, locale)}`}
-                    className="exercise-options-trigger"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      setOptionsItemId(item.id);
-                    }}
-                    onPointerDown={(event) => event.stopPropagation()}
-                    type="button"
-                  >
-                    •••
-                  </button>
-                  <button className="add-set" onClick={() => onAddSet(exercise)} type="button">
-                    ＋ {tr(locale, 'Подход', 'Set')}
-                  </button>
-                </div>
-              </div>
-              {logged.length ? (
-                <div className="sets-line compact-set-list">
-                  {logged.map((set, setIndex) => (
-                    <button
-                      aria-label={`${tr(locale, 'Подход', 'Set')} ${setIndex + 1}: ${formatWeight(set.weightKg, locale, unitSystem)}, ${set.reps}, RIR ${set.rir ?? '—'}`}
-                      className={set.syncState === 'conflict' ? 'set-chip conflict' : 'set-chip'}
-                      key={set.id}
-                      onClick={() => onEditSet(exercise, set)}
-                      type="button"
-                    >
-                      {setIndex + 1}. {formatWeight(set.weightKg, locale, unitSystem)} × {set.reps}
-                      {set.rir === null ? '' : ` · R${set.rir}`}
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <p className="sets-line muted">{tr(locale, 'Ещё нет подходов', 'No sets yet')}</p>
-              )}
-            </article>
+              <div className="superset-cluster-items">{group.entries.map(renderPlanEntry)}</div>
+            </section>
           );
         })}
         {!plan.length && (
@@ -2110,7 +2124,14 @@ function ExerciseDetailView({
       </section>
 
       {canAddSet && (
-        <div className="exercise-detail-actions">
+        <div
+          aria-label={tr(locale, 'Действия в текущей тренировке', 'Current workout actions')}
+          className="exercise-detail-actions"
+          role="group"
+        >
+          <span className="exercise-detail-actions-label">
+            {tr(locale, 'В текущей тренировке', 'In this workout')}
+          </span>
           <button className="button ghost" onClick={onReplaceExercise} type="button">
             ↻ {tr(locale, 'Заменить', 'Replace')}
           </button>

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { WorkoutExercise } from '@mighty-cringe/contracts';
 
-import { copyWorkoutPlan, toggleWorkoutGroupLink } from './workoutPlan';
+import { copyWorkoutPlan, groupWorkoutPlanForDisplay, toggleWorkoutGroupLink } from './workoutPlan';
 
 function item(position: number, group: number | null): WorkoutExercise {
   return {
@@ -14,6 +14,30 @@ function item(position: number, group: number | null): WorkoutExercise {
 }
 
 describe('workout groups', () => {
+  it('builds distinct display blocks for standalone exercises and one block per linked group', () => {
+    const plan = [
+      item(0, null),
+      item(1, 1),
+      item(2, 1),
+      item(3, 2),
+      item(4, 2),
+      item(5, 2),
+      item(6, null),
+    ].map((entry) => ({ item: entry, label: `Exercise ${entry.position + 1}` }));
+
+    expect(
+      groupWorkoutPlanForDisplay(plan).map((group) => ({
+        supersetGroup: group.supersetGroup,
+        labels: group.entries.map((entry) => entry.label),
+      })),
+    ).toEqual([
+      { supersetGroup: null, labels: ['Exercise 1'] },
+      { supersetGroup: 1, labels: ['Exercise 2', 'Exercise 3'] },
+      { supersetGroup: 2, labels: ['Exercise 4', 'Exercise 5', 'Exercise 6'] },
+      { supersetGroup: null, labels: ['Exercise 7'] },
+    ]);
+  });
+
   it('copies the ordered plan with new item ids and preserved group boundaries', () => {
     const ids = ['30000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000002'];
     const copied = copyWorkoutPlan([item(1, 7), item(0, 7)], () => ids.shift()!);

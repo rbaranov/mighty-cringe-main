@@ -2,6 +2,33 @@ import type { WorkoutExercise } from '@mighty-cringe/contracts';
 
 import type { NaturalWorkoutCommand } from './naturalWorkoutCommand';
 
+export type WorkoutPlanDisplayGroup<T> = {
+  supersetGroup: number | null;
+  entries: T[];
+};
+
+export function groupWorkoutPlanForDisplay<
+  T extends { item: Pick<WorkoutExercise, 'supersetGroup'> },
+>(entries: T[]): WorkoutPlanDisplayGroup<T>[] {
+  const groups: WorkoutPlanDisplayGroup<T>[] = [];
+
+  for (const entry of entries) {
+    const supersetGroup = entry.item.supersetGroup;
+    const previous = groups.at(-1);
+    if (
+      supersetGroup === null ||
+      previous === undefined ||
+      previous.supersetGroup !== supersetGroup
+    ) {
+      groups.push({ supersetGroup, entries: [entry] });
+      continue;
+    }
+    previous.entries.push(entry);
+  }
+
+  return groups;
+}
+
 export function copyWorkoutPlan(
   plan: WorkoutExercise[],
   createId: () => string = () => crypto.randomUUID(),

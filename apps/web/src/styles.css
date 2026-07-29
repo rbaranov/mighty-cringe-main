@@ -6154,3 +6154,70 @@ body {
   transform: translate(-50%, 0);
   visibility: visible;
 }
+
+/* Active workout: actions stay in flow and linked exercises read as one visual unit. */
+.workout-live .superset-cluster {
+  position: relative;
+  display: grid;
+  padding-left: 13px;
+}
+
+.workout-live .superset-cluster::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 4px;
+  border-radius: 999px;
+  background: var(--accent);
+  content: '';
+}
+
+.superset-cluster-items {
+  display: grid;
+  gap: 3px;
+}
+
+.workout-live .exercise-card.superset-member {
+  border-left: 1.5px solid var(--ink);
+}
+
+.exercise-detail-screen > .exercise-detail-actions {
+  order: 3;
+}
+
+.exercise-detail-screen > .exercise-detail-section {
+  order: 5;
+}
+
+.exercise-detail-screen > .technique-section {
+  order: 4;
+}
+
+.exercise-detail-actions {
+  position: static;
+  z-index: auto;
+  bottom: auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  margin: 18px 0 0;
+  padding: 10px;
+  border: 1.5px solid var(--ink);
+  border-radius: 2px;
+  background: var(--surface-soft);
+  box-shadow: none;
+}
+
+.exercise-detail-actions-label {
+  grid-column: 1 / -1;
+  color: var(--accent-deep);
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.exercise-detail-actions .button {
+  min-width: 0;
+  min-height: 48px;
+  padding-inline: 10px;
+}
