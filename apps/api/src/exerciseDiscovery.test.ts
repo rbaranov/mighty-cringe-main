@@ -38,33 +38,49 @@ test('OpenRouter discovery keeps only web-cited sources and cited YouTube videos
     'secret',
     'provider/model',
     async (_input, init) => {
-      requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      const request = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      requests.push(request);
+      const messages = request.messages as Array<{ content: string }>;
+      const structured = request.response_format !== undefined;
+      const videoSearch = messages[0].content.includes('dedicated video-research');
       return new Response(
         JSON.stringify({
           choices: [
             {
               message: {
-                content:
-                  requests.length === 1
-                    ? 'Grounded exercise research with citations.'
-                    : JSON.stringify({ candidates: [candidate] }),
-                annotations: [
-                  {
-                    type: 'url_citation',
-                    url_citation: { url: 'https://example.test/row', title: 'Verified row source' },
-                  },
-                  {
-                    type: 'url_citation',
-                    url_citation: {
-                      url: 'https://www.youtube.com/watch?v=abc123DEF45',
-                      title: 'Verified technique video',
-                    },
-                  },
-                  {
-                    type: 'url_citation',
-                    url_citation: { url: 'https://example.test/not-video', title: 'Article' },
-                  },
-                ],
+                content: structured
+                  ? JSON.stringify({ candidates: [candidate] })
+                  : videoSearch
+                    ? 'Grounded technique video research.'
+                    : 'Grounded exercise research with citations.',
+                annotations: structured
+                  ? []
+                  : videoSearch
+                    ? [
+                        {
+                          type: 'url_citation',
+                          url_citation: {
+                            url: 'https://www.youtube.com/watch?v=abc123DEF45',
+                            title: 'Verified technique video',
+                          },
+                        },
+                      ]
+                    : [
+                        {
+                          type: 'url_citation',
+                          url_citation: {
+                            url: 'https://example.test/row',
+                            title: 'Verified row source',
+                          },
+                        },
+                        {
+                          type: 'url_citation',
+                          url_citation: {
+                            url: 'https://example.test/not-video',
+                            title: 'Article',
+                          },
+                        },
+                      ],
               },
             },
           ],
@@ -84,23 +100,43 @@ test('OpenRouter discovery keeps only web-cited sources and cited YouTube videos
     { title: 'Technique', url: 'https://www.youtube.com/watch?v=abc123DEF45' },
   ]);
   assert.ok(result.candidates[0].aliases.includes('тяга арни'));
-  assert.equal(requests.length, 2);
-  assert.deepEqual(requests[0].provider, { zdr: true });
-  assert.deepEqual(requests[0].tools, [
+  assert.equal(requests.length, 3);
+  const researchRequest = requests.find(
+    (request) =>
+      request.response_format === undefined &&
+      !(request.messages as Array<{ content: string }>)[0].content.includes(
+        'dedicated video-research',
+      ),
+  );
+  const videoRequest = requests.find((request) =>
+    (request.messages as Array<{ content: string }>)[0].content.includes(
+      'dedicated video-research',
+    ),
+  );
+  const structuredRequest = requests.find((request) => request.response_format !== undefined);
+  assert.deepEqual(researchRequest?.provider, { zdr: true });
+  assert.deepEqual(researchRequest?.tools, [
     {
       type: 'openrouter:web_search',
       parameters: { engine: 'exa', max_results: 5 },
     },
   ]);
-  assert.equal(requests[0].response_format, undefined);
-  assert.deepEqual(requests[1].provider, { zdr: true, require_parameters: true });
-  assert.equal(requests[1].tools, undefined);
+  assert.deepEqual(videoRequest?.tools, [
+    {
+      type: 'openrouter:web_search',
+      parameters: { engine: 'exa', max_results: 8 },
+    },
+  ]);
+  assert.deepEqual(structuredRequest?.provider, { zdr: true, require_parameters: true });
+  assert.equal(structuredRequest?.tools, undefined);
   assert.equal(
-    (requests[1].response_format as { json_schema?: { strict?: boolean } }).json_schema?.strict,
+    (structuredRequest?.response_format as { json_schema?: { strict?: boolean } }).json_schema
+      ?.strict,
     true,
   );
-  const evidenceRequest = requests[1].messages as Array<{ content: string }>;
+  const evidenceRequest = structuredRequest?.messages as Array<{ content: string }>;
   assert.match(evidenceRequest[1].content, /https:\/\/example\.test\/row/u);
+  assert.match(evidenceRequest[1].content, /https:\/\/www\.youtube\.com\/watch/u);
   assert.doesNotMatch(evidenceRequest[1].content, /invented\.example/u);
 });
 
@@ -114,7 +150,48 @@ test('does not synthesize a candidate when web search returns no citations', asy
   const result = await discovery.discover('unknown movement', 'en');
 
   assert.deepEqual(result, { query: 'unknown movement', candidates: [] });
-  assert.equal(requests, 1);
+  assert.equal(requests, 2);
+});
+
+test('does not offer a discovered exercise without a cited YouTube video', async () => {
+  const discovery = new OpenRouterExerciseDiscovery(
+    'secret',
+    'provider/model',
+    async (_input, init) => {
+      const request = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      const messages = request.messages as Array<{ content: string }>;
+      if (request.response_format !== undefined) {
+        return Response.json({
+          choices: [{ message: { content: JSON.stringify({ candidates: [candidate] }) } }],
+        });
+      }
+      const videoSearch = messages[0].content.includes('dedicated video-research');
+      return Response.json({
+        choices: [
+          {
+            message: {
+              content: videoSearch ? 'No direct video found.' : 'Grounded exercise research.',
+              annotations: [
+                {
+                  type: 'url_citation',
+                  url_citation: {
+                    url: videoSearch
+                      ? 'https://example.test/video-roundup'
+                      : 'https://example.test/row',
+                    title: videoSearch ? 'Video roundup' : 'Verified row source',
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      });
+    },
+  );
+
+  const result = await discovery.discover('тяга арни', 'ru');
+
+  assert.deepEqual(result, { query: 'тяга арни', candidates: [] });
 });
 
 test('environment enables exercise discovery only with a key and model', () => {
@@ -171,6 +248,7 @@ test('API discovers, confirms and stores an exercise in the current user catalog
   });
   assert.equal(created.statusCode, 201);
   assert.equal(created.json().exercise.scope, 'user');
+  assert.deepEqual(created.json().exercise.videos, candidate.videos);
 
   const ambiguous = await app.inject({
     method: 'POST',

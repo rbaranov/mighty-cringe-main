@@ -6153,6 +6153,25 @@ body {
   margin-top: 18px;
 }
 
+.keyboard-aware-sheet-backdrop {
+  max-height: 100dvh;
+}
+
+.keyboard-aware-sheet-backdrop .set-sheet {
+  max-height: 100%;
+  scroll-padding-block: 16px calc(190px + env(safe-area-inset-bottom));
+}
+
+.set-sheet-actions {
+  position: sticky;
+  z-index: 5;
+  bottom: 0;
+  padding-top: 10px;
+  border-top: 1.5px solid var(--ink);
+  background: var(--canvas);
+  box-shadow: 0 -10px 18px var(--canvas);
+}
+
 .set-stepper-field {
   display: grid;
   width: min(100%, 340px);

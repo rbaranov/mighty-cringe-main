@@ -188,11 +188,15 @@ export function resolvedMeasurementValue(
   const latestFirst = orderedMeasurements(measurements).reverse();
   const heightCm =
     measurement.values.heightCm ??
-    latestFirst.find((candidate) => candidate.values.heightCm !== null)?.values.heightCm ??
+    latestFirst
+      .map((candidate) => candidate.values.heightCm)
+      .find((value): value is number => typeof value === 'number') ??
     null;
   const rfmSex =
     measurement.values.rfmSex ??
-    latestFirst.find((candidate) => candidate.values.rfmSex !== null)?.values.rfmSex ??
+    latestFirst
+      .map((candidate) => candidate.values.rfmSex)
+      .find((value): value is RfmSex => value === 'male' || value === 'female') ??
     null;
   const waistCm = measurement.values.waistCm ?? null;
   if (heightCm === null || waistCm === null || rfmSex === null) {
@@ -208,6 +212,15 @@ export function resolvedMeasurementValue(
     source: 'rfm-estimate',
     rfmSex,
   };
+}
+
+export function latestSpecifiedRfmSex(measurements: LocalMeasurement[]): RfmSex | null {
+  return (
+    orderedMeasurements(measurements)
+      .reverse()
+      .map((measurement) => measurement.values.rfmSex)
+      .find((value): value is RfmSex => value === 'male' || value === 'female') ?? null
+  );
 }
 
 export function parseMeasurementCsv(

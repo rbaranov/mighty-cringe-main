@@ -202,6 +202,7 @@ function AuthenticatedAppContent({
   const [explainContext, setExplainContext] = useState<{ exercise: Exercise | null } | null>(null);
   const [editingWorkoutId, setEditingWorkoutId] = useState<string | null>(null);
   const finishingWorkoutId = useRef<string | null>(null);
+  const savingSet = useRef(false);
   const [inviteNotice, setInviteNotice] = useState<string | null>(null);
   const [relationshipRefreshKey, setRelationshipRefreshKey] = useState(0);
   const inviteHandled = useRef(false);
@@ -453,25 +454,35 @@ function AuthenticatedAppContent({
     comment: string | null;
   }) {
     if (!workoutContext || !sheet) return;
-    if (sheet.set) {
-      await db.sets.update(sheet.set.id, { ...input, syncState: 'pending' });
-      await queueMutation({
-        type: 'set.update',
-        payload: {
-          clientMutationId: crypto.randomUUID(),
-          workoutId: workoutContext.id,
-          setId: sheet.set.id,
-          baseRevision: sheet.set.revision,
-          changes: input,
-        },
-      });
-      setSheet(null);
-      await flushOutbox();
-      return;
-    }
-
-    await createSet(sheet.exercise, input);
+    if (savingSet.current) return;
+    const activeSheet = sheet;
+    const activeWorkout = workoutContext;
+    savingSet.current = true;
     setSheet(null);
+    try {
+      if (activeSheet.set) {
+        await db.sets.update(activeSheet.set.id, { ...input, syncState: 'pending' });
+        await queueMutation({
+          type: 'set.update',
+          payload: {
+            clientMutationId: crypto.randomUUID(),
+            workoutId: activeWorkout.id,
+            setId: activeSheet.set.id,
+            baseRevision: activeSheet.set.revision,
+            changes: input,
+          },
+        });
+        await flushOutbox();
+        return;
+      }
+
+      await createSet(activeSheet.exercise, input);
+    } catch (error) {
+      setSheet(activeSheet);
+      throw error;
+    } finally {
+      savingSet.current = false;
+    }
   }
 
   async function createSet(
@@ -1246,6 +1257,13 @@ function AuthenticatedAppContent({
         exercise={sheet?.exercise ?? null}
         initial={sheet?.set ?? null}
         onClose={() => setSheet(null)}
+        onDelete={
+          sheet?.set
+            ? () => {
+                requestDeleteSet(sheet.set!);
+              }
+            : null
+        }
         onExplain={() => {
           if (!sheet) return;
           setExplainContext({ exercise: sheet.exercise });
@@ -2471,6 +2489,7 @@ function ExercisePickerSheet({
                           disabled={choosingExerciseId !== null}
                           key={exercise.id}
                           onClick={() => chooseOnce(exercise)}
+                          onMouseDown={(event) => event.preventDefault()}
                           type="button"
                         >
                           <span className="picker-option-copy">
