@@ -340,7 +340,7 @@ function extractComment(original: string, normalized: string, phrases: string[])
   }
   remainder = remainder
     .replace(
-      /(?:^|\s)(?:слушай|запиши|записать|добавь|добавить|подход|я|делаю|сделал|сделала|вес|кг|килограмм(?:а|ов)?|please|log|set)(?=\s|$)/g,
+      /(?:^|\s)(?:слушай|запиши|записать|добавь|добавить|подход|я|делаю|сделал|сделала|вес|кг|килограмм(?:а|ов)?|раз(?:а|ов)?|повтор(?:а|ов)?|reps?|please|log|set)(?=\s|$)/g,
       ' ',
     )
     .replace(/\|/g, ' ')
@@ -348,6 +348,7 @@ function extractComment(original: string, normalized: string, phrases: string[])
     .trim()
     .replace(/^(?:и|а|с|это)\s+/, '')
     .trim();
+  if (/^(?:в|во)$/.test(remainder)) return null;
   return remainder || null;
 }
 

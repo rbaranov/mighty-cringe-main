@@ -115,6 +115,36 @@ describe('body measurement history', () => {
     });
   });
 
+  it('skips undefined legacy fields while inheriting height and sex for RFM', () => {
+    const reference = {
+      ...older,
+      values: { ...older.values, heightCm: 180, rfmSex: 'male' as const },
+    };
+    const legacy = {
+      ...newer,
+      id: 'legacy',
+      values: {
+        ...newer.values,
+        heightCm: undefined,
+        rfmSex: undefined,
+      } as unknown as LocalMeasurement['values'],
+    };
+    const target = {
+      ...newer,
+      id: 'target',
+      measuredOn: '2027-01-22T06:00:00.000Z',
+      values: { ...newer.values, heightCm: null, rfmSex: null },
+    };
+
+    expect(resolvedMeasurementValue(target, 'bodyFatPercent', [reference, legacy, target])).toEqual(
+      {
+        value: 23.3,
+        source: 'rfm-estimate',
+        rfmSex: 'male',
+      },
+    );
+  });
+
   it('imports semicolon CSV with Russian headers, decimal commas and historic dates', () => {
     const result = parseMeasurementCsv(
       [

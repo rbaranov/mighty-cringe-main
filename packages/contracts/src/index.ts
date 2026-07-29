@@ -141,6 +141,7 @@ export const exerciseDiscoveryQuerySchema = z.object({
 
 export const exerciseDiscoveryCandidateSchema = exerciseDetailsSchema
   .extend({
+    videos: z.array(exerciseLinkSchema).min(1).max(5),
     confidence: z.enum(['high', 'medium', 'low']),
     matchReason: z.string().trim().min(1).max(500),
   })

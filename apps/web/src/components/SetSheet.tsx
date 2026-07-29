@@ -1,4 +1,12 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+  type Ref,
+  type RefObject,
+} from 'react';
 
 import type { Exercise } from '@mighty-cringe/contracts';
 
@@ -23,23 +31,39 @@ type Props = {
   initial: LocalSet | null;
   defaults: LocalSet | null;
   onClose: () => void;
+  onDelete: (() => void) | null;
   onExplain: () => void;
   onSave: (input: {
     weightKg: number;
     reps: number;
     rir: number | null;
     comment: string | null;
-  }) => void;
+  }) => void | Promise<void>;
 };
 
 export const setWeightStep = 1;
 
-export function SetSheet({ exercise, initial, defaults, onClose, onExplain, onSave }: Props) {
+export function SetSheet({
+  exercise,
+  initial,
+  defaults,
+  onClose,
+  onDelete,
+  onExplain,
+  onSave,
+}: Props) {
   const { locale, unitSystem } = usePreferences();
   const [weight, setWeight] = useState('');
   const [reps, setReps] = useState('');
   const [rir, setRir] = useState('');
   const [comment, setComment] = useState('');
+  const [saving, setSaving] = useState(false);
+  const sheetRef = useRef<HTMLElement>(null);
+  const weightRef = useRef<HTMLInputElement>(null);
+  const repsRef = useRef<HTMLInputElement>(null);
+  const rirRef = useRef<HTMLInputElement>(null);
+  const commentRef = useRef<HTMLInputElement>(null);
+  const viewportStyle = useKeyboardViewport(Boolean(exercise), sheetRef);
   const maximumDisplayWeight = displayWeight(1000, unitSystem);
   const weightValue = parseDecimalInput(weight);
   const repsValue = parseIntegerInput(reps);
@@ -61,6 +85,7 @@ export function SetSheet({ exercise, initial, defaults, onClose, onExplain, onSa
     setReps(source ? String(source.reps) : '');
     setRir(source?.rir === null || source?.rir === undefined ? '' : String(source.rir));
     setComment(initial?.comment ?? '');
+    setSaving(false);
   }, [
     exercise?.id,
     initial?.id,
@@ -83,9 +108,28 @@ export function SetSheet({ exercise, initial, defaults, onClose, onExplain, onSa
 
   if (!exercise) return null;
 
+  function save() {
+    if (saving || !canSave || canonicalWeightValue === null || repsValue === null) return;
+    setSaving(true);
+    void Promise.resolve(
+      onSave({
+        weightKg: canonicalWeightValue,
+        reps: repsValue,
+        rir: rirValue,
+        comment: comment.trim() || null,
+      }),
+    ).catch(() => setSaving(false));
+  }
+
   return (
-    <div className="sheet-backdrop" role="presentation" onMouseDown={onClose}>
+    <div
+      className="sheet-backdrop keyboard-aware-sheet-backdrop"
+      role="presentation"
+      style={viewportStyle}
+      onMouseDown={onClose}
+    >
       <section
+        ref={sheetRef}
         className="sheet set-sheet"
         aria-modal="true"
         aria-label={`${initial ? tr(locale, 'Изменить', 'Edit') : tr(locale, 'Новый', 'New')} ${tr(locale, 'подход', 'set')}: ${exerciseName(exercise, locale)}`}
@@ -122,7 +166,9 @@ export function SetSheet({ exercise, initial, defaults, onClose, onExplain, onSa
             maximum={maximumDisplayWeight}
             minimum={0}
             onChange={setWeight}
+            onEnter={() => focusAndReveal(repsRef)}
             placeholder="40"
+            inputRef={weightRef}
             step={setWeightStep}
             value={weight}
           />
@@ -135,7 +181,9 @@ export function SetSheet({ exercise, initial, defaults, onClose, onExplain, onSa
             maximum={100}
             minimum={1}
             onChange={setReps}
+            onEnter={() => focusAndReveal(rirRef)}
             placeholder="12"
+            inputRef={repsRef}
             step={1}
             value={reps}
           />
@@ -168,7 +216,9 @@ export function SetSheet({ exercise, initial, defaults, onClose, onExplain, onSa
             maximum={20}
             minimum={0}
             onChange={setRir}
+            onEnter={() => focusAndReveal(commentRef)}
             placeholder="1"
+            inputRef={rirRef}
             step={1}
             value={rir}
           />
@@ -178,7 +228,14 @@ export function SetSheet({ exercise, initial, defaults, onClose, onExplain, onSa
               enterKeyHint="done"
               maxLength={1000}
               onChange={(event) => setComment(event.target.value)}
+              onFocus={(event) => revealInput(event.currentTarget)}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter') return;
+                event.preventDefault();
+                save();
+              }}
               placeholder={tr(locale, 'Как ощущалось?', 'How did it feel?')}
+              ref={commentRef}
               value={comment}
             />
           </label>
@@ -186,23 +243,27 @@ export function SetSheet({ exercise, initial, defaults, onClose, onExplain, onSa
         <div className="set-sheet-actions">
           <button
             className="button primary full"
-            disabled={!canSave}
-            onClick={() => {
-              if (!canSave || canonicalWeightValue === null || repsValue === null) return;
-              onSave({
-                weightKg: canonicalWeightValue,
-                reps: repsValue,
-                rir: rirValue,
-                comment: comment.trim() || null,
-              });
-            }}
+            disabled={!canSave || saving}
+            onClick={save}
             type="button"
           >
-            {initial
-              ? tr(locale, 'Сохранить изменения', 'Save changes')
-              : tr(locale, 'Сохранить подход', 'Save set')}
+            {saving
+              ? tr(locale, 'Сохраняю…', 'Saving…')
+              : initial
+                ? tr(locale, 'Сохранить изменения', 'Save changes')
+                : tr(locale, 'Сохранить подход', 'Save set')}
           </button>
-          <button className="button ghost full" onClick={onClose} type="button">
+          {initial && onDelete && (
+            <button
+              className="button danger full"
+              disabled={saving}
+              onClick={onDelete}
+              type="button"
+            >
+              {tr(locale, 'Удалить подход', 'Delete set')}
+            </button>
+          )}
+          <button className="button ghost full" disabled={saving} onClick={onClose} type="button">
             {tr(locale, 'Отмена', 'Cancel')}
           </button>
         </div>
@@ -221,7 +282,9 @@ function NumericStepper({
   maximum,
   minimum,
   onChange,
+  onEnter,
   placeholder,
+  inputRef,
   step,
   value,
 }: {
@@ -234,7 +297,9 @@ function NumericStepper({
   maximum: number;
   minimum: number;
   onChange: (value: string) => void;
+  onEnter: () => void;
   placeholder: string;
+  inputRef: Ref<HTMLInputElement>;
   step: number;
   value: string;
 }) {
@@ -255,8 +320,15 @@ function NumericStepper({
           enterKeyHint="next"
           inputMode={allowDecimal ? 'decimal' : 'numeric'}
           onChange={(event) => onChange(event.target.value)}
+          onFocus={(event) => revealInput(event.currentTarget)}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter') return;
+            event.preventDefault();
+            onEnter();
+          }}
           pattern={allowDecimal ? '[0-9]*[.,]?[0-9]*' : '[0-9]*'}
           placeholder={placeholder}
+          ref={inputRef}
           type="text"
           value={value}
         />
@@ -271,4 +343,54 @@ function NumericStepper({
       </div>
     </div>
   );
+}
+
+function focusAndReveal(ref: RefObject<HTMLInputElement | null>) {
+  const input = ref.current;
+  if (!input) return;
+  input.focus({ preventScroll: true });
+  revealInput(input);
+}
+
+function revealInput(input: HTMLElement) {
+  window.requestAnimationFrame(() => {
+    input.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  });
+}
+
+function useKeyboardViewport(
+  active: boolean,
+  sheetRef: RefObject<HTMLElement | null>,
+): CSSProperties | undefined {
+  const [style, setStyle] = useState<CSSProperties>();
+
+  useEffect(() => {
+    if (!active || !window.visualViewport) {
+      setStyle(undefined);
+      return;
+    }
+    const viewport = window.visualViewport;
+    const sync = () => {
+      setStyle({
+        top: `${viewport.offsetTop}px`,
+        bottom: 'auto',
+        height: `${viewport.height}px`,
+      });
+      window.requestAnimationFrame(() => {
+        const focused = document.activeElement;
+        if (focused instanceof HTMLElement && sheetRef.current?.contains(focused)) {
+          focused.scrollIntoView({ block: 'center' });
+        }
+      });
+    };
+    sync();
+    viewport.addEventListener('resize', sync);
+    viewport.addEventListener('scroll', sync);
+    return () => {
+      viewport.removeEventListener('resize', sync);
+      viewport.removeEventListener('scroll', sync);
+    };
+  }, [active, sheetRef]);
+
+  return style;
 }

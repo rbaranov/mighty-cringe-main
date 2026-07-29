@@ -38,6 +38,19 @@ describe('natural set parsing', () => {
     });
   });
 
+  it('parses the reported conversational add-set command after workout commands decline it', () => {
+    expect(
+      parseNaturalSet({
+        text: 'Добавь подход в жим штанги лежа 80 кг на 3 раза.',
+        catalog: fallbackCatalog,
+      }),
+    ).toMatchObject({
+      status: 'ready',
+      exercise: { nameRu: 'Жим штанги лёжа на горизонтальной скамье' },
+      draft: { weightKg: 80, reps: 3, comment: null },
+    });
+  });
+
   it.each([
     ['40 х 20 х 0', 40, 20, 0],
     ['40x20x0', 40, 20, 0],

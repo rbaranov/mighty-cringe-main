@@ -124,8 +124,8 @@ export function ExerciseDiscoveryPanel({
       <p className="discovery-hint">
         {tr(
           locale,
-          'Поиск проверяет веб-источники. Упражнение попадёт только в твой каталог и только после подтверждения.',
-          'Search checks web sources. The exercise is added only to your catalog and only after confirmation.',
+          'Поиск отдельно проверяет источники и прямое видео с техникой. Упражнение попадёт только в твой каталог и только после подтверждения.',
+          'Search separately verifies sources and a direct technique video. The exercise is added only to your catalog and only after confirmation.',
         )}
       </p>
 
@@ -147,8 +147,8 @@ export function ExerciseDiscoveryPanel({
         <p className="clarification compact" role="status">
           {tr(
             locale,
-            'Надёжных совпадений не найдено. Уточни название или опиши движение и оборудование.',
-            'No reliable match was found. Refine the name or describe the movement and equipment.',
+            'Надёжных совпадений с проверенным видео не найдено. Уточни название или опиши движение и оборудование.',
+            'No reliable match with a verified video was found. Refine the name or describe the movement and equipment.',
           )}
         </p>
       )}

@@ -249,9 +249,11 @@ function parseIntent(text: string): ParsedIntent | null {
       value,
     );
   if (match) {
+    const target = match[1].trim();
+    if (/^(?:подход|сет|set)(?:\s|$)/iu.test(target)) return null;
     return {
       type: 'add',
-      target: match[1].trim(),
+      target,
       placement: /^(?:перед|before)$/iu.test(match[2] ?? '') ? 'before' : 'after',
       anchor: match[3]?.trim() ?? null,
     };

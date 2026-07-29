@@ -187,6 +187,26 @@ export class MightyCringeDatabase extends Dexie {
             set.entrySource ??= 'manual';
           });
       });
+    this.version(8)
+      .stores({
+        workouts: 'id, startedAt, syncState',
+        sets: 'id, workoutId, exerciseId, performedAt, position, syncState, deleted',
+        exercises: 'id, *primaryMuscles',
+        measurements: 'id, measuredOn, syncState, deleted',
+        voiceEntries: 'id, workoutId, status, createdAt, nextAttemptAt',
+        outbox: 'id, sequence, createdAt',
+        conflicts: 'id, entityType, entityId, createdAt',
+        meta: 'key',
+      })
+      .upgrade(async (transaction) => {
+        await transaction
+          .table('measurements')
+          .toCollection()
+          .modify((measurement) => {
+            measurement.values.bodyFatPercent ??= null;
+            measurement.values.rfmSex ??= null;
+          });
+      });
   }
 }
 

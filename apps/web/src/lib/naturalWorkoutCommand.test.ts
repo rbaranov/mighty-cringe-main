@@ -268,4 +268,14 @@ describe('natural workout commands', () => {
       }),
     ).toEqual({ status: 'not_command' });
   });
+
+  it('does not treat an explicit add-set phrase as adding an exercise', () => {
+    expect(
+      parseNaturalWorkoutCommand({
+        text: 'Добавь подход в жим штанги лежа 80 кг на 3 раза.',
+        catalog: fallbackCatalog,
+        plan,
+      }),
+    ).toEqual({ status: 'not_command' });
+  });
 });

@@ -5,6 +5,7 @@ import type { MeasurementValues, RfmSex } from '@mighty-cringe/contracts';
 
 import type { LocalMeasurement } from '../lib/db';
 import {
+  latestSpecifiedRfmSex,
   measurementDefinitions,
   measurementDelta,
   measurementTrend,
@@ -583,10 +584,9 @@ function MeasurementSheet({
     );
   }, [initial, timeZone, today, unitSystem]);
 
-  const inheritedRfmSex =
-    orderedMeasurements(existing.filter((measurement) => measurement.id !== initial?.id))
-      .reverse()
-      .find((measurement) => measurement.values.rfmSex !== null)?.values.rfmSex ?? null;
+  const inheritedRfmSex = latestSpecifiedRfmSex(
+    existing.filter((measurement) => measurement.id !== initial?.id),
+  );
   const parsedValues = parseValues(values, rfmSex, unitSystem);
   const invalid = parsedValues === null;
   const duplicateDate = existing.some(
