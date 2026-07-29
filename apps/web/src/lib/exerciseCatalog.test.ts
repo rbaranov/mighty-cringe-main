@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import { globalExerciseCatalog } from '@mighty-cringe/contracts';
 
-import { collapseExerciseCatalogDuplicates, filterExerciseCatalog } from './exerciseCatalog';
+import {
+  collapseExerciseCatalogDuplicates,
+  filterExerciseCatalog,
+  groupExerciseChoicesByPrimaryMuscle,
+} from './exerciseCatalog';
 
 describe('filterExerciseCatalog', () => {
   it('combines aliases, muscle and tag filters', () => {
@@ -58,5 +62,24 @@ describe('filterExerciseCatalog', () => {
     const result = collapseExerciseCatalogDuplicates([...globalExerciseCatalog, personal]);
 
     expect(result).toContain(personal);
+  });
+
+  it('groups replacement choices by primary muscle and puts the source muscle first', () => {
+    const choices = globalExerciseCatalog.filter((exercise) =>
+      ['back', 'chest', 'biceps'].includes(exercise.primaryMuscles[0]),
+    );
+    const groups = groupExerciseChoicesByPrimaryMuscle(choices, 'biceps', 'ru');
+
+    expect(groups[0]?.muscle).toBe('biceps');
+    expect(groups.flatMap((group) => group.exercises)).toHaveLength(choices.length);
+    for (const group of groups) {
+      expect(group.exercises.map((exercise) => exercise.nameRu)).toEqual(
+        [...group.exercises]
+          .map((exercise) => exercise.nameRu)
+          .sort((left, right) =>
+            new Intl.Collator('ru', { numeric: true, sensitivity: 'base' }).compare(left, right),
+          ),
+      );
+    }
   });
 });
