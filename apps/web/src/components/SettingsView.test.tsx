@@ -50,6 +50,14 @@ describe('SettingsView', () => {
     expect(html).toContain('⚡ Mighty');
     expect(html).toContain('😬 Cringe');
     expect(html).toContain('Отсюда и название 😁');
+    const productAudience = html.indexOf('MightyCringe создан для людей');
+    const honeyBadger = html.indexOf('На иконке приложения — медоед');
+    const author = html.indexOf('Автор — Роман Баранов');
+    expect(productAudience).toBeGreaterThan(-1);
+    expect(honeyBadger).toBeGreaterThan(productAudience);
+    expect(author).toBeGreaterThan(honeyBadger);
+    expect(html).toContain('>он крут и ему на всё пофиг</a>.');
+    expect(html).toContain('href="https://www.youtube.com/watch?v=K7w6b4gs2-E"');
     expect(html).toContain('но не слишком серьёзно относятся к себе');
     expect(html).toContain('Автор — Роман Баранов. Связаться с автором:');
     expect(html).toContain('href="#about-mighty-cringe"');
@@ -58,5 +66,25 @@ describe('SettingsView', () => {
     expect(html).toContain('tg @rbaranov');
     expect(html).toContain('rbaranov@me.com');
     expect(html).not.toContain('<select');
+  });
+
+  it('links the English honey-badger story to the English video', () => {
+    const html = renderToStaticMarkup(
+      <PreferencesProvider locale="en" unitSystem="metric">
+        <SettingsView
+          conflicts={[]}
+          onLogout={vi.fn()}
+          onOpenTrainer={vi.fn()}
+          onUserUpdated={vi.fn()}
+          relationshipRefreshKey={0}
+          user={{ ...user, locale: 'en' }}
+        />
+      </PreferencesProvider>,
+    );
+
+    expect(html).toContain('The app icon features a honey badger');
+    expect(html).toContain('href="https://www.youtube.com/watch?v=4r7wHMg5Yjg"');
+    expect(html).toContain('>he is cool and does not give a damn</a>.');
+    expect(html).not.toContain('Watch the video');
   });
 });

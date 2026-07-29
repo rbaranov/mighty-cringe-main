@@ -26,6 +26,7 @@ describe('BodyMeasurementsSection', () => {
     expect(html).toContain('% жира');
     expect(html).toContain('23,3 %');
     expect(html).toContain('примерная оценка RFM');
+    expect(html).toContain('мужская формула');
     expect(html).toContain('Самозамер');
     expect(html).toContain('Изменить');
     expect(html).toContain('Удалить');
@@ -43,7 +44,7 @@ function measurement(
     measuredOn,
     isSelfMeasured: true,
     values: {
-      heightCm: 180,
+      heightCm: id === 'older' ? 180 : null,
       weightKg,
       neckCm: null,
       chestCm: 102,
@@ -53,6 +54,7 @@ function measurement(
       calfCm: null,
       waistCm,
       bodyFatPercent: null,
+      rfmSex: id === 'older' ? 'male' : null,
     },
     revision: 1,
     updatedAt: measuredOn,

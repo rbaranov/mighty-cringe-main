@@ -372,6 +372,26 @@ function AboutMightyCringe() {
             'MightyCringe is made for people who take training seriously, but do not take themselves too seriously.',
           )}
         </p>
+        <p>
+          {tr(
+            locale,
+            'На иконке приложения — медоед, потому что ',
+            'The app icon features a honey badger because ',
+          )}
+          <a
+            className="about-mighty-cringe-story-link"
+            href={
+              locale === 'ru'
+                ? 'https://www.youtube.com/watch?v=K7w6b4gs2-E'
+                : 'https://www.youtube.com/watch?v=4r7wHMg5Yjg'
+            }
+            rel="noreferrer"
+            target="_blank"
+          >
+            {tr(locale, 'он крут и ему на всё пофиг', 'he is cool and does not give a damn')}
+          </a>
+          .
+        </p>
         <p className="about-mighty-cringe-author">
           {tr(
             locale,

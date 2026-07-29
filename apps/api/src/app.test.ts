@@ -389,6 +389,7 @@ test('OAuth sessions isolate athlete data, support logout, and enforce admin rol
   assert.equal(createdMeasurement.json().entity.revision, 1);
   assert.equal(createdMeasurement.json().entity.values.weightKg, 82);
   assert.equal(createdMeasurement.json().entity.values.bodyFatPercent, 18.5);
+  assert.equal(createdMeasurement.json().entity.values.rfmSex, null);
   const repeatedMeasurement = await app.inject({
     method: 'POST',
     url: '/api/v1/sync',
@@ -411,7 +412,7 @@ test('OAuth sessions isolate athlete data, support logout, and enforce admin rol
         changes: {
           measuredOn: '2026-01-22T06:00:00.000Z',
           isSelfMeasured: true,
-          values: { weightKg: 80.5, waistCm: 88.5 },
+          values: { weightKg: 80.5, waistCm: 88.5, rfmSex: 'female' },
         },
       },
     },
@@ -419,6 +420,7 @@ test('OAuth sessions isolate athlete data, support logout, and enforce admin rol
   assert.equal(updatedMeasurement.statusCode, 200);
   assert.equal(updatedMeasurement.json().entity.revision, 2);
   assert.equal(updatedMeasurement.json().entity.values.waistCm, 88.5);
+  assert.equal(updatedMeasurement.json().entity.values.rfmSex, 'female');
 
   const crossUserMeasurement = await app.inject({
     method: 'POST',

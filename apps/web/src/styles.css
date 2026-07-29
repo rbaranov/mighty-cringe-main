@@ -1635,6 +1635,50 @@ small,
   margin-top: 2px;
   font-size: 9px;
 }
+.rfm-sex-field {
+  min-width: 0;
+  margin: 12px 0 0;
+  padding: 10px;
+  border: 1px solid var(--line, #303a2b);
+  border-radius: 10px;
+  background: var(--surface-soft, #141a11);
+  color: var(--ink, #dde7d4);
+}
+.rfm-sex-field legend {
+  padding: 0 4px;
+  color: var(--muted, #bdc7b4);
+  font-size: 10px;
+  font-weight: 750;
+}
+.rfm-sex-field > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+.rfm-sex-field button {
+  min-width: 0;
+  min-height: 36px;
+  padding: 7px 5px;
+  border: 1px solid var(--line-strong, #3c4834);
+  border-radius: 7px;
+  background: var(--surface, #11160e);
+  color: var(--muted, #bdc7b4);
+  font: inherit;
+  font-size: 9px;
+  font-weight: 750;
+}
+.rfm-sex-field button.selected {
+  border-color: var(--accent-deep, #3730a3);
+  background: var(--accent-soft, #e5e9fd);
+  color: var(--ink, #0b2537);
+}
+.rfm-sex-field > small {
+  display: block;
+  margin-top: 7px;
+  color: var(--muted, #bdc7b4);
+  font-size: 9px;
+  line-height: 1.35;
+}
 .measurement-form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -4062,6 +4106,12 @@ small,
 .about-mighty-cringe .about-mighty-cringe-author {
   color: var(--surface);
   font-weight: 850;
+}
+
+.about-mighty-cringe-story-link {
+  color: #ff4a42;
+  font-weight: 850;
+  text-underline-offset: 3px;
 }
 
 .about-mighty-cringe-links {

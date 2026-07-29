@@ -3,7 +3,7 @@ import { createContext, useContext, type ReactNode } from 'react';
 import type {
   CurrentUser,
   Exercise,
-  MeasurementValues,
+  MeasurementNumericKey,
   UnitSystem,
   UpdateUserPreferences,
 } from '@mighty-cringe/contracts';
@@ -76,7 +76,7 @@ export function formatLength(lengthCm: number, locale: Locale, unitSystem: UnitS
 }
 
 export function displayMeasurement(
-  key: keyof MeasurementValues,
+  key: MeasurementNumericKey,
   value: number,
   locale: Locale,
   unitSystem: UnitSystem,
@@ -88,7 +88,7 @@ export function displayMeasurement(
 }
 
 export function displayMeasurementNumber(
-  key: keyof MeasurementValues,
+  key: MeasurementNumericKey,
   value: number,
   unitSystem: UnitSystem,
 ) {
@@ -97,7 +97,7 @@ export function displayMeasurementNumber(
 }
 
 export function canonicalMeasurementNumber(
-  key: keyof MeasurementValues,
+  key: MeasurementNumericKey,
   value: number,
   unitSystem: UnitSystem,
 ) {
@@ -108,7 +108,7 @@ export function canonicalMeasurementNumber(
 }
 
 export function measurementUnit(
-  key: keyof MeasurementValues,
+  key: MeasurementNumericKey,
   unitSystem: UnitSystem,
   locale: Locale = 'ru',
 ) {
