@@ -20,6 +20,7 @@ import {
 import { useLiveQuery } from 'dexie-react-hooks';
 
 import { SetSheet } from './components/SetSheet';
+import { ConfirmationSheet } from './components/ConfirmationSheet';
 import { ExerciseDiscoveryPanel } from './components/ExerciseDiscoveryPanel';
 import { ExerciseEditorView } from './components/ExerciseEditorView';
 import type { MeasurementDraft } from './components/BodyMeasurementsSection';
@@ -39,6 +40,18 @@ import {
   type LocalWorkout,
   type SyncConflict,
 } from './lib/db';
+import {
+  advanceConfirmation,
+  beginConfirmation,
+  conflictNeedsDoubleConfirmation,
+  hasLogoutRisks,
+  logoutConfirmationSteps,
+  missingServerWorkoutDeletionSteps,
+  type ConfirmationRequest,
+  type LogoutRisks,
+  type PendingConfirmation,
+  workoutDeletionSteps,
+} from './lib/confirmation';
 import { fallbackCatalog, retiredGlobalExerciseIds } from './lib/fallbackCatalog';
 import { collapseExerciseCatalogDuplicates, filterExerciseCatalog } from './lib/exerciseCatalog';
 import { softDeletePersonalExercise } from './lib/exercises';
@@ -65,6 +78,7 @@ import {
   flushOutbox,
   getSyncStatus,
   queueMutation,
+  resolveConflict,
   subscribeSyncStatus,
   syncAll,
 } from './lib/sync';
@@ -87,13 +101,6 @@ type ExercisePickerMode = { mode: 'add' } | { mode: 'replace'; itemId: string };
 
 type NaturalInputResult =
   NaturalSetResult | Exclude<NaturalWorkoutCommandResult, { status: 'not_command' }>;
-
-type PendingConfirmation = {
-  title: string;
-  message: string;
-  confirmLabel: string;
-  action: () => Promise<void>;
-};
 
 export default function App() {
   const [auth, setAuth] = useState<AuthState>({ status: 'loading' });
@@ -406,19 +413,27 @@ function AuthenticatedAppContent({
     setView('workout');
   }
 
+  function openConfirmation(request: ConfirmationRequest) {
+    setConfirmation(beginConfirmation(request));
+  }
+
   function requestRepeatWorkout(workout: LocalWorkout) {
     if (!activeWorkout) {
       void repeatWorkout(workout);
       return;
     }
-    setConfirmation({
-      title: tr(locale, 'Уже идёт тренировка', 'A workout is already active'),
-      message: tr(
-        locale,
-        'Повтор не запущен: текущая тренировка и её план сохранены без изменений. Сначала заверши её.',
-        'The repeat was not started: your current workout and its plan remain unchanged. Finish it first.',
-      ),
-      confirmLabel: tr(locale, 'К текущей тренировке', 'Open current workout'),
+    openConfirmation({
+      steps: [
+        {
+          title: tr(locale, 'Уже идёт тренировка', 'A workout is already active'),
+          message: tr(
+            locale,
+            'Повтор не запущен: текущая тренировка и её план сохранены без изменений. Сначала заверши её.',
+            'The repeat was not started: your current workout and its plan remain unchanged. Finish it first.',
+          ),
+          confirmLabel: tr(locale, 'К текущей тренировке', 'Open current workout'),
+        },
+      ],
       action: async () => {
         setEditingWorkoutId(null);
         setView('workout');
@@ -542,14 +557,18 @@ function AuthenticatedAppContent({
 
   function requestFinishWorkout() {
     if (!activeWorkout) return;
-    setConfirmation({
-      title: tr(locale, 'Завершить тренировку?', 'Finish this workout?'),
-      message: tr(
-        locale,
-        'Тренировка перестанет быть активной и появится в истории прогресса.',
-        'The workout will stop being active and appear in your progress history.',
-      ),
-      confirmLabel: tr(locale, 'Да, завершить', 'Yes, finish'),
+    openConfirmation({
+      steps: [
+        {
+          title: tr(locale, 'Завершить тренировку?', 'Finish this workout?'),
+          message: tr(
+            locale,
+            'Тренировка перестанет быть активной и появится в истории прогресса.',
+            'The workout will stop being active and appear in your progress history.',
+          ),
+          confirmLabel: tr(locale, 'Да, завершить', 'Yes, finish'),
+        },
+      ],
       action: finishWorkout,
     });
   }
@@ -570,14 +589,18 @@ function AuthenticatedAppContent({
       void resumeWorkout(workout);
       return;
     }
-    setConfirmation({
-      title: tr(locale, 'Продолжить прошлую тренировку?', 'Continue the past workout?'),
-      message: tr(
-        locale,
-        'Текущая активная тренировка будет завершена сейчас, а выбранная снова станет активной.',
-        'The current active workout will finish now, and the selected workout will become active again.',
-      ),
-      confirmLabel: tr(locale, 'Завершить текущую и продолжить', 'Finish current and continue'),
+    openConfirmation({
+      steps: [
+        {
+          title: tr(locale, 'Продолжить прошлую тренировку?', 'Continue the past workout?'),
+          message: tr(
+            locale,
+            'Текущая активная тренировка будет завершена сейчас, а выбранная снова станет активной.',
+            'The current active workout will finish now, and the selected workout will become active again.',
+          ),
+          confirmLabel: tr(locale, 'Завершить текущую и продолжить', 'Finish current and continue'),
+        },
+      ],
       action: () => resumeWorkout(workout),
     });
   }
@@ -674,14 +697,18 @@ function AuthenticatedAppContent({
   }
 
   function requestDeleteSet(set: LocalSet) {
-    setConfirmation({
-      title: tr(locale, 'Удалить подход?', 'Delete set?'),
-      message: tr(
-        locale,
-        `${formatWeight(set.weightKg, locale, unitSystem)} × ${set.reps}. Подход исчезнет из истории после синхронизации.`,
-        `${formatWeight(set.weightKg, locale, unitSystem)} × ${set.reps}. The set will disappear from history after syncing.`,
-      ),
-      confirmLabel: tr(locale, 'Удалить подход', 'Delete set'),
+    openConfirmation({
+      steps: [
+        {
+          title: tr(locale, 'Удалить подход?', 'Delete set?'),
+          message: tr(
+            locale,
+            `${formatWeight(set.weightKg, locale, unitSystem)} × ${set.reps}. Подход исчезнет из истории после синхронизации.`,
+            `${formatWeight(set.weightKg, locale, unitSystem)} × ${set.reps}. The set will disappear from history after syncing.`,
+          ),
+          confirmLabel: tr(locale, 'Удалить подход', 'Delete set'),
+        },
+      ],
       action: () => deleteSet(set),
     });
   }
@@ -716,19 +743,18 @@ function AuthenticatedAppContent({
     const workoutSetCount = sets.filter(
       (set) => set.workoutId === workout.id && !set.deleted,
     ).length;
-    const date = new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'ru-RU', {
-      dateStyle: 'long',
-      timeStyle: 'short',
-    }).format(new Date(workout.startedAt));
-    setConfirmation({
-      title: tr(locale, 'Удалить тренировку?', 'Delete this workout?'),
-      message: tr(
+    const date = formatWorkoutConfirmationDate(workout.startedAt, locale);
+    openConfirmation({
+      steps: workoutDeletionSteps({
+        date,
         locale,
-        `${date} · ${workoutSetCount} ${setCountLabel(workoutSetCount, 'ru')}. Тренировка исчезнет из календаря, истории и расчётов прогресса.`,
-        `${date} · ${workoutSetCount} ${setCountLabel(workoutSetCount, 'en')}. The workout will disappear from the calendar, history, and progress calculations.`,
-      ),
-      confirmLabel: tr(locale, 'Да, удалить тренировку', 'Yes, delete workout'),
-      action: () => deleteWorkout(workout),
+        setCount: workoutSetCount,
+        synced: workout.revision > 0,
+      }),
+      action: async () => {
+        const current = await db.workouts.get(workout.id);
+        if (current) await deleteWorkout(current);
+      },
     });
   }
 
@@ -797,14 +823,18 @@ function AuthenticatedAppContent({
   }
 
   function requestDeleteMeasurement(measurement: LocalMeasurement) {
-    setConfirmation({
-      title: tr(locale, 'Удалить замер?', 'Delete measurement?'),
-      message: tr(
-        locale,
-        `Запись за ${new Intl.DateTimeFormat('ru-RU', { dateStyle: 'long' }).format(new Date(measurement.measuredOn))} исчезнет из истории после синхронизации.`,
-        `The entry for ${new Intl.DateTimeFormat('en-US', { dateStyle: 'long' }).format(new Date(measurement.measuredOn))} will disappear from history after syncing.`,
-      ),
-      confirmLabel: tr(locale, 'Удалить замер', 'Delete measurement'),
+    openConfirmation({
+      steps: [
+        {
+          title: tr(locale, 'Удалить замер?', 'Delete measurement?'),
+          message: tr(
+            locale,
+            `Запись за ${new Intl.DateTimeFormat('ru-RU', { dateStyle: 'long' }).format(new Date(measurement.measuredOn))} исчезнет из истории после синхронизации.`,
+            `The entry for ${new Intl.DateTimeFormat('en-US', { dateStyle: 'long' }).format(new Date(measurement.measuredOn))} will disappear from history after syncing.`,
+          ),
+          confirmLabel: tr(locale, 'Удалить замер', 'Delete measurement'),
+        },
+      ],
       action: () => deleteMeasurement(measurement),
     });
   }
@@ -814,14 +844,18 @@ function AuthenticatedAppContent({
       void removeExercise(itemId);
       return;
     }
-    setConfirmation({
-      title: tr(locale, 'Убрать упражнение из плана?', 'Remove exercise from plan?'),
-      message: tr(
-        locale,
-        'Уже записанные подходы сохранятся в тренировке вне текущего плана.',
-        'Logged sets will stay in the workout outside the current plan.',
-      ),
-      confirmLabel: tr(locale, 'Убрать из плана', 'Remove from plan'),
+    openConfirmation({
+      steps: [
+        {
+          title: tr(locale, 'Убрать упражнение из плана?', 'Remove exercise from plan?'),
+          message: tr(
+            locale,
+            'Уже записанные подходы сохранятся в тренировке вне текущего плана.',
+            'Logged sets will stay in the workout outside the current plan.',
+          ),
+          confirmLabel: tr(locale, 'Убрать из плана', 'Remove from plan'),
+        },
+      ],
       action: () => removeExercise(itemId),
     });
   }
@@ -843,22 +877,78 @@ function AuthenticatedAppContent({
   }
 
   function requestDeleteCatalogExercise(exercise: Exercise) {
-    setConfirmation({
-      title: tr(locale, 'Удалить из каталога?', 'Remove from catalog?'),
-      message: tr(
-        locale,
-        'Упражнение исчезнет из каталога и новых вариантов замены. Подходы, тренировки и название в истории сохранятся. Это удаление, а не архивация.',
-        'The exercise will disappear from the catalog and new replacement choices. Sets, workouts, and its name in history will stay. This is deletion, not archiving.',
-      ),
-      confirmLabel: tr(locale, 'Удалить из каталога', 'Remove from catalog'),
+    openConfirmation({
+      steps: [
+        {
+          title: tr(locale, 'Удалить из каталога?', 'Remove from catalog?'),
+          message: tr(
+            locale,
+            'Упражнение исчезнет из каталога и новых вариантов замены. Подходы, тренировки и название в истории сохранятся. Это удаление, а не архивация.',
+            'The exercise will disappear from the catalog and new replacement choices. Sets, workouts, and its name in history will stay. This is deletion, not archiving.',
+          ),
+          confirmLabel: tr(locale, 'Удалить из каталога', 'Remove from catalog'),
+        },
+      ],
       action: () => deleteCatalogExercise(exercise),
     });
   }
 
+  async function requestLogoutWithSafety() {
+    const [pendingMutations, conflictCount, voiceEntries] = await Promise.all([
+      db.outbox.count(),
+      db.conflicts.count(),
+      db.voiceEntries.toArray(),
+    ]);
+    const risks: LogoutRisks = {
+      pendingMutations,
+      conflicts: conflictCount,
+      localVoiceEntries: voiceEntries.filter(
+        (entry) => !entry.serverStored && entry.status !== 'deleting',
+      ).length,
+      pendingVoiceDeletions: voiceEntries.filter((entry) => entry.status === 'deleting').length,
+    };
+    if (!hasLogoutRisks(risks)) {
+      onLogout();
+      return;
+    }
+    openConfirmation({
+      steps: logoutConfirmationSteps(risks, locale),
+      action: async () => {
+        await onLogout();
+      },
+    });
+  }
+
+  function requestResolveSyncConflict(conflict: SyncConflict, strategy: 'server' | 'mine') {
+    if (!conflictNeedsDoubleConfirmation(conflict, strategy)) {
+      void resolveConflict(conflict.id, strategy);
+      return;
+    }
+    const workout = workouts.find((item) => item.id === conflict.entityId);
+    const workoutSetCount = sets.filter(
+      (set) => set.workoutId === conflict.entityId && !set.deleted,
+    ).length;
+    openConfirmation({
+      steps: missingServerWorkoutDeletionSteps({
+        date: workout
+          ? formatWorkoutConfirmationDate(workout.startedAt, locale)
+          : tr(locale, 'Локальная тренировка', 'Local workout'),
+        locale,
+        setCount: workoutSetCount,
+      }),
+      action: () => resolveConflict(conflict.id, strategy),
+    });
+  }
+
   function confirmPendingAction() {
-    const action = confirmation?.action;
+    if (!confirmation) return;
+    const result = advanceConfirmation(confirmation);
+    if (result.type === 'advance') {
+      setConfirmation(result.confirmation);
+      return;
+    }
     setConfirmation(null);
-    if (action) void action();
+    void result.action();
   }
 
   async function moveSet(set: LocalSet, direction: -1 | 1) {
@@ -1062,7 +1152,7 @@ function AuthenticatedAppContent({
             {view === 'settings' && (
               <SettingsView
                 conflicts={conflicts}
-                onLogout={onLogout}
+                onLogout={requestLogoutWithSafety}
                 onOpenTrainer={
                   canUseTrainerConsole(user.role)
                     ? () => {
@@ -1071,6 +1161,7 @@ function AuthenticatedAppContent({
                       }
                     : undefined
                 }
+                onResolveConflict={requestResolveSyncConflict}
                 onUserUpdated={onUserUpdated}
                 relationshipRefreshKey={relationshipRefreshKey}
                 user={user}
@@ -2384,42 +2475,6 @@ function ExercisePickerSheet({
   );
 }
 
-function ConfirmationSheet({
-  confirmation,
-  onClose,
-  onConfirm,
-}: {
-  confirmation: PendingConfirmation | null;
-  onClose: () => void;
-  onConfirm: () => void;
-}) {
-  const { locale } = usePreferences();
-  if (!confirmation) return null;
-
-  return (
-    <div className="sheet-backdrop" role="presentation" onMouseDown={onClose}>
-      <section
-        aria-label={confirmation.title}
-        aria-modal="true"
-        className="sheet confirmation-sheet"
-        onMouseDown={(event) => event.stopPropagation()}
-        role="dialog"
-      >
-        <div className="sheet-handle" />
-        <p className="eyebrow">{tr(locale, 'Подтверждение', 'Confirmation')}</p>
-        <h2>{confirmation.title}</h2>
-        <p className="confirmation-message">{confirmation.message}</p>
-        <button className="button danger full" onClick={onConfirm} type="button">
-          {confirmation.confirmLabel}
-        </button>
-        <button className="button ghost full" onClick={onClose} type="button">
-          {tr(locale, 'Отмена', 'Cancel')}
-        </button>
-      </section>
-    </div>
-  );
-}
-
 function ExplainSheet({
   activeWorkout,
   catalog,
@@ -3083,6 +3138,13 @@ function setCountLabel(value: number, locale: CurrentUser['locale']) {
   if (mod10 === 1) return 'подход';
   if (mod10 >= 2 && mod10 <= 4) return 'подхода';
   return 'подходов';
+}
+
+function formatWorkoutConfirmationDate(startedAt: string, locale: CurrentUser['locale']) {
+  return new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'ru-RU', {
+    dateStyle: 'long',
+    timeStyle: 'short',
+  }).format(new Date(startedAt));
 }
 
 function youtubeVideoId(url: string) {
