@@ -53,7 +53,11 @@ import {
   workoutDeletionSteps,
 } from './lib/confirmation';
 import { fallbackCatalog, retiredGlobalExerciseIds } from './lib/fallbackCatalog';
-import { collapseExerciseCatalogDuplicates, filterExerciseCatalog } from './lib/exerciseCatalog';
+import {
+  collapseExerciseCatalogDuplicates,
+  filterExerciseCatalog,
+  groupExerciseChoicesByPrimaryMuscle,
+} from './lib/exerciseCatalog';
 import { softDeletePersonalExercise } from './lib/exercises';
 import { hasPendingRemoteLogout, requestRemoteLogout } from './lib/logout';
 import { parseNaturalSet, type NaturalSetDraft, type NaturalSetResult } from './lib/naturalSet';
@@ -637,24 +641,30 @@ function AuthenticatedAppContent({
 
   async function chooseExercise(exercise: Exercise) {
     if (!workoutContext || !exercisePicker) return;
-    if (exercisePicker.mode === 'add') {
-      await updateWorkoutPlan([
-        ...workoutContext.exercises,
-        {
-          id: crypto.randomUUID(),
-          exerciseId: exercise.id,
-          position: workoutContext.exercises.length,
-          supersetGroup: null,
-        },
-      ]);
-    } else {
-      await updateWorkoutPlan(
-        workoutContext.exercises.map((item) =>
-          item.id === exercisePicker.itemId ? { ...item, exerciseId: exercise.id } : item,
-        ),
-      );
-    }
+    const picker = exercisePicker;
     setExercisePicker(null);
+    try {
+      if (picker.mode === 'add') {
+        await updateWorkoutPlan([
+          ...workoutContext.exercises,
+          {
+            id: crypto.randomUUID(),
+            exerciseId: exercise.id,
+            position: workoutContext.exercises.length,
+            supersetGroup: null,
+          },
+        ]);
+      } else {
+        await updateWorkoutPlan(
+          workoutContext.exercises.map((item) =>
+            item.id === picker.itemId ? { ...item, exerciseId: exercise.id } : item,
+          ),
+        );
+      }
+    } catch (error) {
+      setExercisePicker(picker);
+      throw error;
+    }
   }
 
   async function removeExercise(itemId: string) {
@@ -2330,10 +2340,14 @@ function ExercisePickerSheet({
   const { locale } = usePreferences();
   const [query, setQuery] = useState('');
   const [discovering, setDiscovering] = useState(false);
+  const [choosingExerciseId, setChoosingExerciseId] = useState<string | null>(null);
+  const choosingExercise = useRef(false);
 
   useEffect(() => {
     setQuery('');
     setDiscovering(false);
+    setChoosingExerciseId(null);
+    choosingExercise.current = false;
   }, [mode]);
   if (!mode) return null;
 
@@ -2355,6 +2369,21 @@ function ExercisePickerSheet({
           name.toLocaleLowerCase('ru-RU').includes(normalizedQuery),
         )),
   );
+  const optionGroups = groupExerciseChoicesByPrimaryMuscle(
+    options,
+    replacedExercise?.primaryMuscles[0] ?? null,
+    locale,
+  );
+
+  function chooseOnce(exercise: Exercise) {
+    if (choosingExercise.current) return;
+    choosingExercise.current = true;
+    setChoosingExerciseId(exercise.id);
+    void onChoose(exercise).catch(() => {
+      choosingExercise.current = false;
+      setChoosingExerciseId(null);
+    });
+  }
 
   return (
     <div className="sheet-backdrop" role="presentation" onMouseDown={onClose}>
@@ -2415,22 +2444,48 @@ function ExercisePickerSheet({
         <div className="picker-list">
           {!discovering && (
             <>
-              {options.map((exercise) => (
-                <button
-                  className="picker-option"
-                  key={exercise.id}
-                  onClick={() => onChoose(exercise)}
-                  type="button"
+              {optionGroups.map((group) => (
+                <section
+                  className={
+                    replacedExercise?.primaryMuscles[0] === group.muscle
+                      ? 'picker-muscle-group preferred'
+                      : 'picker-muscle-group'
+                  }
+                  key={group.muscle}
                 >
-                  <span>
-                    <strong>{exerciseName(exercise, locale)}</strong>
-                    <small>
-                      {locale === 'en' ? exercise.nameRu : exercise.nameEn} ·{' '}
-                      {muscleLabel(exercise.primaryMuscles[0], locale)}
-                    </small>
-                  </span>
-                  <Tag tag={exercise.tag} />
-                </button>
+                  <div className="picker-muscle-heading">
+                    <strong>{muscleLabel(group.muscle, locale)}</strong>
+                    {replacedExercise?.primaryMuscles[0] === group.muscle ? (
+                      <span>{tr(locale, 'Исходная группа', 'Original muscle')}</span>
+                    ) : (
+                      <span>{group.exercises.length}</span>
+                    )}
+                  </div>
+                  <div className="picker-muscle-options">
+                    {group.exercises.map((exercise) => {
+                      const choosing = choosingExerciseId === exercise.id;
+                      return (
+                        <button
+                          aria-busy={choosing || undefined}
+                          className={choosing ? 'picker-option choosing' : 'picker-option'}
+                          disabled={choosingExerciseId !== null}
+                          key={exercise.id}
+                          onClick={() => chooseOnce(exercise)}
+                          type="button"
+                        >
+                          <span className="picker-option-copy">
+                            <strong>{exerciseName(exercise, locale)}</strong>
+                            <small>{locale === 'en' ? exercise.nameRu : exercise.nameEn}</small>
+                            <span className="picker-option-muscle">
+                              {muscleLabel(exercise.primaryMuscles[0], locale)}
+                            </span>
+                          </span>
+                          <Tag tag={exercise.tag} />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
               ))}
               {!options.length && (
                 <div className="picker-empty">

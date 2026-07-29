@@ -6021,8 +6021,122 @@ body {
 }
 
 .exercise-picker .picker-list {
+  width: 100%;
   align-content: start;
   grid-auto-rows: max-content;
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
+  touch-action: pan-y;
+}
+
+.exercise-picker,
+.exercise-picker .picker-list,
+.picker-muscle-group,
+.picker-muscle-options {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.picker-muscle-group {
+  display: grid;
+  width: 100%;
+  gap: 5px;
+}
+
+.picker-muscle-group + .picker-muscle-group {
+  margin-top: 7px;
+}
+
+.picker-muscle-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 2px 2px;
+  border-bottom: 1.5px solid var(--ink);
+}
+
+.picker-muscle-heading strong {
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.picker-muscle-heading span {
+  flex: none;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.picker-muscle-group.preferred .picker-muscle-heading span {
+  color: var(--accent-deep);
+}
+
+.picker-muscle-options {
+  display: grid;
+  width: 100%;
+  gap: 5px;
+}
+
+.exercise-picker .picker-option {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  grid-template-columns: minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+
+.picker-option-copy {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 3px 6px;
+}
+
+.picker-option-copy strong {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker-option-copy small {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker-option-muscle {
+  padding: 2px 4px;
+  border: 1px solid var(--ink);
+  border-radius: 2px;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 850;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.exercise-picker .picker-option > .tag {
+  max-width: 82px;
+  flex: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.exercise-picker .picker-option.choosing {
+  background: var(--accent-soft);
 }
 
 .exercise-picker .picker-option,

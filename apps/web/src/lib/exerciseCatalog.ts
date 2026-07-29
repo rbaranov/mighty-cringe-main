@@ -1,9 +1,14 @@
-import type { Exercise } from '@mighty-cringe/contracts';
+import { muscleGroups, type Exercise } from '@mighty-cringe/contracts';
 
 export type ExerciseCatalogFilters = {
   query: string;
   muscle: Exercise['primaryMuscles'][number] | 'all';
   tag: Exercise['tag'] | 'all';
+};
+
+export type ExerciseChoiceGroup = {
+  muscle: Exercise['primaryMuscles'][number];
+  exercises: Exercise[];
 };
 
 export function filterExerciseCatalog(
@@ -39,6 +44,33 @@ export function collapseExerciseCatalogDuplicates(exercises: Exercise[]) {
       exercise.scope !== 'user' ||
       ![exercise.nameRu, exercise.nameEn].some((name) => globalKeys.has(normalize(name))),
   );
+}
+
+export function groupExerciseChoicesByPrimaryMuscle(
+  exercises: Exercise[],
+  preferredMuscle: Exercise['primaryMuscles'][number] | null,
+  locale: 'ru' | 'en',
+): ExerciseChoiceGroup[] {
+  const collator = new Intl.Collator(locale === 'en' ? 'en' : 'ru', {
+    numeric: true,
+    sensitivity: 'base',
+  });
+  const order =
+    preferredMuscle === null
+      ? muscleGroups
+      : [preferredMuscle, ...muscleGroups.filter((muscle) => muscle !== preferredMuscle)];
+
+  return order.flatMap((muscle) => {
+    const matching = exercises
+      .filter((exercise) => exercise.primaryMuscles[0] === muscle)
+      .sort((left, right) =>
+        collator.compare(
+          locale === 'en' ? left.nameEn : left.nameRu,
+          locale === 'en' ? right.nameEn : right.nameRu,
+        ),
+      );
+    return matching.length ? [{ muscle, exercises: matching }] : [];
+  });
 }
 
 function normalize(value: string) {
