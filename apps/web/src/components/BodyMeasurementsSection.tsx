@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 
-import type { MeasurementValues } from '@mighty-cringe/contracts';
+import type { MeasurementValues, RfmSex } from '@mighty-cringe/contracts';
 
 import type { LocalMeasurement } from '../lib/db';
 import {
@@ -12,6 +13,7 @@ import {
   previousMeasurement,
   resolvedMeasurementValue,
   type MeasurementDefinition,
+  type MeasurementKey,
   type ResolvedMeasurementValue,
 } from '../lib/measurements';
 import { dateKeyInTimeZone } from '../lib/progress';
@@ -117,10 +119,10 @@ export function BodyMeasurementsSection({
           {selected && (
             <MeasurementDetail
               measurement={selected}
+              measurements={ordered}
               onDelete={() => onDelete(selected)}
               onEdit={() => setEditing(selected)}
               previous={previous}
-              measurements={ordered}
             />
           )}
         </>
@@ -200,154 +202,160 @@ function MeasurementImportSheet({
   const errors = fileError ? [fileError] : [...parsed.errors, ...duplicateErrors];
 
   return (
-    <div
-      className="sheet-backdrop"
-      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
-    >
-      <section
-        aria-labelledby="measurement-import-title"
-        aria-modal="true"
-        className="sheet measurement-import-sheet"
-        role="dialog"
+    <SheetPortal>
+      <div
+        className="sheet-backdrop"
+        onMouseDown={(event) => event.target === event.currentTarget && onClose()}
       >
-        <div className="sheet-handle" />
-        <p className="eyebrow">{tr(locale, 'История тела', 'Body history')}</p>
-        <h2 id="measurement-import-title">{tr(locale, 'Импорт таблицы', 'Import table')}</h2>
-        <p className="intro">
-          {tr(
-            locale,
-            'Выбери CSV, TSV или TXT либо вставь таблицу целиком. Даты могут идти вниз или по горизонтали — подписи, пояснения и единицы распознаются автоматически.',
-            'Choose a CSV, TSV, or TXT file, or paste the whole table. Dates may run down or across; labels, notes, and units are detected automatically.',
-          )}
-        </p>
-        <label className="measurement-import-picker">
-          <span>{tr(locale, 'Выбрать файл', 'Choose file')}</span>
-          <input
-            accept=".csv,.tsv,.txt,text/csv,text/plain,text/tab-separated-values"
-            aria-label={tr(locale, 'Выбрать файл с замерами', 'Choose measurement file')}
-            onChange={async (event) => {
-              const file = event.target.files?.[0];
-              if (!file) return;
-              setFileName(file.name);
+        <section
+          aria-labelledby="measurement-import-title"
+          aria-modal="true"
+          className="sheet measurement-import-sheet"
+          role="dialog"
+        >
+          <div className="sheet-handle" />
+          <p className="eyebrow">{tr(locale, 'История тела', 'Body history')}</p>
+          <h2 id="measurement-import-title">{tr(locale, 'Импорт таблицы', 'Import table')}</h2>
+          <p className="intro">
+            {tr(
+              locale,
+              'Выбери CSV, TSV или TXT либо вставь таблицу целиком. Даты могут идти вниз или по горизонтали — подписи, пояснения и единицы распознаются автоматически.',
+              'Choose a CSV, TSV, or TXT file, or paste the whole table. Dates may run down or across; labels, notes, and units are detected automatically.',
+            )}
+          </p>
+          <label className="measurement-import-picker">
+            <span>{tr(locale, 'Выбрать файл', 'Choose file')}</span>
+            <input
+              accept=".csv,.tsv,.txt,text/csv,text/plain,text/tab-separated-values"
+              aria-label={tr(locale, 'Выбрать файл с замерами', 'Choose measurement file')}
+              onChange={async (event) => {
+                const file = event.target.files?.[0];
+                if (!file) return;
+                setFileName(file.name);
+                setFileError('');
+                if (file.size > 2_000_000) {
+                  setText('');
+                  setFileError(
+                    tr(
+                      locale,
+                      'Файл больше 2 МБ. Сохрани только лист с замерами в CSV, TSV или TXT.',
+                      'The file is larger than 2 MB. Save only the measurement sheet as CSV, TSV, or TXT.',
+                    ),
+                  );
+                  return;
+                }
+                try {
+                  setText(await file.text());
+                } catch {
+                  setText('');
+                  setFileError(
+                    tr(
+                      locale,
+                      'Не удалось прочитать файл. Сохрани его как CSV, TSV или TXT.',
+                      'Could not read the file. Save it as CSV, TSV, or TXT.',
+                    ),
+                  );
+                }
+              }}
+              onClick={(event) => {
+                event.currentTarget.value = '';
+              }}
+              type="file"
+            />
+          </label>
+          {fileName && <small className="measurement-import-file-name">{fileName}</small>}
+          <div className="measurement-import-divider">
+            <span>{tr(locale, 'или вставить', 'or paste')}</span>
+          </div>
+          <textarea
+            aria-label={tr(locale, 'Таблица с историей замеров', 'Measurement history table')}
+            onChange={(event) => {
+              setText(event.target.value);
+              setFileName('');
               setFileError('');
-              if (file.size > 2_000_000) {
-                setText('');
-                setFileError(
-                  tr(
-                    locale,
-                    'Файл больше 2 МБ. Сохрани только лист с замерами в CSV, TSV или TXT.',
-                    'The file is larger than 2 MB. Save only the measurement sheet as CSV, TSV, or TXT.',
-                  ),
-                );
-                return;
-              }
-              try {
-                setText(await file.text());
-              } catch {
-                setText('');
-                setFileError(
-                  tr(
-                    locale,
-                    'Не удалось прочитать файл. Сохрани его как CSV, TSV или TXT.',
-                    'Could not read the file. Save it as CSV, TSV, or TXT.',
-                  ),
-                );
-              }
             }}
-            onClick={(event) => {
-              event.currentTarget.value = '';
-            }}
-            type="file"
+            placeholder={
+              locale === 'en'
+                ? 'Date;Weight;Chest;Waist\n2025-03-23;82.5;103;91\n\n—or—\nMeasurements,2025-03-23\nWeight,82.5\nWaist,91'
+                : 'Дата;Вес;Грудь;Талия\n23.03.2025;82,5;103;91\n\n— или —\nЗамеры,23.03.2025\nВес,"82,5"\nЖивот,91'
+            }
+            rows={7}
+            value={text}
           />
-        </label>
-        {fileName && <small className="measurement-import-file-name">{fileName}</small>}
-        <div className="measurement-import-divider">
-          <span>{tr(locale, 'или вставить', 'or paste')}</span>
-        </div>
-        <textarea
-          aria-label={tr(locale, 'Таблица с историей замеров', 'Measurement history table')}
-          onChange={(event) => {
-            setText(event.target.value);
-            setFileName('');
-            setFileError('');
-          }}
-          placeholder={
-            locale === 'en'
-              ? 'Date;Weight;Chest;Waist\n2025-03-23;82.5;103;91\n\n—or—\nMeasurements,2025-03-23\nWeight,82.5\nWaist,91'
-              : 'Дата;Вес;Грудь;Талия\n23.03.2025;82,5;103;91\n\n— или —\nЗамеры,23.03.2025\nВес,"82,5"\nЖивот,91'
-          }
-          rows={7}
-          value={text}
-        />
-        {(text || fileError) && (
-          <div className={errors.length ? 'import-result error' : 'import-result'}>
-            <strong>
-              {errors.length
-                ? tr(locale, `Нужно исправить: ${errors.length}`, `Issues to fix: ${errors.length}`)
+          {(text || fileError) && (
+            <div className={errors.length ? 'import-result error' : 'import-result'}>
+              <strong>
+                {errors.length
+                  ? tr(
+                      locale,
+                      `Нужно исправить: ${errors.length}`,
+                      `Issues to fix: ${errors.length}`,
+                    )
+                  : tr(
+                      locale,
+                      `Готово к импорту: ${parsed.rows.length}`,
+                      `Ready to import: ${parsed.rows.length}`,
+                    )}
+              </strong>
+              {errors.slice(0, 5).map((error, index) => (
+                <span key={`${index}-${error}`}>{error}</span>
+              ))}
+            </div>
+          )}
+          {!errors.length && parsed.rows.length > 0 && (
+            <div className="measurement-import-preview">
+              {parsed.rows.slice(0, 5).map((row) => (
+                <div key={row.dateKey}>
+                  <strong>{formatImportDate(row.dateKey, locale)}</strong>
+                  <span>{formatImportSummary(row.values, locale, unitSystem)}</span>
+                </div>
+              ))}
+              {parsed.rows.length > 5 && (
+                <small>
+                  {tr(
+                    locale,
+                    `И ещё дат: ${parsed.rows.length - 5}`,
+                    `And ${parsed.rows.length - 5} more dates`,
+                  )}
+                </small>
+              )}
+            </div>
+          )}
+          <div className="sheet-actions">
+            <button className="button ghost" disabled={saving} onClick={onClose} type="button">
+              {tr(locale, 'Отмена', 'Cancel')}
+            </button>
+            <button
+              className="button primary"
+              disabled={!parsed.rows.length || errors.length > 0 || saving}
+              onClick={async () => {
+                setSaving(true);
+                try {
+                  await onImport(
+                    parsed.rows.map((row) => ({
+                      measuredOn: new Date(`${row.dateKey}T12:00:00`).toISOString(),
+                      isSelfMeasured: row.isSelfMeasured,
+                      values: row.values,
+                    })),
+                  );
+                } finally {
+                  setSaving(false);
+                }
+              }}
+              type="button"
+            >
+              {saving
+                ? tr(locale, 'Импортирую…', 'Importing…')
                 : tr(
                     locale,
-                    `Готово к импорту: ${parsed.rows.length}`,
-                    `Ready to import: ${parsed.rows.length}`,
+                    `Импортировать ${parsed.rows.length || ''}`,
+                    `Import ${parsed.rows.length || ''}`,
                   )}
-            </strong>
-            {errors.slice(0, 5).map((error, index) => (
-              <span key={`${index}-${error}`}>{error}</span>
-            ))}
+            </button>
           </div>
-        )}
-        {!errors.length && parsed.rows.length > 0 && (
-          <div className="measurement-import-preview">
-            {parsed.rows.slice(0, 5).map((row) => (
-              <div key={row.dateKey}>
-                <strong>{formatImportDate(row.dateKey, locale)}</strong>
-                <span>{formatImportSummary(row.values, locale, unitSystem)}</span>
-              </div>
-            ))}
-            {parsed.rows.length > 5 && (
-              <small>
-                {tr(
-                  locale,
-                  `И ещё дат: ${parsed.rows.length - 5}`,
-                  `And ${parsed.rows.length - 5} more dates`,
-                )}
-              </small>
-            )}
-          </div>
-        )}
-        <div className="sheet-actions">
-          <button className="button ghost" disabled={saving} onClick={onClose} type="button">
-            {tr(locale, 'Отмена', 'Cancel')}
-          </button>
-          <button
-            className="button primary"
-            disabled={!parsed.rows.length || errors.length > 0 || saving}
-            onClick={async () => {
-              setSaving(true);
-              try {
-                await onImport(
-                  parsed.rows.map((row) => ({
-                    measuredOn: new Date(`${row.dateKey}T12:00:00`).toISOString(),
-                    isSelfMeasured: row.isSelfMeasured,
-                    values: row.values,
-                  })),
-                );
-              } finally {
-                setSaving(false);
-              }
-            }}
-            type="button"
-          >
-            {saving
-              ? tr(locale, 'Импортирую…', 'Importing…')
-              : tr(
-                  locale,
-                  `Импортировать ${parsed.rows.length || ''}`,
-                  `Import ${parsed.rows.length || ''}`,
-                )}
-          </button>
-        </div>
-      </section>
-    </div>
+        </section>
+      </div>
+    </SheetPortal>
   );
 }
 
@@ -552,12 +560,14 @@ function MeasurementSheet({
   const today = dateKeyInTimeZone(new Date(), timeZone);
   const [dateKey, setDateKey] = useState(today);
   const [isSelfMeasured, setIsSelfMeasured] = useState(true);
+  const [rfmSex, setRfmSex] = useState<RfmSex | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     setDateKey(initial ? dateKeyInTimeZone(initial.measuredOn, timeZone) : today);
     setIsSelfMeasured(initial?.isSelfMeasured ?? true);
+    setRfmSex(initial?.values.rfmSex ?? null);
     setValues(
       Object.fromEntries(
         measurementDefinitions.map((definition) => {
@@ -573,7 +583,11 @@ function MeasurementSheet({
     );
   }, [initial, timeZone, today, unitSystem]);
 
-  const parsedValues = parseValues(values, unitSystem);
+  const inheritedRfmSex =
+    orderedMeasurements(existing.filter((measurement) => measurement.id !== initial?.id))
+      .reverse()
+      .find((measurement) => measurement.values.rfmSex !== null)?.values.rfmSex ?? null;
+  const parsedValues = parseValues(values, rfmSex, unitSystem);
   const invalid = parsedValues === null;
   const duplicateDate = existing.some(
     (measurement) =>
@@ -582,124 +596,178 @@ function MeasurementSheet({
   );
 
   return (
-    <div
-      className="sheet-backdrop"
-      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
-    >
-      <section
-        aria-labelledby="measurement-sheet-title"
-        aria-modal="true"
-        className="sheet measurement-sheet"
-        role="dialog"
+    <SheetPortal>
+      <div
+        className="sheet-backdrop"
+        onMouseDown={(event) => event.target === event.currentTarget && onClose()}
       >
-        <div className="sheet-handle" />
-        <p className="eyebrow">{tr(locale, 'История тела', 'Body history')}</p>
-        <h2 id="measurement-sheet-title">
-          {initial
-            ? tr(locale, 'Изменить замер', 'Edit measurement')
-            : tr(locale, 'Новый замер', 'New measurement')}
-        </h2>
-        <p className="intro">
-          {tr(
-            locale,
-            'Выбери любую прошлую дату для импорта. Пустые поля не сохраняются.',
-            'Choose any past date when importing. Empty fields are not saved.',
-          )}
-        </p>
-        <label className="measurement-date">
-          {tr(locale, 'Дата', 'Date')}
-          <input
-            max={today}
-            onChange={(event) => setDateKey(event.target.value)}
-            type="date"
-            value={dateKey}
-          />
-        </label>
-        <label className="self-measured-toggle">
-          <input
-            checked={isSelfMeasured}
-            onChange={(event) => setIsSelfMeasured(event.target.checked)}
-            type="checkbox"
-          />
-          <span>
-            <strong>{tr(locale, 'Самозамер', 'Self measured')}</strong>
+        <section
+          aria-labelledby="measurement-sheet-title"
+          aria-modal="true"
+          className="sheet measurement-sheet"
+          role="dialog"
+        >
+          <div className="sheet-handle" />
+          <p className="eyebrow">{tr(locale, 'История тела', 'Body history')}</p>
+          <h2 id="measurement-sheet-title">
+            {initial
+              ? tr(locale, 'Изменить замер', 'Edit measurement')
+              : tr(locale, 'Новый замер', 'New measurement')}
+          </h2>
+          <p className="intro">
+            {tr(
+              locale,
+              'Выбери любую прошлую дату для импорта. Пустые поля не сохраняются.',
+              'Choose any past date when importing. Empty fields are not saved.',
+            )}
+          </p>
+          <label className="measurement-date">
+            {tr(locale, 'Дата', 'Date')}
+            <input
+              max={today}
+              onChange={(event) => setDateKey(event.target.value)}
+              type="date"
+              value={dateKey}
+            />
+          </label>
+          <label className="self-measured-toggle">
+            <input
+              checked={isSelfMeasured}
+              onChange={(event) => setIsSelfMeasured(event.target.checked)}
+              type="checkbox"
+            />
+            <span>
+              <strong>{tr(locale, 'Самозамер', 'Self measured')}</strong>
+              <small>
+                {tr(locale, 'Измерение сделано самостоятельно', 'Measurement taken by yourself')}
+              </small>
+            </span>
+          </label>
+          <fieldset className="rfm-sex-field">
+            <legend>{tr(locale, 'Пол', 'Sex')}</legend>
+            <div>
+              <button
+                aria-pressed={rfmSex === null}
+                className={rfmSex === null ? 'selected' : ''}
+                onClick={() => setRfmSex(null)}
+                type="button"
+              >
+                {tr(locale, 'Последний замер', 'Latest entry')}
+              </button>
+              <button
+                aria-pressed={rfmSex === 'male'}
+                className={rfmSex === 'male' ? 'selected' : ''}
+                onClick={() => setRfmSex('male')}
+                type="button"
+              >
+                {tr(locale, 'Мужской', 'Male')}
+              </button>
+              <button
+                aria-pressed={rfmSex === 'female'}
+                className={rfmSex === 'female' ? 'selected' : ''}
+                onClick={() => setRfmSex('female')}
+                type="button"
+              >
+                {tr(locale, 'Женский', 'Female')}
+              </button>
+            </div>
             <small>
-              {tr(locale, 'Измерение сделано самостоятельно', 'Measurement taken by yourself')}
+              {rfmSex === null
+                ? inheritedRfmSex
+                  ? tr(
+                      locale,
+                      `Будет использован последний указанный пол: ${inheritedRfmSex === 'male' ? 'мужской' : 'женский'}. Рост наследуется так же.`,
+                      `The latest specified sex will be used: ${inheritedRfmSex}. Height is inherited the same way.`,
+                    )
+                  : tr(
+                      locale,
+                      'Пол ещё не указан. Выбери его один раз; рост наследуется по тому же правилу.',
+                      'Sex has not been specified yet. Choose it once; height is inherited the same way.',
+                    )
+                : tr(
+                    locale,
+                    'Это значение сохранится в текущем замере и станет последним для следующих расчётов.',
+                    'This value will be saved in the current entry and used by later estimates.',
+                  )}
             </small>
-          </span>
-        </label>
-        <div className="measurement-form-grid">
-          {measurementDefinitions.map((definition) => (
-            <label key={definition.key} title={measurementCopy(definition, locale).help}>
-              <span>{measurementCopy(definition, locale).label}</span>
-              <div>
-                <input
-                  inputMode="decimal"
-                  max={displayMeasurementNumber(definition.key, definition.maximum, unitSystem)}
-                  min="0.1"
-                  onChange={(event) =>
-                    setValues((current) => ({ ...current, [definition.key]: event.target.value }))
-                  }
-                  placeholder="—"
-                  step="0.1"
-                  type="number"
-                  value={values[definition.key] ?? ''}
-                />
-                <small>{measurementUnit(definition.key, unitSystem, locale)}</small>
-              </div>
-              <em>{measurementCopy(definition, locale).help}</em>
-            </label>
-          ))}
-        </div>
-        {invalid && (
-          <p className="measurement-error">
-            {tr(
-              locale,
-              'Заполни хотя бы одно поле положительным числом.',
-              'Enter a positive number in at least one field.',
-            )}
-          </p>
-        )}
-        {duplicateDate && (
-          <p className="measurement-error">
-            {tr(
-              locale,
-              'За эту дату уже есть замер — измени существующую запись.',
-              'A measurement already exists for this date — edit that entry.',
-            )}
-          </p>
-        )}
-        <div className="sheet-actions">
-          <button className="button ghost" disabled={saving} onClick={onClose} type="button">
-            {tr(locale, 'Отмена', 'Cancel')}
-          </button>
-          <button
-            className="button primary"
-            disabled={invalid || duplicateDate || !dateKey || saving}
-            onClick={async () => {
-              if (!parsedValues) return;
-              setSaving(true);
-              try {
-                await onSave(
-                  {
-                    measuredOn: new Date(`${dateKey}T12:00:00`).toISOString(),
-                    isSelfMeasured,
-                    values: parsedValues,
-                  },
-                  initial,
-                );
-              } finally {
-                setSaving(false);
-              }
-            }}
-            type="button"
-          >
-            {saving ? tr(locale, 'Сохраняю…', 'Saving…') : tr(locale, 'Сохранить', 'Save')}
-          </button>
-        </div>
-      </section>
-    </div>
+          </fieldset>
+          <div className="measurement-form-grid">
+            {measurementDefinitions.map((definition) => (
+              <label key={definition.key} title={measurementCopy(definition, locale).help}>
+                <span>{measurementCopy(definition, locale).label}</span>
+                <div>
+                  <input
+                    inputMode="decimal"
+                    max={displayMeasurementNumber(definition.key, definition.maximum, unitSystem)}
+                    min="0.1"
+                    onChange={(event) =>
+                      setValues((current) => ({ ...current, [definition.key]: event.target.value }))
+                    }
+                    placeholder="—"
+                    step="0.1"
+                    type="number"
+                    value={values[definition.key] ?? ''}
+                  />
+                  <small>{measurementUnit(definition.key, unitSystem, locale)}</small>
+                </div>
+                <em>{measurementCopy(definition, locale).help}</em>
+              </label>
+            ))}
+          </div>
+          {invalid && (
+            <p className="measurement-error">
+              {tr(
+                locale,
+                'Заполни хотя бы одно поле положительным числом.',
+                'Enter a positive number in at least one field.',
+              )}
+            </p>
+          )}
+          {duplicateDate && (
+            <p className="measurement-error">
+              {tr(
+                locale,
+                'За эту дату уже есть замер — измени существующую запись.',
+                'A measurement already exists for this date — edit that entry.',
+              )}
+            </p>
+          )}
+          <div className="sheet-actions">
+            <button className="button ghost" disabled={saving} onClick={onClose} type="button">
+              {tr(locale, 'Отмена', 'Cancel')}
+            </button>
+            <button
+              className="button primary"
+              disabled={invalid || duplicateDate || !dateKey || saving}
+              onClick={async () => {
+                if (!parsedValues) return;
+                setSaving(true);
+                try {
+                  await onSave(
+                    {
+                      measuredOn: new Date(`${dateKey}T12:00:00`).toISOString(),
+                      isSelfMeasured,
+                      values: parsedValues,
+                    },
+                    initial,
+                  );
+                } finally {
+                  setSaving(false);
+                }
+              }}
+              type="button"
+            >
+              {saving ? tr(locale, 'Сохраняю…', 'Saving…') : tr(locale, 'Сохранить', 'Save')}
+            </button>
+          </div>
+        </section>
+      </div>
+    </SheetPortal>
   );
+}
+
+function SheetPortal({ children }: { children: ReactNode }) {
+  return typeof document === 'undefined' ? children : createPortal(children, document.body);
 }
 
 function SyncBadge({ measurement }: { measurement: LocalMeasurement }) {
@@ -716,18 +784,22 @@ function SyncBadge({ measurement }: { measurement: LocalMeasurement }) {
 
 function parseValues(
   values: Record<string, string>,
+  rfmSex: RfmSex | null,
   unitSystem: 'metric' | 'imperial',
 ): MeasurementValues | null {
-  const parsed = Object.fromEntries(
-    measurementDefinitions.map((definition) => {
-      const raw = values[definition.key]?.trim().replace(',', '.') ?? '';
-      return [
-        definition.key,
-        raw === '' ? null : canonicalMeasurementNumber(definition.key, Number(raw), unitSystem),
-      ];
-    }),
-  ) as MeasurementValues;
-  const recorded = Object.values(parsed).filter((value): value is number => value !== null);
+  const parsed = {
+    ...Object.fromEntries(
+      measurementDefinitions.map((definition) => {
+        const raw = values[definition.key]?.trim().replace(',', '.') ?? '';
+        return [
+          definition.key,
+          raw === '' ? null : canonicalMeasurementNumber(definition.key, Number(raw), unitSystem),
+        ];
+      }),
+    ),
+    rfmSex,
+  } as MeasurementValues;
+  const recorded = measurementDefinitions.filter((definition) => parsed[definition.key] !== null);
   const valid = measurementDefinitions.every((definition) => {
     const value = parsed[definition.key];
     return value === null || (Number.isFinite(value) && value > 0 && value <= definition.maximum);
@@ -762,7 +834,7 @@ function measurementCopy(definition: MeasurementDefinition, locale: 'ru' | 'en')
 }
 
 const englishMeasurementCopy: Record<
-  keyof MeasurementValues,
+  MeasurementKey,
   { label: string; shortLabel: string; help: string }
 > = {
   heightCm: { label: 'Height', shortLabel: 'Height', help: 'Stand straight without shoes.' },
@@ -805,7 +877,7 @@ const englishMeasurementCopy: Record<
   bodyFatPercent: {
     label: 'Body fat',
     shortLabel: 'Body fat',
-    help: 'Enter it directly, or leave blank for an approximate male RFM estimate from height and waist.',
+    help: 'Enter it directly. Otherwise, RFM uses the waist in this entry and the latest specified height and sex.',
   },
 };
 
@@ -819,7 +891,7 @@ function formatMeasurementDate(measurement: LocalMeasurement, locale: 'ru' | 'en
 
 function formatDelta(
   value: number | null,
-  key: keyof MeasurementValues,
+  key: MeasurementKey,
   locale: 'ru' | 'en',
   unitSystem: 'metric' | 'imperial',
 ): string {
@@ -837,11 +909,13 @@ function bodyFatSourceLabel(resolved: ResolvedMeasurementValue, locale: 'ru' | '
     return tr(locale, 'введено вручную', 'entered manually');
   }
   if (resolved.source === 'rfm-estimate') {
-    return tr(locale, 'примерная оценка RFM', 'approximate RFM estimate');
+    return resolved.rfmSex === 'male'
+      ? tr(locale, 'примерная оценка RFM · мужская формула', 'approximate RFM · male formula')
+      : tr(locale, 'примерная оценка RFM · женская формула', 'approximate RFM · female formula');
   }
   return tr(
     locale,
-    'добавь рост и талию или введи вручную',
-    'add height and waist, or enter manually',
+    'нужны талия, последний рост и пол — либо введи вручную',
+    'waist, latest height and sex are required — or enter manually',
   );
 }

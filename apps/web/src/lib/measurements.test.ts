@@ -40,37 +40,76 @@ describe('body measurement history', () => {
     ]);
   });
 
-  it('uses a manual body-fat value first and otherwise estimates male RFM from height and waist', () => {
-    const withHeight = {
+  it('uses a manual body-fat value first and otherwise inherits the latest height and sex for RFM', () => {
+    const estimatedOlder = {
       ...older,
-      values: { ...older.values, heightCm: 180 },
+      values: { ...older.values, heightCm: 180, rfmSex: 'male' as const },
     };
-    const estimated = resolvedMeasurementValue(newer, 'bodyFatPercent', [withHeight, newer]);
     const manual = {
       ...newer,
       values: { ...newer.values, bodyFatPercent: 18.2 },
     };
 
-    expect(estimated).toEqual({ value: 23.3, source: 'rfm-estimate' });
-    expect(resolvedMeasurementValue(manual, 'bodyFatPercent', [withHeight, manual])).toEqual({
+    expect(resolvedMeasurementValue(newer, 'bodyFatPercent', [newer, estimatedOlder])).toEqual({
+      value: 23.3,
+      source: 'rfm-estimate',
+      rfmSex: 'male',
+    });
+    expect(resolvedMeasurementValue(manual, 'bodyFatPercent')).toEqual({
       value: 18.2,
       source: 'recorded',
     });
-    expect(measurementTrend([newer, withHeight], 'bodyFatPercent')).toEqual([
+    expect(measurementTrend([newer, estimatedOlder], 'bodyFatPercent')).toEqual([
       { measurementId: 'older', measuredOn: older.measuredOn, value: 24.4 },
       { measurementId: 'newer', measuredOn: newer.measuredOn, value: 23.3 },
     ]);
-    expect(measurementDelta(newer, withHeight, 'bodyFatPercent', [withHeight, newer])).toBeCloseTo(
-      -1.1,
-    );
+    expect(
+      measurementDelta(newer, estimatedOlder, 'bodyFatPercent', [newer, estimatedOlder]),
+    ).toBeCloseTo(-1.1);
   });
 
-  it('keeps body fat visible as unavailable until height and waist or a manual value exist', () => {
+  it('supports the female RFM formula and lets values on the current entry override inherited ones', () => {
+    const latestReference = {
+      ...newer,
+      values: { ...newer.values, heightCm: 190, rfmSex: 'female' as const },
+    };
+    expect(resolvedMeasurementValue(older, 'bodyFatPercent', [older, latestReference])).toEqual({
+      value: 34.2,
+      source: 'rfm-estimate',
+      rfmSex: 'female',
+    });
+
+    const explicitCurrent = {
+      ...older,
+      values: { ...older.values, heightCm: 180, rfmSex: 'male' as const },
+    };
+    expect(
+      resolvedMeasurementValue(explicitCurrent, 'bodyFatPercent', [
+        explicitCurrent,
+        latestReference,
+      ]),
+    ).toEqual({
+      value: 24.4,
+      source: 'rfm-estimate',
+      rfmSex: 'male',
+    });
+  });
+
+  it('keeps body fat unavailable until waist, a latest height and a latest sex exist', () => {
     const withoutInputs = {
       ...newer,
-      values: { ...newer.values, waistCm: null },
+      values: { ...newer.values, heightCm: 180, waistCm: null, rfmSex: 'male' as const },
     };
     expect(resolvedMeasurementValue(withoutInputs, 'bodyFatPercent')).toEqual({
+      value: null,
+      source: 'unavailable',
+    });
+    expect(
+      resolvedMeasurementValue(newer, 'bodyFatPercent', [
+        newer,
+        { ...older, values: { ...older.values, heightCm: 180 } },
+      ]),
+    ).toEqual({
       value: null,
       source: 'unavailable',
     });
@@ -79,9 +118,9 @@ describe('body measurement history', () => {
   it('imports semicolon CSV with Russian headers, decimal commas and historic dates', () => {
     const result = parseMeasurementCsv(
       [
-        'Дата;Вес;Процент жира;Грудь;Бедро левое;Бедро правое;Талия;Самозамер',
-        '23.03.2025;82,5;18,5;103;57;57,5;91;да',
-        '2026-01-22;80,2;;101;;;;нет',
+        'Дата;Вес;Процент жира;Грудь;Бедро левое;Бедро правое;Талия;Пол;Самозамер',
+        '23.03.2025;82,5;18,5;103;57;57,5;91;мужской;да',
+        '2026-01-22;80,2;;101;;;;;нет',
       ].join('\n'),
     );
     expect(result.errors).toEqual([]);
@@ -94,6 +133,7 @@ describe('body measurement history', () => {
         bodyFatPercent: 18.5,
         thighRightCm: 57.5,
         waistCm: 91,
+        rfmSex: 'male',
       },
     });
   });
@@ -196,6 +236,7 @@ function measurement(
       calfCm: null,
       waistCm,
       bodyFatPercent: null,
+      rfmSex: null,
     },
     revision: 1,
     updatedAt: measuredOn,

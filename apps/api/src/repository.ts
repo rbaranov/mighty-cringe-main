@@ -29,6 +29,7 @@ import type {
   WorkoutExercise,
   WorkoutRecord,
 } from '@mighty-cringe/contracts';
+import { measurementValuesSchema } from '@mighty-cringe/contracts';
 import {
   and,
   asc,
@@ -2116,7 +2117,7 @@ function toMeasurementRecord(
     id: measurement.id,
     measuredOn: measurement.measuredOn.toISOString(),
     isSelfMeasured: measurement.isSelfMeasured,
-    values: measurement.values as MeasurementValues,
+    values: measurementValuesSchema.parse(measurement.values),
     revision: measurement.revision,
     updatedAt: measurement.updatedAt.toISOString(),
   };
@@ -2124,7 +2125,7 @@ function toMeasurementRecord(
 
 function toPublicMeasurement(measurement: MemoryMeasurement): MeasurementRecord {
   const { userId: _userId, ...record } = measurement;
-  return record;
+  return { ...record, values: measurementValuesSchema.parse(record.values) };
 }
 
 function defaultNotificationPreferences(): NotificationPreferences {
@@ -2260,7 +2261,9 @@ function measurementChangesMatch(
 function sameMeasurementValues(left: unknown, right: MeasurementValues) {
   if (!left || typeof left !== 'object') return false;
   return Object.keys(right).every(
-    (key) => (left as Record<string, unknown>)[key] === right[key as keyof MeasurementValues],
+    (key) =>
+      ((left as Record<string, unknown>)[key] ?? null) ===
+      (right[key as keyof MeasurementValues] ?? null),
   );
 }
 

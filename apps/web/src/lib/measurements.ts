@@ -1,8 +1,14 @@
-import type { CurrentUser, MeasurementValues, UnitSystem } from '@mighty-cringe/contracts';
+import type {
+  CurrentUser,
+  MeasurementNumericKey,
+  MeasurementValues,
+  RfmSex,
+  UnitSystem,
+} from '@mighty-cringe/contracts';
 
 import type { LocalMeasurement } from './db';
 
-export type MeasurementKey = keyof MeasurementValues;
+export type MeasurementKey = MeasurementNumericKey;
 
 export type MeasurementDefinition = {
   key: MeasurementKey;
@@ -14,10 +20,10 @@ export type MeasurementDefinition = {
   maximum: number;
 };
 
-export type ResolvedMeasurementValue = {
-  value: number | null;
-  source: 'recorded' | 'rfm-estimate' | 'unavailable';
-};
+export type ResolvedMeasurementValue =
+  | { value: number; source: 'recorded' }
+  | { value: number; source: 'rfm-estimate'; rfmSex: RfmSex }
+  | { value: null; source: 'unavailable' };
 
 export type MeasurementImportRow = {
   line: number;
@@ -118,7 +124,7 @@ export const measurementDefinitions: MeasurementDefinition[] = [
     label: '% жира',
     shortLabel: '% жира',
     unit: '%',
-    help: 'Можно ввести явно. Пустое поле даст приблизительный расчёт RFM для мужчин по росту и талии.',
+    help: 'Можно ввести явно. Иначе RFM считается по талии из этой записи и последним указанным ростом и полом.',
     featured: true,
     maximum: 100,
   },
@@ -148,7 +154,7 @@ export function measurementDelta(
   current: LocalMeasurement,
   previous: LocalMeasurement | null,
   key: MeasurementKey,
-  measurements: LocalMeasurement[] = [current, ...(previous ? [previous] : [])],
+  measurements: LocalMeasurement[] = previous ? [previous, current] : [current],
 ): number | null {
   const currentValue = resolvedMeasurementValue(current, key, measurements).value;
   const previousValue = previous
@@ -179,25 +185,28 @@ export function resolvedMeasurementValue(
   if (recorded !== null) return { value: recorded, source: 'recorded' };
   if (key !== 'bodyFatPercent') return { value: null, source: 'unavailable' };
 
+  const latestFirst = orderedMeasurements(measurements).reverse();
   const heightCm =
     measurement.values.heightCm ??
-    orderedMeasurements(measurements)
-      .reverse()
-      .find(
-        (candidate) =>
-          candidate.values.heightCm !== null && candidate.values.heightCm !== undefined,
-      )?.values.heightCm ??
+    latestFirst.find((candidate) => candidate.values.heightCm !== null)?.values.heightCm ??
+    null;
+  const rfmSex =
+    measurement.values.rfmSex ??
+    latestFirst.find((candidate) => candidate.values.rfmSex !== null)?.values.rfmSex ??
     null;
   const waistCm = measurement.values.waistCm ?? null;
-  if (heightCm === null || waistCm === null) return { value: null, source: 'unavailable' };
+  if (heightCm === null || waistCm === null || rfmSex === null) {
+    return { value: null, source: 'unavailable' };
+  }
 
-  const estimate = 64 - 20 * (heightCm / waistCm);
+  const estimate = (rfmSex === 'female' ? 76 : 64) - 20 * (heightCm / waistCm);
   if (!Number.isFinite(estimate) || estimate <= 0 || estimate > 100) {
     return { value: null, source: 'unavailable' };
   }
   return {
     value: Math.round((estimate + Number.EPSILON) * 10) / 10,
     source: 'rfm-estimate',
+    rfmSex,
   };
 }
 
@@ -253,6 +262,7 @@ type StandardLayout = {
   headerIndex: number;
   dateIndex: number;
   selfMeasuredIndex: number;
+  rfmSexIndex: number;
   valueColumns: Array<{ index: number; match: MeasurementLabelMatch }>;
 };
 
@@ -272,9 +282,9 @@ function parseStandardLayout(
   const seenDates = new Set<string>();
   for (let rowIndex = layout.headerIndex + 1; rowIndex < table.length; rowIndex += 1) {
     const source = table[rowIndex];
-    const hasValues = layout.valueColumns.some(({ index }) =>
-      hasMeasurementValue(source.cells[index]),
-    );
+    const hasValues =
+      layout.valueColumns.some(({ index }) => hasMeasurementValue(source.cells[index])) ||
+      (layout.rfmSexIndex >= 0 && hasMeasurementValue(source.cells[layout.rfmSexIndex]));
     const rawDate = source.cells[layout.dateIndex]?.trim() ?? '';
     if (!rawDate && !hasValues) continue;
 
@@ -315,7 +325,24 @@ function parseStandardLayout(
       }
     }
     if (invalidValue) continue;
-    if (!Object.values(values).some((value) => value !== null)) {
+    if (layout.rfmSexIndex >= 0) {
+      const rawSex = source.cells[layout.rfmSexIndex]?.trim() ?? '';
+      if (hasMeasurementValue(rawSex)) {
+        const parsedSex = parseRfmSex(rawSex);
+        if (!parsedSex) {
+          errors.push(
+            message(
+              locale,
+              `Строка ${source.line}: пол для RFM должен быть «мужской» или «женский».`,
+              `Row ${source.line}: RFM sex must be “male” or “female”.`,
+            ),
+          );
+          continue;
+        }
+        values.rfmSex = parsedSex;
+      }
+    }
+    if (!hasRecordedMeasurement(values)) {
       errors.push(
         message(
           locale,
@@ -396,6 +423,27 @@ function parseTransposedLayout(
       continue;
     }
 
+    if (isRfmSexHeader(label)) {
+      records.forEach((record) => {
+        const raw = source.cells[record.columnIndex]?.trim() ?? '';
+        if (!hasMeasurementValue(raw)) return;
+        const parsedSex = parseRfmSex(raw);
+        if (parsedSex) {
+          record.values.rfmSex = parsedSex;
+          return;
+        }
+        record.invalid = true;
+        errors.push(
+          message(
+            locale,
+            `Строка ${source.line}, дата ${record.dateKey}: пол для RFM должен быть «мужской» или «женский».`,
+            `Row ${source.line}, date ${record.dateKey}: RFM sex must be “male” or “female”.`,
+          ),
+        );
+      });
+      continue;
+    }
+
     const explicitSelfMeasuredRow = isSelfMeasuredHeader(label);
     const markerValues = records.map((record) => source.cells[record.columnIndex]?.trim() ?? '');
     const hasStandaloneMarker =
@@ -420,7 +468,7 @@ function parseTransposedLayout(
 
   const rows = records.flatMap<MeasurementImportRow>((record) => {
     if (record.invalid) return [];
-    if (!Object.values(record.values).some((value) => value !== null)) {
+    if (!hasRecordedMeasurement(record.values)) {
       errors.push(
         message(
           locale,
@@ -472,6 +520,7 @@ function findStandardLayout(
       headerIndex,
       dateIndex,
       selfMeasuredIndex: cells.findIndex(isSelfMeasuredHeader),
+      rfmSexIndex: cells.findIndex(isRfmSexHeader),
       valueColumns,
     };
     if (!best || candidate.valueColumns.length > best.valueColumns.length) best = candidate;
@@ -556,9 +605,14 @@ const englishMeasurementLabels: Partial<Record<MeasurementKey, string>> = {
 };
 
 function emptyMeasurementValues(): MeasurementValues {
-  return Object.fromEntries(
-    measurementDefinitions.map((definition) => [definition.key, null]),
-  ) as MeasurementValues;
+  return {
+    ...Object.fromEntries(measurementDefinitions.map((definition) => [definition.key, null])),
+    rfmSex: null,
+  } as MeasurementValues;
+}
+
+function hasRecordedMeasurement(values: MeasurementValues): boolean {
+  return measurementDefinitions.some((definition) => values[definition.key] !== null);
 }
 
 function parseDelimitedTable(text: string): ParsedTableRow[] {
@@ -678,6 +732,15 @@ const selfMeasuredHeaders = new Set([
   'самозамер',
   'самостоятельно',
   'is_self_measured',
+]);
+const rfmSexHeaders = new Set([
+  'sex',
+  'gender',
+  'пол',
+  'rfm_sex',
+  'sex_for_rfm',
+  'пол_для_rfm',
+  'пол_для_расчета_rfm',
 ]);
 const measurementHeaderAliases: Record<string, MeasurementKey> = {
   height: 'heightCm',
@@ -863,6 +926,19 @@ function isDateHeader(value: string): boolean {
     dateHeaders.has(normalized) ||
     ['дата_замера', 'день_замера', 'measurement_date'].includes(normalized)
   );
+}
+
+function isRfmSexHeader(value: string): boolean {
+  return rfmSexHeaders.has(normalizeHeader(value));
+}
+
+function parseRfmSex(value: string): RfmSex | null {
+  const normalized = normalizeHeader(value);
+  if (['male', 'man', 'm', 'м', 'муж', 'мужчина', 'мужской'].includes(normalized)) return 'male';
+  if (['female', 'woman', 'f', 'ж', 'жен', 'женщина', 'женский'].includes(normalized)) {
+    return 'female';
+  }
+  return null;
 }
 
 function isDateAxisLabel(value: string): boolean {

@@ -190,6 +190,7 @@ test(
       calfCm: null,
       waistCm: 91,
       bodyFatPercent: null,
+      rfmSex: 'male' as const,
     };
     const createMeasurement = {
       id: measurementId,

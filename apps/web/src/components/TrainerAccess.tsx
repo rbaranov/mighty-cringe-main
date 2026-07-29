@@ -424,11 +424,11 @@ function formatMeasurements(
     bodyFatPercent: ['% жира', 'body fat'],
   };
   return Object.entries(measurement.values)
-    .filter((entry): entry is [string, number] => entry[1] !== null)
+    .filter((entry): entry is [string, number] => typeof entry[1] === 'number')
     .slice(0, 4)
     .map(([key, value]) => {
       const label = labels[key]?.[locale === 'en' ? 1 : 0] ?? key;
-      return `${label}: ${displayMeasurement(key as keyof MeasurementRecord['values'], value, locale, unitSystem)}`;
+      return `${label}: ${displayMeasurement(key as Exclude<keyof MeasurementRecord['values'], 'rfmSex'>, value, locale, unitSystem)}`;
     })
     .join(' · ');
 }
