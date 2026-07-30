@@ -1,4 +1,4 @@
-import type { CurrentUser, Exercise, UnitSystem } from '@mighty-cringe/contracts';
+import type { CurrentUser, Exercise, UnitSystem, WorkoutExercise } from '@mighty-cringe/contracts';
 
 import { canonicalWeight } from './preferences';
 
@@ -20,6 +20,11 @@ export type NaturalSetResult =
       question: string;
       candidates: Exercise[];
     };
+
+export type NaturalSetExerciseContext = {
+  preferredExercises: Exercise[];
+  fallbackExercise: Exercise | null;
+};
 
 const numberWords: Record<string, number> = {
   ноль: 0,
@@ -83,6 +88,7 @@ const volumeSeparators = new Set(['на', 'x', 'for']);
 export function parseNaturalSet({
   text,
   catalog,
+  preferredExercises = [],
   scopedExercise = null,
   exerciseOverride = null,
   locale = 'ru',
@@ -90,6 +96,7 @@ export function parseNaturalSet({
 }: {
   text: string;
   catalog: Exercise[];
+  preferredExercises?: Exercise[];
   scopedExercise?: Exercise | null;
   exerciseOverride?: Exercise | null;
   locale?: CurrentUser['locale'];
@@ -106,9 +113,13 @@ export function parseNaturalSet({
     );
   }
 
+  const catalogMatch = matchExercise(normalized, catalog);
+  const preferredMatch = matchPreferredExercise(normalized, preferredExercises);
   const exerciseMatch = exerciseOverride
     ? { exercise: exerciseOverride, matchedPhrase: '' }
-    : matchExercise(normalized, catalog);
+    : catalogMatch && !('candidates' in catalogMatch)
+      ? catalogMatch
+      : (preferredMatch ?? catalogMatch);
   if (exerciseMatch && 'candidates' in exerciseMatch) {
     return {
       status: 'needs_clarification',
@@ -191,6 +202,38 @@ export function parseNaturalSet({
   };
 }
 
+export function buildNaturalSetExerciseContext({
+  plan,
+  sets,
+  catalog,
+  targetSetCount = 3,
+}: {
+  plan: WorkoutExercise[];
+  sets: Array<{ exerciseId: string; deleted: boolean }>;
+  catalog: Exercise[];
+  targetSetCount?: number;
+}): NaturalSetExerciseContext {
+  const exerciseById = new Map(catalog.map((exercise) => [exercise.id, exercise]));
+  const seen = new Set<string>();
+  const preferredExercises = [...plan]
+    .sort((left, right) => left.position - right.position)
+    .flatMap((item) => {
+      if (seen.has(item.exerciseId)) return [];
+      seen.add(item.exerciseId);
+      const exercise = exerciseById.get(item.exerciseId);
+      return exercise ? [exercise] : [];
+    });
+  const setCounts = new Map<string, number>();
+  for (const set of sets) {
+    if (set.deleted) continue;
+    setCounts.set(set.exerciseId, (setCounts.get(set.exerciseId) ?? 0) + 1);
+  }
+  const fallbackExercise =
+    preferredExercises.find((exercise) => (setCounts.get(exercise.id) ?? 0) < targetSetCount) ??
+    null;
+  return { preferredExercises, fallbackExercise };
+}
+
 function findCompactSet(normalized: string, unitSystem: UnitSystem) {
   const match = normalized.match(
     /(?:^|\s)(\d+(?:\.\d+)?)\s*(кг|килограмм(?:а|ов)?|kg|kgs|lb|lbs|pound|pounds)?\s*(?:x|на)\s*(\d+)\s*(?:x|на)\s*(\d+)(?:\s|$)/,
@@ -235,6 +278,47 @@ function matchExercise(normalized: string, catalog: Exercise[]): ExerciseTextMat
     matchedPhrase: top[0].matchedPhrase,
     score: top[0].score,
   };
+}
+
+function matchPreferredExercise(
+  normalized: string,
+  preferredExercises: Exercise[],
+): ExerciseTextMatch {
+  if (!preferredExercises.length) return null;
+  const exact = matchExercise(normalized, preferredExercises);
+  if (exact) return exact;
+
+  const matches = preferredExercises.flatMap((exercise) => {
+    const variants = [exercise.nameRu, exercise.nameEn, ...exercise.aliases]
+      .map(normalize)
+      .filter(Boolean);
+    const partials = variants.flatMap((variant) => {
+      const tokens = variant.split(' ');
+      return Array.from({ length: Math.max(0, tokens.length - 1) }, (_, index) =>
+        tokens.slice(0, index + 2).join(' '),
+      );
+    });
+    const matchedPhrase = partials
+      .flatMap((partial) => {
+        const matched = findMatchedPhrase(normalized, partial);
+        return matched ? [matched] : [];
+      })
+      .sort((left, right) => right.split(' ').length - left.split(' ').length)[0];
+    return matchedPhrase
+      ? [
+          {
+            exercise,
+            matchedPhrase,
+            score: matchedPhrase.split(' ').length * 1000 + matchedPhrase.length,
+          },
+        ]
+      : [];
+  });
+  if (!matches.length) return null;
+  const topScore = Math.max(...matches.map((match) => match.score));
+  const top = matches.filter((match) => match.score === topScore);
+  if (top.length > 1) return { candidates: top.map((match) => match.exercise) };
+  return top[0];
 }
 
 export function matchExerciseText(text: string, catalog: Exercise[]): ExerciseTextMatch {

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { Exercise } from '@mighty-cringe/contracts';
 
 import { fallbackCatalog } from './fallbackCatalog';
-import { parseNaturalSet } from './naturalSet';
+import { buildNaturalSetExerciseContext, parseNaturalSet } from './naturalSet';
 
 describe('natural set parsing', () => {
   it('parses spoken Russian numbers in a scoped exercise and keeps the comment', () => {
@@ -48,6 +48,68 @@ describe('natural set parsing', () => {
       status: 'ready',
       exercise: { nameRu: 'Жим штанги лёжа на горизонтальной скамье' },
       draft: { weightKg: 80, reps: 3, comment: null },
+    });
+  });
+
+  it('uses a unique abbreviated exercise name from the active plan before the fallback', () => {
+    const standingPress = fallbackCatalog.find(
+      (exercise) => exercise.nameRu === 'Жим гантелей стоя',
+    )!;
+    expect(
+      parseNaturalSet({
+        text: 'Добавить подход 10 на 20 на 1 жим гантелей',
+        catalog: fallbackCatalog,
+        preferredExercises: [standingPress],
+        scopedExercise: fallbackCatalog[0],
+      }),
+    ).toMatchObject({
+      status: 'ready',
+      exercise: standingPress,
+      draft: { weightKg: 10, reps: 20, rir: 1, comment: null },
+    });
+  });
+
+  it('defaults to the first plan exercise with fewer than three sets', () => {
+    const firstExercise = fallbackCatalog[0];
+    const secondExercise = fallbackCatalog[1];
+    const context = buildNaturalSetExerciseContext({
+      catalog: fallbackCatalog,
+      plan: [
+        {
+          id: '91000000-0000-4000-8000-000000000001',
+          exerciseId: secondExercise.id,
+          position: 1,
+          supersetGroup: null,
+        },
+        {
+          id: '91000000-0000-4000-8000-000000000002',
+          exerciseId: firstExercise.id,
+          position: 0,
+          supersetGroup: null,
+        },
+      ],
+      sets: [
+        { exerciseId: firstExercise.id, deleted: false },
+        { exerciseId: firstExercise.id, deleted: false },
+        { exerciseId: firstExercise.id, deleted: false },
+        { exerciseId: secondExercise.id, deleted: false },
+        { exerciseId: secondExercise.id, deleted: true },
+      ],
+    });
+
+    expect(context.preferredExercises).toEqual([firstExercise, secondExercise]);
+    expect(context.fallbackExercise).toBe(secondExercise);
+    expect(
+      parseNaturalSet({
+        text: 'Добавить подход 40 на 12 на 2',
+        catalog: fallbackCatalog,
+        preferredExercises: context.preferredExercises,
+        scopedExercise: context.fallbackExercise,
+      }),
+    ).toMatchObject({
+      status: 'ready',
+      exercise: secondExercise,
+      draft: { weightKg: 40, reps: 12, rir: 2, comment: null },
     });
   });
 

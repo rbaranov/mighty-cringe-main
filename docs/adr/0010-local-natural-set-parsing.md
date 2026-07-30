@@ -19,10 +19,13 @@ long exercise tokens, and extracts weight, repetitions, RIR, and the remaining c
 decimal weights, numeric and common Russian number words, explicit `RIR`, “в запасе”, “без запаса”, and
 “до отказа”. Values are checked against the same product limits used by the set contract.
 
-The per-exercise “＋ Подход” flow can open the natural input with that exercise as explicit context. The
-global “Пояснить” flow requires an exercise name or alias. When multiple catalog entries match equally,
-the parser returns candidates instead of choosing one. Missing or invalid values produce one focused
-clarification question.
+The per-exercise “＋ Подход” flow can open the natural input with that exercise as explicit context.
+In the global “Пояснить” flow, an explicit catalog name or alias has priority. A unique abbreviated
+canonical name may resolve against the active workout plan. If no exercise is resolved, the flow uses
+the first plan exercise by position that has fewer than three non-deleted sets. The chosen exercise is
+still shown in the confirmation preview before anything is written. When multiple active-plan entries
+match equally, the parser returns candidates instead of choosing one. Missing or invalid values produce
+one focused clarification question.
 
 A parsed result is never written immediately. The sheet shows the resolved exercise, weight,
 repetitions, RIR, comment, and most recent local result. Only explicit confirmation writes the normal
