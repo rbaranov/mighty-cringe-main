@@ -32,6 +32,17 @@ export function filterExerciseCatalog(
   });
 }
 
+export function catalogDiscoveryQuery(exercises: Exercise[], query: string) {
+  const trimmedQuery = query.trim();
+  if (trimmedQuery.length < 2) return null;
+  const catalogMatches = filterExerciseCatalog(exercises, {
+    query: trimmedQuery,
+    muscle: 'all',
+    tag: 'all',
+  });
+  return catalogMatches.length === 0 ? trimmedQuery : null;
+}
+
 export function collapseExerciseCatalogDuplicates(exercises: Exercise[]) {
   const globalExercises = exercises.filter((exercise) => exercise.scope !== 'user');
   const globalKeys = new Set(

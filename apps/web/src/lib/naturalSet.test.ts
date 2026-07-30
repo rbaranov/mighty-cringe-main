@@ -38,6 +38,38 @@ describe('natural set parsing', () => {
     });
   });
 
+  it.each([
+    ['12 с половиной килограмм на 10, осталось 0', 12.5, 0],
+    ['двенадцать с половиной на десять, осталось ноль', 12.5, 0],
+    ['12 с половинкой кг на 10, до отказа', 12.5, 0],
+  ])('parses spoken half-kilogram weights and natural effort: %s', (text, weightKg, rir) => {
+    expect(
+      parseNaturalSet({
+        text,
+        catalog: fallbackCatalog,
+        scopedExercise: fallbackCatalog[2],
+      }),
+    ).toMatchObject({
+      status: 'ready',
+      exercise: fallbackCatalog[2],
+      draft: { weightKg, reps: 10, rir, comment: null },
+    });
+  });
+
+  it('parses the reported voice phrasing without leaking number words into the comment', () => {
+    expect(
+      parseNaturalSet({
+        text: 'разведение добавь подход 12 с половиной килограмм на 10 раз осталось 0',
+        catalog: fallbackCatalog,
+        scopedExercise: fallbackCatalog[1],
+      }),
+    ).toMatchObject({
+      status: 'ready',
+      exercise: fallbackCatalog[1],
+      draft: { weightKg: 12.5, reps: 10, rir: 0, comment: 'разведение' },
+    });
+  });
+
   it('parses the reported conversational add-set command after workout commands decline it', () => {
     expect(
       parseNaturalSet({

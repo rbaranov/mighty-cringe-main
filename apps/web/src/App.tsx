@@ -56,6 +56,7 @@ import {
 } from './lib/confirmation';
 import { fallbackCatalog, retiredGlobalExerciseIds } from './lib/fallbackCatalog';
 import {
+  catalogDiscoveryQuery,
   collapseExerciseCatalogDuplicates,
   filterExerciseCatalog,
   groupExerciseChoicesByPrimaryMuscle,
@@ -2466,6 +2467,8 @@ function CatalogView({
 }) {
   const { locale } = usePreferences();
   const [adding, setAdding] = useState(false);
+  const [topDiscoveryQuery, setTopDiscoveryQuery] = useState('');
+  const [discoveringFromEmptyResult, setDiscoveringFromEmptyResult] = useState(false);
   const [query, setQuery] = useState('');
   const [selectedMuscle, setSelectedMuscle] = useState<Exercise['primaryMuscles'][number] | 'all'>(
     'all',
@@ -2476,6 +2479,7 @@ function CatalogView({
     muscle: selectedMuscle,
     tag: selectedTag,
   });
+  const unresolvedCatalogQuery = catalogDiscoveryQuery(exercises, query);
   const hasFilters = query.trim() !== '' || selectedMuscle !== 'all' || selectedTag !== 'all';
   const activeFilterDescription = [
     query.trim() ? tr(locale, `поиск «${query.trim()}»`, `search “${query.trim()}”`) : null,
@@ -2495,14 +2499,25 @@ function CatalogView({
     <section className="screen">
       <p className="eyebrow">{tr(locale, 'Общий + личный', 'Shared + personal')}</p>
       <h1>{tr(locale, 'Каталог упражнений', 'Exercise catalog')}</h1>
-      <button className="button primary" onClick={() => setAdding((value) => !value)} type="button">
+      <button
+        className="button primary"
+        onClick={() => {
+          const nextAdding = !adding;
+          setAdding(nextAdding);
+          if (nextAdding) setTopDiscoveryQuery(unresolvedCatalogQuery ?? '');
+          setDiscoveringFromEmptyResult(false);
+        }}
+        type="button"
+      >
         {adding
           ? tr(locale, 'Скрыть поиск', 'Hide search')
           : tr(locale, '＋ Найти и добавить', '＋ Find and add')}
       </button>
       {adding && (
         <ExerciseDiscoveryPanel
+          autoSearch={Boolean(topDiscoveryQuery)}
           existingExercises={exercises}
+          initialQuery={topDiscoveryQuery}
           locale={locale}
           onExerciseSaved={async (exercise) => {
             await db.exercises.put(exercise);
@@ -2513,7 +2528,10 @@ function CatalogView({
         <label>
           <span>{tr(locale, 'Поиск', 'Search')}</span>
           <input
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setDiscoveringFromEmptyResult(false);
+            }}
             placeholder={tr(
               locale,
               'Название, синоним или оборудование',
@@ -2573,6 +2591,7 @@ function CatalogView({
                 setQuery('');
                 setSelectedMuscle('all');
                 setSelectedTag('all');
+                setDiscoveringFromEmptyResult(false);
               }}
               type="button"
             >
@@ -2610,18 +2629,46 @@ function CatalogView({
             </span>
           </button>
         ))}
-        {filteredExercises.length === 0 && (
-          <div className="catalog-empty">
-            <strong>{tr(locale, 'Ничего не найдено', 'Nothing found')}</strong>
-            <p>
-              {tr(
-                locale,
-                `Активные условия: ${activeFilterDescription || 'нет'}. Попробуй другой синоним, мышцу или сбрось фильтры.`,
-                `Active conditions: ${activeFilterDescription || 'none'}. Try another alias or muscle, or clear the filters.`,
-              )}
-            </p>
-          </div>
+        {filteredExercises.length === 0 && unresolvedCatalogQuery && discoveringFromEmptyResult && (
+          <ExerciseDiscoveryPanel
+            autoSearch
+            existingExercises={exercises}
+            initialQuery={unresolvedCatalogQuery}
+            locale={locale}
+            onExerciseSaved={async (exercise) => {
+              await db.exercises.put(exercise);
+            }}
+          />
         )}
+        {filteredExercises.length === 0 &&
+          !(unresolvedCatalogQuery && discoveringFromEmptyResult) && (
+            <div className="catalog-empty">
+              <strong>{tr(locale, 'Ничего не найдено', 'Nothing found')}</strong>
+              <p>
+                {tr(
+                  locale,
+                  `Активные условия: ${activeFilterDescription || 'нет'}. Попробуй другой синоним, мышцу или сбрось фильтры.`,
+                  `Active conditions: ${activeFilterDescription || 'none'}. Try another alias or muscle, or clear the filters.`,
+                )}
+              </p>
+              {unresolvedCatalogQuery && (
+                <button
+                  className="button primary full"
+                  onClick={() => {
+                    setAdding(false);
+                    setDiscoveringFromEmptyResult(true);
+                  }}
+                  type="button"
+                >
+                  {tr(
+                    locale,
+                    `Найти и добавить «${unresolvedCatalogQuery}»`,
+                    `Find and add “${unresolvedCatalogQuery}”`,
+                  )}
+                </button>
+              )}
+            </div>
+          )}
       </div>
     </section>
   );
@@ -3226,7 +3273,7 @@ function ExplainSheet({
                 scopedExercise
                   ? tr(
                       locale,
-                      'Например: сорок на двенадцать, один в запасе, техника чистая',
+                      'Например: сорок на двенадцать, остался один, техника чистая',
                       'For example: 90 for 12, RIR 1, clean technique',
                     )
                   : tr(
