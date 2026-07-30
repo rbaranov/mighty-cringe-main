@@ -60,7 +60,12 @@ import {
 } from './lib/exerciseCatalog';
 import { softDeletePersonalExercise } from './lib/exercises';
 import { hasPendingRemoteLogout, requestRemoteLogout } from './lib/logout';
-import { parseNaturalSet, type NaturalSetDraft, type NaturalSetResult } from './lib/naturalSet';
+import {
+  buildNaturalSetExerciseContext,
+  parseNaturalSet,
+  type NaturalSetDraft,
+  type NaturalSetResult,
+} from './lib/naturalSet';
 import {
   parseNaturalWorkoutCommand,
   type NaturalWorkoutCommand,
@@ -2626,10 +2631,16 @@ function ExplainSheet({
       overrides,
     });
     if (command.status !== 'not_command') return command;
+    const exerciseContext = buildNaturalSetExerciseContext({
+      plan: activeWorkout?.exercises ?? [],
+      sets: sets.filter((set) => set.workoutId === activeWorkout?.id),
+      catalog,
+    });
     return parseNaturalSet({
       text: input,
       catalog,
-      scopedExercise,
+      preferredExercises: exerciseContext.preferredExercises,
+      scopedExercise: scopedExercise ?? exerciseContext.fallbackExercise,
       exerciseOverride,
       locale,
       unitSystem,
