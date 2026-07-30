@@ -17,7 +17,9 @@ Typed set phrases are parsed entirely in the PWA. The deterministic parser norma
 English text, matches catalog names and aliases, tolerates a one-character inflection difference in
 long exercise tokens, and extracts weight, repetitions, RIR, and the remaining comment. It supports
 decimal weights, numeric and common Russian number words, explicit `RIR`, “в запасе”, “без запаса”, and
-“до отказа”. Values are checked against the same product limits used by the set contract.
+“до отказа”. Spoken half-kilogram weights such as “12 с половиной” and natural reserve phrases such
+as “осталось 0” are normalized without requiring the athlete to pronounce `RIR`. Values are checked
+against the same product limits used by the set contract.
 
 The per-exercise “＋ Подход” flow can open the natural input with that exercise as explicit context.
 In the global “Пояснить” flow, an explicit catalog name or alias has priority. A unique abbreviated

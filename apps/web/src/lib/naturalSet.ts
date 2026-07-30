@@ -84,6 +84,7 @@ const weightUnits = new Set([
 ]);
 const imperialWeightUnits = new Set(['lb', 'lbs', 'pound', 'pounds']);
 const volumeSeparators = new Set(['на', 'x', 'for']);
+const halfSuffixes = new Set(['половиной', 'половинкой']);
 
 export function parseNaturalSet({
   text,
@@ -107,7 +108,7 @@ export function parseNaturalSet({
     return clarification(
       tr(
         locale,
-        'Напиши подход, например: «жим лёжа 80 на 8, RIR 2».',
+        'Напиши подход, например: «жим лёжа 80 на 8, осталось 2».',
         'Describe a set, for example: “bench press 175 for 8, RIR 2”.',
       ),
     );
@@ -388,6 +389,14 @@ function findRir(normalized: string) {
     if (value !== null) return { value, matchedPhrase: explicit[0] };
   }
 
+  const remaining = normalized.match(
+    /(?:осталось|оставалось|остался|оставался)\s+(\d+|[а-я]+)(?:\s+повтор(?:а|ов)?)?(?:\s+в\s+запасе)?/,
+  );
+  if (remaining) {
+    const value = parseNumber([remaining[1]]);
+    if (value !== null) return { value, matchedPhrase: remaining[0] };
+  }
+
   const reserve = normalized.match(/(\d+|[а-я]+)\s+(?:повтор(?:а|ов)?\s+)?в\s+запасе/);
   if (reserve) {
     const value = parseNumber([reserve[1]]);
@@ -438,18 +447,27 @@ function extractComment(original: string, normalized: string, phrases: string[])
 
 function parseNumber(tokens: string[]) {
   if (!tokens.length) return null;
-  if (tokens.length === 1 && /^\d+(?:\.\d+)?$/.test(tokens[0])) return Number(tokens[0]);
+  const hasHalfSuffix =
+    tokens.length >= 3 &&
+    tokens[tokens.length - 2] === 'с' &&
+    halfSuffixes.has(tokens[tokens.length - 1]);
+  const wholeTokens = hasHalfSuffix ? tokens.slice(0, -2) : tokens;
+  if (!wholeTokens.length) return null;
+  if (wholeTokens.length === 1 && /^\d+(?:\.\d+)?$/.test(wholeTokens[0])) {
+    return Number(wholeTokens[0]) + (hasHalfSuffix ? 0.5 : 0);
+  }
   let value = 0;
-  for (const token of tokens) {
+  for (const token of wholeTokens) {
     const part = numberWords[token];
     if (part === undefined) return null;
     value += part;
   }
-  return value;
+  return value + (hasHalfSuffix ? 0.5 : 0);
 }
 
 function numberStart(tokens: string[], end: number) {
   let start = end;
+  if (halfSuffixes.has(tokens[start]) && tokens[start - 1] === 'с') start -= 2;
   while (start >= 0 && isNumberToken(tokens[start])) start -= 1;
   return start + 1;
 }
@@ -457,6 +475,7 @@ function numberStart(tokens: string[], end: number) {
 function numberEnd(tokens: string[], start: number) {
   let end = start;
   while (end < tokens.length && isNumberToken(tokens[end])) end += 1;
+  if (tokens[end] === 'с' && halfSuffixes.has(tokens[end + 1])) end += 2;
   return end - 1;
 }
 

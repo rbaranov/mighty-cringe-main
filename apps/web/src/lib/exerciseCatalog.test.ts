@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { globalExerciseCatalog } from '@mighty-cringe/contracts';
 
 import {
+  catalogDiscoveryQuery,
   collapseExerciseCatalogDuplicates,
   filterExerciseCatalog,
   groupExerciseChoicesByPrimaryMuscle,
@@ -81,5 +82,16 @@ describe('filterExerciseCatalog', () => {
           ),
       );
     }
+  });
+});
+
+describe('catalogDiscoveryQuery', () => {
+  it('keeps an unresolved catalog query for one-tap online discovery', () => {
+    expect(catalogDiscoveryQuery(globalExerciseCatalog, '  Тяга сумо а  ')).toBe('Тяга сумо а');
+  });
+
+  it('does not offer online discovery for an existing catalog match or an empty query', () => {
+    expect(catalogDiscoveryQuery(globalExerciseCatalog, 'пэк дек')).toBeNull();
+    expect(catalogDiscoveryQuery(globalExerciseCatalog, ' ')).toBeNull();
   });
 });
