@@ -63,6 +63,28 @@ describe('progress metrics', () => {
     expect(buildWorkoutDays([lateWorkout], [], 'Asia/Almaty')[0].dateKey).toBe('2026-07-21');
   });
 
+  it('keeps a workout on its start day when its effective end crosses midnight', () => {
+    const overnight = workout('2026-07-20T23:40:00.000Z', '2026-07-21T00:20:00.000Z', 'overnight');
+    const days = buildWorkoutDays(
+      [overnight],
+      [set('overnight-set', overnight.id, 'bench', 60, 8)],
+      'UTC',
+    );
+    expect(days[0]).toMatchObject({ dateKey: '2026-07-20', workoutCount: 1 });
+  });
+
+  it('keeps an empty workout in history without counting it as training', () => {
+    const empty = workout('2026-07-22T10:00:00.000Z', '2026-07-22T10:15:00.000Z', 'empty');
+    const days = buildWorkoutDays([firstWorkout, empty], [set('s1', 'w1', 'bench', 80, 5)], 'UTC');
+    expect(days.find((day) => day.dateKey === '2026-07-22')).toMatchObject({
+      workoutIds: ['empty'],
+      workoutCount: 0,
+      setCount: 0,
+      volumeKg: 0,
+    });
+    expect(workoutCountForMonth(days, '2026-07')).toBe(1);
+  });
+
   it('counts the unfinished current week as soon as it has a completed workout', () => {
     const workoutDays = ['2026-07-20', '2026-07-28'];
 
@@ -131,6 +153,15 @@ function workout(startedAt: string, endedAt: string | null, id: string): LocalWo
     id,
     startedAt,
     endedAt,
+    durationSeconds: endedAt
+      ? Math.max(
+          0,
+          Math.floor((new Date(endedAt).getTime() - new Date(startedAt).getTime()) / 1000),
+        )
+      : 0,
+    activeSegmentStartedAt: endedAt ? null : startedAt,
+    lastActivityAt: endedAt ?? startedAt,
+    completionReason: endedAt ? 'manual' : null,
     notes: null,
     locale: 'ru',
     revision: 1,

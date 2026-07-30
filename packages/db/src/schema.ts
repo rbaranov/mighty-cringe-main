@@ -23,6 +23,10 @@ export const setEntrySourceEnum = pgEnum('set_entry_source', [
   'natural_text',
   'voice_ai',
 ]);
+export const workoutCompletionReasonEnum = pgEnum('workout_completion_reason', [
+  'manual',
+  'automatic',
+]);
 export const voiceStatusEnum = pgEnum('voice_status', [
   'pending',
   'processing',
@@ -167,6 +171,10 @@ export const workouts = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
     endedAt: timestamp('ended_at', { withTimezone: true }),
+    durationSeconds: integer('duration_seconds').notNull().default(0),
+    activeSegmentStartedAt: timestamp('active_segment_started_at', { withTimezone: true }),
+    lastActivityAt: timestamp('last_activity_at', { withTimezone: true }).notNull(),
+    completionReason: workoutCompletionReasonEnum('completion_reason'),
     locale: varchar('locale', { length: 10 }).notNull().default('ru'),
     notes: text('notes'),
     revision: integer('revision').notNull().default(1),

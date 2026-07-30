@@ -358,7 +358,15 @@ async function applyMutationResult(queued: OutboxMutation, result: MutationRespo
           syncState: 'pending',
         });
       } else {
-        await db.workouts.put({ ...withoutSets(result.entity), syncState: 'synced' });
+        const serverWorkout = withoutSets(result.entity);
+        await db.workouts.put({
+          ...serverWorkout,
+          lastActivityAt:
+            local && local.lastActivityAt > serverWorkout.lastActivityAt
+              ? local.lastActivityAt
+              : serverWorkout.lastActivityAt,
+          syncState: 'synced',
+        });
       }
       for (const set of result.entity.sets) {
         const localSet = await db.sets.get(set.id);
@@ -494,9 +502,14 @@ async function rebaseMutation(conflict: SyncConflict): Promise<SyncMutation | nu
         clientMutationId,
         startedAt: local.startedAt,
         endedAt: local.endedAt,
+        durationSeconds: local.durationSeconds,
+        activeSegmentStartedAt: local.activeSegmentStartedAt,
+        lastActivityAt: local.lastActivityAt,
+        completionReason: local.completionReason,
         notes: local.notes,
         locale: local.locale,
         exercises: local.exercises,
+        activityAt: local.lastActivityAt,
       },
     };
   }
@@ -584,6 +597,7 @@ function mutationEntity(mutation: SyncMutation) {
         key: `workout:${mutation.payload.id}`,
       };
     case 'workout.update':
+    case 'workout.touch':
       return {
         type: 'workout' as const,
         id: mutation.payload.workoutId,

@@ -374,26 +374,47 @@ export const deleteMeasurementSchema = z.object({
   baseRevision: z.number().int().nonnegative(),
 });
 
-export const createWorkoutSchema = z.object({
-  id: z.string().uuid(),
-  clientMutationId: z.string().uuid(),
-  startedAt: z.string().datetime(),
-  endedAt: z.string().datetime().nullable().default(null),
-  notes: z.string().max(10_000).nullable().default(null),
-  locale: z.enum(['ru', 'en']).default('ru'),
-  exercises: workoutPlanSchema.default([]),
-});
+export const createWorkoutSchema = z
+  .object({
+    id: z.string().uuid(),
+    clientMutationId: z.string().uuid(),
+    startedAt: z.string().datetime(),
+    endedAt: z.string().datetime().nullable().default(null),
+    durationSeconds: z.number().int().nonnegative().default(0),
+    activeSegmentStartedAt: z.string().datetime().nullable().optional(),
+    lastActivityAt: z.string().datetime().optional(),
+    completionReason: z.enum(['manual', 'automatic']).nullable().default(null),
+    notes: z.string().max(10_000).nullable().default(null),
+    locale: z.enum(['ru', 'en']).default('ru'),
+    exercises: workoutPlanSchema.default([]),
+    activityAt: z.string().datetime().optional(),
+  })
+  .transform((input) => ({
+    ...input,
+    activeSegmentStartedAt:
+      input.activeSegmentStartedAt === undefined
+        ? input.endedAt === null
+          ? input.startedAt
+          : null
+        : input.activeSegmentStartedAt,
+    lastActivityAt: input.lastActivityAt ?? input.startedAt,
+  }));
 
 export const createSetSchema = z.object({
   clientMutationId: z.string().uuid(),
   workoutId: z.string().uuid(),
   set: setInputSchema,
+  activityAt: z.string().datetime().optional(),
 });
 
 const workoutChangesSchema = z
   .object({
     startedAt: z.string().datetime().optional(),
     endedAt: z.string().datetime().nullable().optional(),
+    durationSeconds: z.number().int().nonnegative().optional(),
+    activeSegmentStartedAt: z.string().datetime().nullable().optional(),
+    lastActivityAt: z.string().datetime().optional(),
+    completionReason: z.enum(['manual', 'automatic']).nullable().optional(),
     notes: z.string().max(10_000).nullable().optional(),
     exercises: workoutPlanSchema.optional(),
   })
@@ -404,12 +425,20 @@ export const updateWorkoutSchema = z.object({
   workoutId: z.string().uuid(),
   baseRevision: z.number().int().nonnegative(),
   changes: workoutChangesSchema,
+  activityAt: z.string().datetime().optional(),
+});
+
+export const touchWorkoutSchema = z.object({
+  clientMutationId: z.string().uuid(),
+  workoutId: z.string().uuid(),
+  activityAt: z.string().datetime(),
 });
 
 export const deleteWorkoutSchema = z.object({
   clientMutationId: z.string().uuid(),
   workoutId: z.string().uuid(),
   baseRevision: z.number().int().nonnegative(),
+  activityAt: z.string().datetime().optional(),
 });
 
 const setChangesSchema = z
@@ -430,6 +459,7 @@ export const updateSetSchema = z.object({
   setId: z.string().uuid(),
   baseRevision: z.number().int().nonnegative(),
   changes: setChangesSchema,
+  activityAt: z.string().datetime().optional(),
 });
 
 export const deleteSetSchema = z.object({
@@ -437,11 +467,13 @@ export const deleteSetSchema = z.object({
   workoutId: z.string().uuid(),
   setId: z.string().uuid(),
   baseRevision: z.number().int().nonnegative(),
+  activityAt: z.string().datetime().optional(),
 });
 
 export const syncMutationSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('workout.create'), payload: createWorkoutSchema }),
   z.object({ type: z.literal('workout.update'), payload: updateWorkoutSchema }),
+  z.object({ type: z.literal('workout.touch'), payload: touchWorkoutSchema }),
   z.object({ type: z.literal('workout.delete'), payload: deleteWorkoutSchema }),
   z.object({ type: z.literal('set.create'), payload: createSetSchema }),
   z.object({ type: z.literal('set.update'), payload: updateSetSchema }),
@@ -455,6 +487,10 @@ export const workoutRecordSchema = z.object({
   id: z.string().uuid(),
   startedAt: z.string().datetime(),
   endedAt: z.string().datetime().nullable(),
+  durationSeconds: z.number().int().nonnegative(),
+  activeSegmentStartedAt: z.string().datetime().nullable(),
+  lastActivityAt: z.string().datetime(),
+  completionReason: z.enum(['manual', 'automatic']).nullable(),
   notes: z.string().nullable(),
   locale: z.enum(['ru', 'en']),
   revision: z.number().int().positive(),
@@ -474,6 +510,7 @@ export type SetEntrySource = SetInput['entrySource'];
 export type CreateWorkoutInput = z.infer<typeof createWorkoutSchema>;
 export type CreateSetInput = z.infer<typeof createSetSchema>;
 export type UpdateWorkoutInput = z.infer<typeof updateWorkoutSchema>;
+export type TouchWorkoutInput = z.infer<typeof touchWorkoutSchema>;
 export type DeleteWorkoutInput = z.infer<typeof deleteWorkoutSchema>;
 export type UpdateSetInput = z.infer<typeof updateSetSchema>;
 export type DeleteSetInput = z.infer<typeof deleteSetSchema>;

@@ -27,6 +27,10 @@ describe('ProgressView', () => {
       id: '20000000-0000-4000-8000-000000000001',
       startedAt: '2026-07-21T17:00:00.000Z',
       endedAt: '2026-07-21T18:00:00.000Z',
+      durationSeconds: 3600,
+      activeSegmentStartedAt: null,
+      lastActivityAt: '2026-07-21T17:45:00.000Z',
+      completionReason: 'automatic',
       notes: null,
       locale: 'ru',
       revision: 1,
@@ -71,6 +75,7 @@ describe('ProgressView', () => {
     expect(html).toContain('Текущая серия');
     expect(html).toContain('Личный расчётный рекорд');
     expect(html).toContain('80 кг×8');
+    expect(html).toContain('завершена автоматически');
     expect(html).toContain('Epley');
     expect(html).toContain('AI: голос');
     expect(html).toContain('Редактировать');
@@ -93,6 +98,10 @@ describe('ProgressView', () => {
       id: '20000000-0000-4000-8000-000000000001',
       startedAt: '2026-07-21T17:00:00.000Z',
       endedAt: '2026-07-21T18:00:00.000Z',
+      durationSeconds: 3600,
+      activeSegmentStartedAt: null,
+      lastActivityAt: '2026-07-21T17:45:00.000Z',
+      completionReason: 'manual' as const,
       notes: null,
       locale: 'en' as const,
       revision: 1,
@@ -147,6 +156,10 @@ describe('ProgressView', () => {
       id: '20000000-0000-4000-8000-000000000001',
       startedAt: '2026-07-21T17:00:00.000Z',
       endedAt: '2026-07-21T18:00:00.000Z',
+      durationSeconds: 3600,
+      activeSegmentStartedAt: null,
+      lastActivityAt: '2026-07-21T17:45:00.000Z',
+      completionReason: 'manual',
       notes: null,
       locale: 'ru',
       revision: 1,
@@ -172,7 +185,7 @@ describe('ProgressView', () => {
     );
 
     expect(html).toContain('тренировки в августе');
-    expect(html).toContain('1 за 2026 год');
+    expect(html).toContain('0 за 2026 год');
     expect(html).toContain('август 2026');
     expect(html).toContain('aria-label="Следующий месяц" disabled=""');
     expect(html).toContain('В этом месяце пока нет завершённых тренировок.');

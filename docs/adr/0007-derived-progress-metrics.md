@@ -15,15 +15,18 @@ before the history volume requires them.
 
 Derive the initial progress metrics in the PWA from completed workouts and non-deleted sets. Pending
 and conflicted local records are included and visibly marked as not yet synchronized. All calendar
-grouping uses the browser's IANA timezone and the completion date of the workout.
+grouping uses the browser's IANA timezone. ADR 0020 changes the grouping source from completion
+time to workout start time and excludes empty workouts from count and streak metrics.
 
 Use the following definitions:
 
-- a training day is a local calendar day with at least one completed workout;
+- a training day is a local calendar day with at least one completed workout containing a
+  non-deleted set;
 - a streak is measured in consecutive local Monday–Sunday calendar weeks with at least one completed
   workout in each week; the unfinished current week does not break a streak established through the
   previous week, and the best streak is the longest historical run;
-- month and year counts include completed, non-deleted workouts by their local completion date;
+- month and year counts include completed, non-deleted, non-empty workouts by their local start
+  date; empty completed workouts remain visible in history;
 - training volume is the sum of `weightKg × reps`; the summary shows the inclusive trailing 30
   calendar days;
 - working weight for an exercise and workout is its heaviest recorded set;

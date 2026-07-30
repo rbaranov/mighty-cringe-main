@@ -207,6 +207,57 @@ export class MightyCringeDatabase extends Dexie {
             measurement.values.rfmSex ??= null;
           });
       });
+    this.version(9)
+      .stores({
+        workouts: 'id, startedAt, syncState',
+        sets: 'id, workoutId, exerciseId, performedAt, position, syncState, deleted',
+        exercises: 'id, *primaryMuscles',
+        measurements: 'id, measuredOn, syncState, deleted',
+        voiceEntries: 'id, workoutId, status, createdAt, nextAttemptAt',
+        outbox: 'id, sequence, createdAt',
+        conflicts: 'id, entityType, entityId, createdAt',
+        meta: 'key',
+      })
+      .upgrade(async (transaction) => {
+        const storedSets = await transaction.table('sets').toArray();
+        const activityByWorkout = new Map<string, string>();
+        for (const set of storedSets) {
+          const activityAt = [set.performedAt, set.updatedAt]
+            .filter((value): value is string => typeof value === 'string')
+            .sort()
+            .at(-1);
+          if (!activityAt) continue;
+          const current = activityByWorkout.get(set.workoutId);
+          if (!current || activityAt > current) activityByWorkout.set(set.workoutId, activityAt);
+        }
+
+        await transaction
+          .table('workouts')
+          .toCollection()
+          .modify((workout) => {
+            const endedAt = typeof workout.endedAt === 'string' ? workout.endedAt : null;
+            const storedDuration = endedAt
+              ? Math.max(
+                  0,
+                  Math.floor(
+                    (new Date(endedAt).getTime() - new Date(workout.startedAt).getTime()) / 1_000,
+                  ),
+                )
+              : 0;
+            workout.durationSeconds ??= storedDuration;
+            workout.activeSegmentStartedAt ??= endedAt ? null : workout.startedAt;
+            workout.lastActivityAt ??= [
+              workout.startedAt,
+              workout.updatedAt,
+              endedAt,
+              activityByWorkout.get(workout.id),
+            ]
+              .filter((value): value is string => typeof value === 'string')
+              .sort()
+              .at(-1);
+            workout.completionReason ??= null;
+          });
+      });
   }
 }
 

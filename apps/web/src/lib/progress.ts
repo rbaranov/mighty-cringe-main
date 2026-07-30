@@ -62,9 +62,17 @@ export function buildWorkoutDays(
   );
   const completedById = new Map(completed.map((workout) => [workout.id, workout]));
   const days = new Map<string, WorkoutDay>();
+  const visibleSetCountByWorkout = new Map<string, number>();
+  for (const set of sets) {
+    if (set.deleted || !completedById.has(set.workoutId)) continue;
+    visibleSetCountByWorkout.set(
+      set.workoutId,
+      (visibleSetCountByWorkout.get(set.workoutId) ?? 0) + 1,
+    );
+  }
 
   for (const workout of completed) {
-    const dateKey = dateKeyInTimeZone(workout.endedAt, timeZone);
+    const dateKey = dateKeyInTimeZone(workout.startedAt, timeZone);
     const day = days.get(dateKey) ?? {
       dateKey,
       workoutIds: [],
@@ -74,7 +82,7 @@ export function buildWorkoutDays(
       hasUnsyncedData: false,
     };
     day.workoutIds.push(workout.id);
-    day.workoutCount += 1;
+    if ((visibleSetCountByWorkout.get(workout.id) ?? 0) > 0) day.workoutCount += 1;
     day.hasUnsyncedData ||= workout.syncState !== 'synced';
     days.set(dateKey, day);
   }
@@ -83,7 +91,7 @@ export function buildWorkoutDays(
     if (set.deleted) continue;
     const workout = completedById.get(set.workoutId);
     if (!workout) continue;
-    const day = days.get(dateKeyInTimeZone(workout.endedAt, timeZone));
+    const day = days.get(dateKeyInTimeZone(workout.startedAt, timeZone));
     if (!day) continue;
     day.setCount += 1;
     day.volumeKg += set.weightKg * set.reps;
@@ -183,8 +191,8 @@ export function buildExerciseProgress(
         estimateOneRepMax(set) > estimateOneRepMax(best) ? set : best,
       );
       return {
-        dateKey: dateKeyInTimeZone(workout.endedAt, timeZone),
-        finishedAt: workout.endedAt,
+        dateKey: dateKeyInTimeZone(workout.startedAt, timeZone),
+        finishedAt: workout.startedAt,
         workoutId,
         setCount: workoutSets.length,
         topWeightKg: Math.max(...workoutSets.map((set) => set.weightKg)),
