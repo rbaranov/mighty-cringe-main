@@ -5,7 +5,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SyncMutation } from '@mighty-cringe/contracts';
 
 import { db } from './db';
-import { flushOutbox, getSyncStatus } from './sync';
+import { flushOutbox, getSyncStatus, queueMutation } from './sync';
 
 const measuredOn = '2026-07-22T06:00:00.000Z';
 const measurementId = '60000000-0000-4000-8000-000000000001';
@@ -83,6 +83,39 @@ describe('durable sync status', () => {
 
     expect(await db.outbox.count()).toBe(1);
     expect(getSyncStatus()).toMatchObject({ phase: 'error' });
+  });
+
+  it('keeps an automatic workout completion queued while offline', async () => {
+    const clientMutationId = '61000000-0000-4000-8000-000000000002';
+    vi.stubGlobal('navigator', { onLine: false });
+
+    await queueMutation({
+      type: 'workout.update',
+      payload: {
+        clientMutationId,
+        workoutId: '60000000-0000-4000-8000-000000000002',
+        baseRevision: 1,
+        changes: {
+          endedAt: '2026-07-22T08:15:00.000Z',
+          durationSeconds: 2_700,
+          activeSegmentStartedAt: null,
+          lastActivityAt: '2026-07-22T08:00:00.000Z',
+          completionReason: 'automatic',
+        },
+        activityAt: '2026-07-22T08:00:00.000Z',
+      },
+    });
+
+    await expect(flushOutbox()).resolves.toBe('offline');
+    expect(await db.outbox.get(clientMutationId)).toMatchObject({
+      mutation: {
+        type: 'workout.update',
+        payload: {
+          clientMutationId,
+          changes: { completionReason: 'automatic' },
+        },
+      },
+    });
   });
 });
 

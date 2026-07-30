@@ -18,6 +18,7 @@ import type {
   TrainerAthleteSummary,
   TrainerInviteRecord,
   TrainerSummary,
+  TouchWorkoutInput,
   UpdateExerciseInput,
   UpdateMeasurementInput,
   UpdateNotificationPreferences,
@@ -152,6 +153,7 @@ export interface WorkoutRepository {
   listWorkouts(userId: string): Promise<WorkoutRecord[]>;
   createWorkout(userId: string, input: CreateWorkoutInput): Promise<WorkoutMutationResult>;
   updateWorkout(userId: string, input: UpdateWorkoutInput): Promise<WorkoutMutationResult>;
+  touchWorkout(userId: string, input: TouchWorkoutInput): Promise<WorkoutMutationResult>;
   deleteWorkout(userId: string, input: DeleteWorkoutInput): Promise<DeleteMutationResult>;
   createSet(userId: string, input: CreateSetInput): Promise<SetMutationResult>;
   updateSet(userId: string, input: UpdateSetInput): Promise<SetMutationResult>;
@@ -334,6 +336,10 @@ export class MemoryRepository implements WorkoutRepository {
       userId,
       startedAt: input.startedAt,
       endedAt: input.endedAt,
+      durationSeconds: input.durationSeconds,
+      activeSegmentStartedAt: input.activeSegmentStartedAt,
+      lastActivityAt: input.lastActivityAt,
+      completionReason: input.completionReason,
       notes: input.notes,
       locale: input.locale,
       exercises: orderedPlan(input.exercises),
@@ -360,14 +366,88 @@ export class MemoryRepository implements WorkoutRepository {
       throw new RepositoryConflictError(this.workoutRecord(workout));
     }
 
+    const wasActive = workout.endedAt === null;
+    const legacyFinish =
+      wasActive &&
+      typeof input.changes.endedAt === 'string' &&
+      input.changes.durationSeconds === undefined;
+    const legacyResume =
+      !wasActive &&
+      'endedAt' in input.changes &&
+      input.changes.endedAt === null &&
+      !('activeSegmentStartedAt' in input.changes);
+    const legacyResumeAt = input.activityAt ?? new Date().toISOString();
+    const legacySegmentSeconds = legacyFinish
+      ? Math.max(
+          0,
+          Math.floor(
+            (new Date(input.changes.endedAt!).getTime() -
+              new Date(workout.activeSegmentStartedAt ?? workout.startedAt).getTime()) /
+              1_000,
+          ),
+        )
+      : 0;
+
     if (input.changes.startedAt !== undefined) workout.startedAt = input.changes.startedAt;
-    if ('endedAt' in input.changes) workout.endedAt = input.changes.endedAt ?? null;
+    if ('endedAt' in input.changes) {
+      workout.endedAt = legacyFinish
+        ? new Date(
+            new Date(workout.startedAt).getTime() +
+              (workout.durationSeconds + legacySegmentSeconds) * 1_000,
+          ).toISOString()
+        : (input.changes.endedAt ?? null);
+    }
+    if (input.changes.durationSeconds !== undefined) {
+      workout.durationSeconds = input.changes.durationSeconds;
+    } else if (legacyFinish) {
+      workout.durationSeconds += legacySegmentSeconds;
+    }
+    if ('activeSegmentStartedAt' in input.changes) {
+      workout.activeSegmentStartedAt = input.changes.activeSegmentStartedAt ?? null;
+    } else if (legacyFinish) {
+      workout.activeSegmentStartedAt = null;
+    } else if (legacyResume) {
+      workout.activeSegmentStartedAt = legacyResumeAt;
+    }
+    if (input.changes.lastActivityAt !== undefined) {
+      workout.lastActivityAt =
+        input.changes.lastActivityAt > workout.lastActivityAt
+          ? input.changes.lastActivityAt
+          : workout.lastActivityAt;
+    } else if (legacyFinish) {
+      const finishActivityAt = input.activityAt ?? input.changes.endedAt!;
+      if (finishActivityAt > workout.lastActivityAt) workout.lastActivityAt = finishActivityAt;
+    } else if (legacyResume && legacyResumeAt > workout.lastActivityAt) {
+      workout.lastActivityAt = legacyResumeAt;
+    }
+    if ('completionReason' in input.changes) {
+      workout.completionReason = input.changes.completionReason ?? null;
+    } else if (legacyFinish) {
+      workout.completionReason = 'manual';
+    } else if (legacyResume) {
+      workout.completionReason = null;
+    }
+    touchMemoryWorkout(workout, legacyResume ? legacyResumeAt : input.activityAt);
     if ('notes' in input.changes) workout.notes = input.changes.notes ?? null;
     if (input.changes.exercises !== undefined) {
       workout.exercises = orderedPlan(input.changes.exercises);
     }
     workout.revision += 1;
     workout.updatedAt = new Date().toISOString();
+    this.mutations.add(mutationKey);
+    return { entityType: 'workout', entity: this.workoutRecord(workout), duplicate: false };
+  }
+
+  async touchWorkout(userId: string, input: TouchWorkoutInput): Promise<WorkoutMutationResult> {
+    const mutationKey = this.mutationKey(userId, input.clientMutationId);
+    const workout = this.workouts.get(input.workoutId);
+    if (!workout || workout.userId !== userId) throw new RepositoryNotFoundError();
+    if (this.mutations.has(mutationKey)) {
+      return { entityType: 'workout', entity: this.workoutRecord(workout), duplicate: true };
+    }
+    if (workout.endedAt === null) {
+      touchMemoryWorkout(workout, input.activityAt);
+    }
     this.mutations.add(mutationKey);
     return { entityType: 'workout', entity: this.workoutRecord(workout), duplicate: false };
   }
@@ -435,6 +515,7 @@ export class MemoryRepository implements WorkoutRepository {
       updatedAt: new Date().toISOString(),
     };
     this.sets.set(set.id, set);
+    touchMemoryWorkout(workout, input.activityAt ?? input.set.performedAt);
     this.mutations.add(mutationKey);
     return { entityType: 'set', entity: toPublicSet(set), duplicate: false };
   }
@@ -464,6 +545,7 @@ export class MemoryRepository implements WorkoutRepository {
     if (input.changes.position !== undefined) set.position = input.changes.position;
     set.revision += 1;
     set.updatedAt = new Date().toISOString();
+    touchMemoryWorkout(this.workouts.get(set.workoutId), input.activityAt);
     this.mutations.add(mutationKey);
     return { entityType: 'set', entity: toPublicSet(set), duplicate: false };
   }
@@ -484,6 +566,7 @@ export class MemoryRepository implements WorkoutRepository {
     }
 
     this.sets.delete(set.id);
+    touchMemoryWorkout(this.workouts.get(set.workoutId), input.activityAt);
     this.mutations.add(mutationKey);
     return { entityType: 'set', entity: null, entityId: input.setId, duplicate: false };
   }
@@ -899,6 +982,10 @@ export class MemoryRepository implements WorkoutRepository {
       id: workout.id,
       startedAt: workout.startedAt,
       endedAt: workout.endedAt,
+      durationSeconds: workout.durationSeconds,
+      activeSegmentStartedAt: workout.activeSegmentStartedAt,
+      lastActivityAt: workout.lastActivityAt,
+      completionReason: workout.completionReason,
       notes: workout.notes,
       locale: workout.locale,
       exercises: orderedPlan(workout.exercises),
@@ -1084,6 +1171,12 @@ export class PostgresRepository implements WorkoutRepository {
         userId,
         startedAt: new Date(input.startedAt),
         endedAt: input.endedAt ? new Date(input.endedAt) : null,
+        durationSeconds: input.durationSeconds,
+        activeSegmentStartedAt: input.activeSegmentStartedAt
+          ? new Date(input.activeSegmentStartedAt)
+          : null,
+        lastActivityAt: new Date(input.lastActivityAt),
+        completionReason: input.completionReason,
         notes: input.notes,
         locale: input.locale,
       });
@@ -1113,22 +1206,81 @@ export class PostgresRepository implements WorkoutRepository {
         throw new RepositoryConflictError(toWorkoutRecord(existing, existingPlan, []));
       }
 
+      const processingAt = new Date();
+      const wasActive = existing.endedAt === null;
+      const legacyFinish =
+        wasActive &&
+        typeof input.changes.endedAt === 'string' &&
+        input.changes.durationSeconds === undefined;
+      const legacyResume =
+        !wasActive &&
+        'endedAt' in input.changes &&
+        input.changes.endedAt === null &&
+        !('activeSegmentStartedAt' in input.changes);
+      const legacyResumeAt = input.activityAt ? new Date(input.activityAt) : processingAt;
+      const legacySegmentSeconds = legacyFinish
+        ? Math.max(
+            0,
+            Math.floor(
+              (new Date(input.changes.endedAt!).getTime() -
+                (existing.activeSegmentStartedAt ?? existing.startedAt).getTime()) /
+                1_000,
+            ),
+          )
+        : 0;
+      const nextStartedAt =
+        input.changes.startedAt === undefined
+          ? existing.startedAt
+          : new Date(input.changes.startedAt);
+      const nextDurationSeconds =
+        input.changes.durationSeconds ??
+        (legacyFinish ? existing.durationSeconds + legacySegmentSeconds : existing.durationSeconds);
+      const nextEndedAt =
+        'endedAt' in input.changes
+          ? legacyFinish
+            ? new Date(nextStartedAt.getTime() + nextDurationSeconds * 1_000)
+            : input.changes.endedAt
+              ? new Date(input.changes.endedAt)
+              : null
+          : existing.endedAt;
+      const nextActiveSegmentStartedAt =
+        'activeSegmentStartedAt' in input.changes
+          ? input.changes.activeSegmentStartedAt
+            ? new Date(input.changes.activeSegmentStartedAt)
+            : null
+          : legacyFinish
+            ? null
+            : legacyResume
+              ? legacyResumeAt
+              : existing.activeSegmentStartedAt;
+      const nextLastActivityAt = latestDate(
+        existing.lastActivityAt,
+        input.changes.lastActivityAt,
+        input.activityAt,
+        legacyFinish ? (input.activityAt ?? input.changes.endedAt!) : undefined,
+        legacyResume ? legacyResumeAt.toISOString() : undefined,
+      );
+      const nextCompletionReason =
+        'completionReason' in input.changes
+          ? (input.changes.completionReason ?? null)
+          : legacyFinish
+            ? 'manual'
+            : legacyResume
+              ? null
+              : existing.completionReason;
+
       const updated = await transaction
         .update(workouts)
         .set({
-          startedAt:
-            input.changes.startedAt === undefined
-              ? existing.startedAt
-              : new Date(input.changes.startedAt),
-          endedAt:
-            'endedAt' in input.changes
-              ? input.changes.endedAt
-                ? new Date(input.changes.endedAt)
-                : null
-              : existing.endedAt,
+          startedAt: nextStartedAt,
+          endedAt: nextEndedAt,
+          durationSeconds: nextDurationSeconds,
+          activeSegmentStartedAt: nextActiveSegmentStartedAt,
+          lastActivityAt: nextLastActivityAt,
+          completionReason: nextCompletionReason,
           notes: 'notes' in input.changes ? (input.changes.notes ?? null) : existing.notes,
           revision: existing.revision + 1,
-          updatedAt: new Date(),
+          updatedAt: processingAt,
         })
         .where(
           and(
@@ -1153,6 +1305,32 @@ export class PostgresRepository implements WorkoutRepository {
       if (input.changes.exercises !== undefined) {
         await replaceWorkoutPlan(transaction, input.workoutId, input.changes.exercises);
       }
+      return false;
+    });
+    const entity = await this.getWorkout(userId, input.workoutId);
+    if (!entity) throw new RepositoryNotFoundError();
+    return { entityType: 'workout', entity, duplicate };
+  }
+
+  async touchWorkout(userId: string, input: TouchWorkoutInput): Promise<WorkoutMutationResult> {
+    const duplicate = await this.db.transaction(async (transaction) => {
+      const alreadyApplied = await recordMutation(transaction, userId, input.clientMutationId);
+      if (alreadyApplied) return true;
+
+      const existingRows = await transaction
+        .select()
+        .from(workouts)
+        .where(and(eq(workouts.id, input.workoutId), eq(workouts.userId, userId)))
+        .limit(1);
+      const existing = existingRows[0];
+      if (!existing) throw new RepositoryNotFoundError();
+      if (existing.endedAt !== null) return true;
+      const activityAt = new Date(input.activityAt);
+      if (activityAt <= existing.lastActivityAt) return true;
+      await transaction
+        .update(workouts)
+        .set({ lastActivityAt: activityAt, updatedAt: new Date() })
+        .where(and(eq(workouts.id, input.workoutId), eq(workouts.userId, userId)));
       return false;
     });
     const entity = await this.getWorkout(userId, input.workoutId);
@@ -1241,6 +1419,12 @@ export class PostgresRepository implements WorkoutRepository {
         performedAt: new Date(input.set.performedAt),
         position: input.set.position,
       });
+      await touchWorkoutActivity(
+        transaction,
+        userId,
+        input.workoutId,
+        input.activityAt ?? input.set.performedAt,
+      );
       return false;
     });
     const entity = await this.getSet(userId, input.set.id);
@@ -1304,6 +1488,12 @@ export class PostgresRepository implements WorkoutRepository {
         if (setChangesMatch(current, input.changes)) return true;
         throw new RepositoryConflictError(toSetRecord(current));
       }
+      await touchWorkoutActivity(
+        transaction,
+        userId,
+        input.workoutId,
+        input.activityAt ?? new Date().toISOString(),
+      );
       return false;
     });
     const entity = await this.getSet(userId, input.setId);
@@ -1338,7 +1528,15 @@ export class PostgresRepository implements WorkoutRepository {
         .delete(sets)
         .where(and(eq(sets.id, existing.id), eq(sets.revision, input.baseRevision)))
         .returning({ id: sets.id });
-      if (removed.length) return false;
+      if (removed.length) {
+        await touchWorkoutActivity(
+          transaction,
+          userId,
+          input.workoutId,
+          input.activityAt ?? new Date().toISOString(),
+        );
+        return false;
+      }
 
       const currentRows = await transaction
         .select({ set: sets })
@@ -2021,6 +2219,47 @@ export class PostgresRepository implements WorkoutRepository {
 type Database = ReturnType<typeof createDatabase>;
 type MutationTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
+function touchMemoryWorkout(workout: MemoryWorkout | undefined, activityAt?: string) {
+  if (!workout || workout.endedAt !== null || !activityAt || activityAt <= workout.lastActivityAt) {
+    return;
+  }
+  workout.lastActivityAt = activityAt;
+  workout.updatedAt = new Date().toISOString();
+}
+
+function latestDate(current: Date, ...candidates: Array<string | undefined>) {
+  return candidates.reduce((latest, candidate) => {
+    if (!candidate) return latest;
+    const date = new Date(candidate);
+    return date > latest ? date : latest;
+  }, new Date(current));
+}
+
+async function touchWorkoutActivity(
+  transaction: MutationTransaction,
+  userId: string,
+  workoutId: string,
+  activityAt: string,
+) {
+  const workoutRows = await transaction
+    .select({
+      id: workouts.id,
+      endedAt: workouts.endedAt,
+      lastActivityAt: workouts.lastActivityAt,
+    })
+    .from(workouts)
+    .where(and(eq(workouts.id, workoutId), eq(workouts.userId, userId)))
+    .limit(1);
+  const workout = workoutRows[0];
+  if (!workout || workout.endedAt !== null) return;
+  const nextActivityAt = new Date(activityAt);
+  if (nextActivityAt <= workout.lastActivityAt) return;
+  await transaction
+    .update(workouts)
+    .set({ lastActivityAt: nextActivityAt, updatedAt: new Date() })
+    .where(and(eq(workouts.id, workoutId), eq(workouts.userId, userId)));
+}
+
 async function selectWorkoutPlan(
   transaction: MutationTransaction,
   workoutId: string,
@@ -2070,6 +2309,10 @@ function toWorkoutRecord(
     id: workout.id,
     startedAt: workout.startedAt.toISOString(),
     endedAt: workout.endedAt?.toISOString() ?? null,
+    durationSeconds: workout.durationSeconds,
+    activeSegmentStartedAt: workout.activeSegmentStartedAt?.toISOString() ?? null,
+    lastActivityAt: workout.lastActivityAt.toISOString(),
+    completionReason: workout.completionReason,
     notes: workout.notes,
     locale: workout.locale === 'en' ? 'en' : 'ru',
     revision: workout.revision,
@@ -2188,6 +2431,10 @@ function sameWorkoutCreate(
   return (
     asIso(workout.startedAt) === input.startedAt &&
     asNullableIso(workout.endedAt) === input.endedAt &&
+    workout.durationSeconds === input.durationSeconds &&
+    asNullableIso(workout.activeSegmentStartedAt) === input.activeSegmentStartedAt &&
+    asIso(workout.lastActivityAt) === input.lastActivityAt &&
+    workout.completionReason === input.completionReason &&
     workout.notes === input.notes &&
     workout.locale === input.locale &&
     samePlan(storedPlan, input.exercises)
@@ -2227,6 +2474,14 @@ function workoutChangesMatch(
   return (
     (changes.startedAt === undefined || asIso(workout.startedAt) === changes.startedAt) &&
     (!('endedAt' in changes) || asNullableIso(workout.endedAt) === (changes.endedAt ?? null)) &&
+    (changes.durationSeconds === undefined ||
+      workout.durationSeconds === changes.durationSeconds) &&
+    (!('activeSegmentStartedAt' in changes) ||
+      asNullableIso(workout.activeSegmentStartedAt) === (changes.activeSegmentStartedAt ?? null)) &&
+    (changes.lastActivityAt === undefined ||
+      asIso(workout.lastActivityAt) === changes.lastActivityAt) &&
+    (!('completionReason' in changes) ||
+      workout.completionReason === (changes.completionReason ?? null)) &&
     (!('notes' in changes) || workout.notes === (changes.notes ?? null)) &&
     (changes.exercises === undefined || samePlan(storedPlan, changes.exercises))
   );

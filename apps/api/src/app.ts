@@ -751,6 +751,9 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
         case 'workout.update':
           result = await repository.updateWorkout(user.id, parsed.data.payload);
           break;
+        case 'workout.touch':
+          result = await repository.touchWorkout(user.id, parsed.data.payload);
+          break;
         case 'workout.delete':
           result = await repository.deleteWorkout(user.id, parsed.data.payload);
           break;

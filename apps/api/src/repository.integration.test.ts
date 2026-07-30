@@ -32,6 +32,10 @@ test(
       clientMutationId: randomUUID(),
       startedAt: '2026-07-21T10:00:00.000Z',
       endedAt: null,
+      durationSeconds: 0,
+      activeSegmentStartedAt: '2026-07-21T10:00:00.000Z',
+      lastActivityAt: '2026-07-21T10:00:00.000Z',
+      completionReason: null,
       notes: null,
       locale: 'ru' as const,
       exercises: [

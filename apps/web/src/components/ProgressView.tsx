@@ -5,6 +5,7 @@ import type { Exercise } from '@mighty-cringe/contracts';
 import type { LocalMeasurement, LocalSet, LocalWorkout } from '../lib/db';
 import { exerciseName, formatWeight, tr, usePreferences } from '../lib/preferences';
 import { setEntrySourceSuffix } from '../lib/setEntrySource';
+import { formatWorkoutDurationSeconds } from '../lib/workoutLifecycle';
 import {
   buildCalendarMonth,
   buildExerciseProgress,
@@ -75,13 +76,17 @@ export function ProgressView({
     () => buildWorkoutDays(workouts, visibleSets, timeZone),
     [sets, timeZone, visibleSets, workouts],
   );
+  const countedWorkoutDays = useMemo(
+    () => workoutDays.filter((day) => day.workoutCount > 0),
+    [workoutDays],
+  );
   const streaks = useMemo(
     () =>
       calculateWeeklyStreaks(
-        workoutDays.map((day) => day.dateKey),
+        countedWorkoutDays.map((day) => day.dateKey),
         todayKey,
       ),
-    [todayKey, workoutDays],
+    [countedWorkoutDays, todayKey],
   );
   const [summaryTip, setSummaryTip] = useState<ProgressSummaryTip | null>(null);
   const summaryRef = useRef<HTMLDivElement | null>(null);
@@ -213,8 +218,8 @@ export function ProgressView({
           onToggle={() => setSummaryTip((current) => (current === 'month' ? null : 'month'))}
           tooltip={tr(
             locale,
-            `За ${currentYear} год: ${currentYearWorkoutCount}. Учитываются только завершённые и не удалённые тренировки по твоему местному времени.`,
-            `${currentYearWorkoutCount} in ${currentYear}. Only completed, non-deleted workouts are counted in your local time.`,
+            `За ${currentYear} год: ${currentYearWorkoutCount}. Учитываются завершённые тренировки хотя бы с одним подходом — по дню начала в твоём местном времени.`,
+            `${currentYearWorkoutCount} in ${currentYear}. Completed workouts with at least one set are counted by their local start day.`,
           )}
           value={String(currentMonthWorkoutCount)}
         />
@@ -231,8 +236,8 @@ export function ProgressView({
           onToggle={() => setSummaryTip((current) => (current === 'streak' ? null : 'streak'))}
           tooltip={tr(
             locale,
-            'Неделя засчитывается сразу после первой завершённой тренировки. Для продолжения нужна хотя бы одна тренировка в каждой следующей календарной неделе.',
-            'A week counts immediately after its first completed workout. Continue with at least one workout in every following calendar week.',
+            'Неделя засчитывается после первой завершённой тренировки хотя бы с одним подходом. Для продолжения нужна такая тренировка в каждой следующей календарной неделе.',
+            'A week counts after the first completed workout with at least one set. Continue with one such workout in every following calendar week.',
           )}
           value={formatWeeks(streaks.current, locale)}
         />
@@ -537,10 +542,15 @@ function DayDetails({
           <article key={workoutId}>
             <div>
               <span>
-                {workout?.endedAt
-                  ? formatTime(workout.endedAt, locale)
+                {workout
+                  ? `${formatTime(workout.startedAt, locale)} · ${formatWorkoutDurationSeconds(workout.durationSeconds, locale)}`
                   : tr(locale, 'Завершена', 'Completed')}
               </span>
+              {workout?.completionReason === 'automatic' && (
+                <em className="automatic-completion-label">
+                  {tr(locale, 'завершена автоматически', 'finished automatically')}
+                </em>
+              )}
               {workout?.syncState !== 'synced' && (
                 <em>{tr(locale, 'синхронизируется', 'syncing')}</em>
               )}
@@ -597,7 +607,11 @@ function DayDetails({
               ))
             ) : (
               <p>
-                {tr(locale, 'Тренировка без записанных подходов.', 'Workout with no logged sets.')}
+                {tr(
+                  locale,
+                  '0 подходов · тренировка сохранена в истории.',
+                  '0 sets · workout kept in history.',
+                )}
               </p>
             )}
           </article>

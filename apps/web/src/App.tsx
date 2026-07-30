@@ -20,6 +20,8 @@ import {
 import { useLiveQuery } from 'dexie-react-hooks';
 
 import { SetSheet } from './components/SetSheet';
+import { WorkoutTimingSheet } from './components/WorkoutTimingSheet';
+import { AutoFinishNotice, WorkoutInactivityBanner } from './components/WorkoutLifecycleNotices';
 import { ConfirmationSheet } from './components/ConfirmationSheet';
 import { ExerciseDiscoveryPanel } from './components/ExerciseDiscoveryPanel';
 import { ExerciseEditorView } from './components/ExerciseEditorView';
@@ -99,6 +101,17 @@ import {
   toggleWorkoutGroupLink,
 } from './lib/workoutPlan';
 import { buildSuggestedExercises } from './lib/workoutSuggestions';
+import {
+  displayedWorkoutDurationSeconds,
+  editWorkoutTimingChanges,
+  finishWorkoutChanges,
+  formatWorkoutDurationSeconds,
+  resumeWorkoutChanges,
+  workoutAutoFinishAfterMs,
+  workoutInactivityState,
+  workoutWarningAfterMs,
+  type WorkoutInactivityState,
+} from './lib/workoutLifecycle';
 
 type View = 'workout' | 'progress' | 'catalog' | 'settings' | 'trainer';
 
@@ -206,7 +219,10 @@ function AuthenticatedAppContent({
   const [confirmation, setConfirmation] = useState<PendingConfirmation | null>(null);
   const [explainContext, setExplainContext] = useState<{ exercise: Exercise | null } | null>(null);
   const [editingWorkoutId, setEditingWorkoutId] = useState<string | null>(null);
+  const [timingWorkoutId, setTimingWorkoutId] = useState<string | null>(null);
+  const [lifecycleNow, setLifecycleNow] = useState(() => Date.now());
   const finishingWorkoutId = useRef<string | null>(null);
+  const resumingWorkoutId = useRef<string | null>(null);
   const savingSet = useRef(false);
   const [inviteNotice, setInviteNotice] = useState<string | null>(null);
   const [relationshipRefreshKey, setRelationshipRefreshKey] = useState(0);
@@ -240,6 +256,11 @@ function AuthenticatedAppContent({
   const outboxCount = useLiveQuery(() => db.outbox.count(), [], 0);
   const lastSuccessfulSyncAt = useLiveQuery(
     async () => (await db.meta.get('lastSuccessfulSyncAt'))?.value ?? null,
+    [],
+    null,
+  );
+  const autoFinishNoticeWorkoutId = useLiveQuery(
+    async () => (await db.meta.get('autoFinishNoticeWorkoutId'))?.value ?? null,
     [],
     null,
   );
@@ -290,6 +311,17 @@ function AuthenticatedAppContent({
   }, [storedWorkouts]);
 
   const activeWorkout = workouts.find((workout) => workout.endedAt === null);
+  const autoFinishedWorkout = autoFinishNoticeWorkoutId
+    ? workouts.find(
+        (workout) =>
+          workout.id === autoFinishNoticeWorkoutId &&
+          workout.endedAt !== null &&
+          workout.completionReason === 'automatic',
+      )
+    : undefined;
+  const timingWorkout = timingWorkoutId
+    ? workouts.find((workout) => workout.id === timingWorkoutId && workout.endedAt !== null)
+    : undefined;
   const editingWorkout = editingWorkoutId
     ? workouts.find((workout) => workout.id === editingWorkoutId && workout.endedAt !== null)
     : undefined;
@@ -318,6 +350,46 @@ function AuthenticatedAppContent({
   const exerciseDetail = exerciseDetailId
     ? (exercises.find((exercise) => exercise.id === exerciseDetailId) ?? null)
     : null;
+  const inactivityState = activeWorkout
+    ? workoutInactivityState(activeWorkout, lifecycleNow)
+    : ({ phase: 'active', remainingSeconds: null } satisfies WorkoutInactivityState);
+
+  useEffect(() => {
+    if (!activeWorkout) return;
+
+    const refreshLifecycleClock = () => setLifecycleNow(Date.now());
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') refreshLifecycleClock();
+    };
+    const interval = window.setInterval(
+      refreshLifecycleClock,
+      inactivityState.phase === 'warning' ? 1_000 : 60_000,
+    );
+    const inactivityMs = Math.max(0, Date.now() - new Date(activeWorkout.lastActivityAt).getTime());
+    const nextBoundaryMs =
+      inactivityMs < workoutWarningAfterMs
+        ? workoutWarningAfterMs - inactivityMs
+        : workoutAutoFinishAfterMs - inactivityMs;
+    const boundaryTimeout = window.setTimeout(
+      refreshLifecycleClock,
+      Math.max(0, nextBoundaryMs) + 25,
+    );
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    window.addEventListener('focus', refreshLifecycleClock);
+    window.addEventListener('pageshow', refreshLifecycleClock);
+    return () => {
+      window.clearInterval(interval);
+      window.clearTimeout(boundaryTimeout);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+      window.removeEventListener('focus', refreshLifecycleClock);
+      window.removeEventListener('pageshow', refreshLifecycleClock);
+    };
+  }, [activeWorkout?.id, activeWorkout?.lastActivityAt, inactivityState.phase]);
+
+  useEffect(() => {
+    if (!activeWorkout || inactivityState.phase !== 'expired') return;
+    void finishWorkout('automatic', new Date(lifecycleNow).toISOString());
+  }, [activeWorkout?.id, inactivityState.phase, lifecycleNow]);
 
   useEffect(() => {
     const populateCatalog = async () => {
@@ -384,6 +456,10 @@ function AuthenticatedAppContent({
       id,
       startedAt,
       endedAt: null,
+      durationSeconds: 0,
+      activeSegmentStartedAt: startedAt,
+      lastActivityAt: startedAt,
+      completionReason: null,
       notes: null,
       locale,
       exercises: workoutExercises,
@@ -398,9 +474,14 @@ function AuthenticatedAppContent({
         clientMutationId,
         startedAt,
         endedAt: null,
+        durationSeconds: 0,
+        activeSegmentStartedAt: startedAt,
+        lastActivityAt: startedAt,
+        completionReason: null,
         notes: null,
         locale,
         exercises: workoutExercises,
+        activityAt: startedAt,
       },
     });
     await flushOutbox();
@@ -462,11 +543,13 @@ function AuthenticatedAppContent({
     if (savingSet.current) return;
     const activeSheet = sheet;
     const activeWorkout = workoutContext;
+    const activityAt = new Date().toISOString();
     savingSet.current = true;
     setSheet(null);
     try {
       if (activeSheet.set) {
         await db.sets.update(activeSheet.set.id, { ...input, syncState: 'pending' });
+        await recordLocalWorkoutActivity(activeWorkout.id, activityAt);
         await queueMutation({
           type: 'set.update',
           payload: {
@@ -475,6 +558,7 @@ function AuthenticatedAppContent({
             setId: activeSheet.set.id,
             baseRevision: activeSheet.set.revision,
             changes: input,
+            activityAt,
           },
         });
         await flushOutbox();
@@ -496,7 +580,8 @@ function AuthenticatedAppContent({
     entrySource: SetEntrySource = 'manual',
   ) {
     if (!workoutContext) return;
-    const performedAt = editingWorkout?.endedAt ?? new Date().toISOString();
+    const activityAt = new Date().toISOString();
+    const performedAt = editingWorkout?.endedAt ?? activityAt;
     const set: SetInput = {
       id: crypto.randomUUID(),
       exerciseId: exercise.id,
@@ -525,9 +610,10 @@ function AuthenticatedAppContent({
       syncState: 'pending',
       deleted: false,
     });
+    await recordLocalWorkoutActivity(workoutContext.id, activityAt);
     await queueMutation({
       type: 'set.create',
-      payload: { clientMutationId, workoutId: workoutContext.id, set },
+      payload: { clientMutationId, workoutId: workoutContext.id, set, activityAt },
     });
     await flushOutbox();
   }
@@ -541,21 +627,40 @@ function AuthenticatedAppContent({
     setExplainContext(null);
   }
 
-  async function finishWorkout() {
-    if (!activeWorkout) return;
-    if (finishingWorkoutId.current === activeWorkout.id) return;
-    finishingWorkoutId.current = activeWorkout.id;
-    const endedAt = new Date().toISOString();
+  async function finishWorkout(
+    reason: 'manual' | 'automatic' = 'manual',
+    processedAt = new Date().toISOString(),
+  ) {
+    const workoutId = activeWorkout?.id;
+    if (!workoutId || finishingWorkoutId.current === workoutId) return;
+    finishingWorkoutId.current = workoutId;
     try {
-      await db.workouts.update(activeWorkout.id, { endedAt, syncState: 'pending' });
-      await queueMutation({
+      const workout = await db.workouts.get(workoutId);
+      if (!workout || workout.endedAt !== null) return;
+      if (
+        reason === 'automatic' &&
+        workoutInactivityState(workout, new Date(processedAt).getTime()).phase !== 'expired'
+      ) {
+        return;
+      }
+      const changes = finishWorkoutChanges(workout, processedAt, reason);
+      const activityAt = reason === 'automatic' ? workout.lastActivityAt : processedAt;
+      const mutation = {
         type: 'workout.update',
         payload: {
           clientMutationId: crypto.randomUUID(),
-          workoutId: activeWorkout.id,
-          baseRevision: activeWorkout.revision,
-          changes: { endedAt },
+          workoutId: workout.id,
+          baseRevision: workout.revision,
+          changes,
+          activityAt,
         },
+      } as const;
+      await db.transaction('rw', db.workouts, db.meta, db.outbox, async () => {
+        await db.workouts.update(workout.id, { ...changes, syncState: 'pending' });
+        if (reason === 'automatic') {
+          await db.meta.put({ key: 'autoFinishNoticeWorkoutId', value: workout.id });
+        }
+        await queueMutation(mutation);
       });
       await flushOutbox();
     } finally {
@@ -563,17 +668,77 @@ function AuthenticatedAppContent({
     }
   }
 
-  async function updateWorkoutEndedAt(workout: LocalWorkout, endedAt: string | null) {
-    await db.workouts.update(workout.id, { endedAt, syncState: 'pending' });
+  async function updateWorkoutLifecycle(
+    workout: LocalWorkout,
+    changes: ReturnType<typeof resumeWorkoutChanges>,
+    activityAt: string,
+  ) {
+    await db.workouts.update(workout.id, { ...changes, syncState: 'pending' });
     await queueMutation({
       type: 'workout.update',
       payload: {
         clientMutationId: crypto.randomUUID(),
         workoutId: workout.id,
         baseRevision: workout.revision,
-        changes: { endedAt },
+        changes,
+        activityAt,
       },
     });
+  }
+
+  async function recordLocalWorkoutActivity(workoutId: string, activityAt: string) {
+    const workout = await db.workouts.get(workoutId);
+    if (
+      !workout ||
+      workout.endedAt !== null ||
+      new Date(activityAt).getTime() <= new Date(workout.lastActivityAt).getTime()
+    ) {
+      return;
+    }
+    await db.workouts.update(workoutId, { lastActivityAt: activityAt });
+    setLifecycleNow(new Date(activityAt).getTime());
+  }
+
+  async function touchActiveWorkout() {
+    if (!activeWorkout) return;
+    const activityAt = new Date().toISOString();
+    await recordLocalWorkoutActivity(activeWorkout.id, activityAt);
+    await queueMutation({
+      type: 'workout.touch',
+      payload: {
+        clientMutationId: crypto.randomUUID(),
+        workoutId: activeWorkout.id,
+        activityAt,
+      },
+    });
+    await flushOutbox();
+  }
+
+  async function dismissAutoFinishNotice() {
+    await db.meta.delete('autoFinishNoticeWorkoutId');
+  }
+
+  async function saveWorkoutTiming(
+    workout: LocalWorkout,
+    startedAt: string,
+    durationSeconds: number,
+  ) {
+    const activityAt = new Date().toISOString();
+    const changes = editWorkoutTimingChanges(startedAt, durationSeconds);
+    await db.workouts.update(workout.id, { ...changes, syncState: 'pending' });
+    await queueMutation({
+      type: 'workout.update',
+      payload: {
+        clientMutationId: crypto.randomUUID(),
+        workoutId: workout.id,
+        baseRevision: workout.revision,
+        changes,
+        activityAt,
+      },
+    });
+    setTimingWorkoutId(null);
+    await dismissAutoFinishNotice();
+    await flushOutbox();
   }
 
   function requestFinishWorkout() {
@@ -590,19 +755,42 @@ function AuthenticatedAppContent({
           confirmLabel: tr(locale, 'Да, завершить', 'Yes, finish'),
         },
       ],
-      action: finishWorkout,
+      action: () => finishWorkout('manual'),
     });
   }
 
   async function resumeWorkout(workout: LocalWorkout) {
-    if (workout.endedAt === null) return;
-    if (activeWorkout && activeWorkout.id !== workout.id) {
-      await updateWorkoutEndedAt(activeWorkout, new Date().toISOString());
+    if (workout.endedAt === null || resumingWorkoutId.current === workout.id) return;
+    resumingWorkoutId.current = workout.id;
+    try {
+      const selected = await db.workouts.get(workout.id);
+      if (!selected || selected.endedAt === null) return;
+      const activityAt = new Date().toISOString();
+      if (activeWorkout && activeWorkout.id !== selected.id) {
+        const current = await db.workouts.get(activeWorkout.id);
+        if (current?.endedAt === null) {
+          const finishChanges = finishWorkoutChanges(current, activityAt, 'manual');
+          await db.workouts.update(current.id, { ...finishChanges, syncState: 'pending' });
+          await queueMutation({
+            type: 'workout.update',
+            payload: {
+              clientMutationId: crypto.randomUUID(),
+              workoutId: current.id,
+              baseRevision: current.revision,
+              changes: finishChanges,
+              activityAt,
+            },
+          });
+        }
+      }
+      await updateWorkoutLifecycle(selected, resumeWorkoutChanges(activityAt), activityAt);
+      await dismissAutoFinishNotice();
+      setEditingWorkoutId(null);
+      setView('workout');
+      await flushOutbox();
+    } finally {
+      resumingWorkoutId.current = null;
     }
-    await updateWorkoutEndedAt(workout, null);
-    setEditingWorkoutId(null);
-    setView('workout');
-    await flushOutbox();
   }
 
   function requestResumeWorkout(workout: LocalWorkout) {
@@ -635,15 +823,22 @@ function AuthenticatedAppContent({
 
   async function updateWorkoutPlan(nextPlan: WorkoutExercise[]) {
     if (!workoutContext) return;
+    const activityAt = new Date().toISOString();
     const exercises = normalizeWorkoutPlan(nextPlan);
-    await db.workouts.update(workoutContext.id, { exercises, syncState: 'pending' });
+    const changes = {
+      exercises,
+      ...(workoutContext.endedAt === null ? { lastActivityAt: activityAt } : {}),
+    };
+    await db.workouts.update(workoutContext.id, { ...changes, syncState: 'pending' });
+    if (workoutContext.endedAt === null) setLifecycleNow(new Date(activityAt).getTime());
     await queueMutation({
       type: 'workout.update',
       payload: {
         clientMutationId: crypto.randomUUID(),
         workoutId: workoutContext.id,
         baseRevision: workoutContext.revision,
-        changes: { exercises },
+        changes,
+        activityAt,
       },
     });
     await flushOutbox();
@@ -709,7 +904,9 @@ function AuthenticatedAppContent({
   }
 
   async function deleteSet(set: LocalSet) {
+    const activityAt = new Date().toISOString();
     await db.sets.update(set.id, { deleted: true, syncState: 'pending' });
+    await recordLocalWorkoutActivity(set.workoutId, activityAt);
     await queueMutation({
       type: 'set.delete',
       payload: {
@@ -717,6 +914,7 @@ function AuthenticatedAppContent({
         workoutId: set.workoutId,
         setId: set.id,
         baseRevision: set.revision,
+        activityAt,
       },
     });
     setSheet(null);
@@ -752,6 +950,7 @@ function AuthenticatedAppContent({
           clientMutationId: crypto.randomUUID(),
           workoutId: workout.id,
           baseRevision: workout.revision,
+          activityAt: new Date().toISOString(),
         },
       });
     }
@@ -760,6 +959,7 @@ function AuthenticatedAppContent({
       await db.workouts.delete(workout.id);
       await db.outbox.bulkDelete(supersededMutationIds);
     });
+    if (autoFinishNoticeWorkoutId === workout.id) await dismissAutoFinishNotice();
     setEditingWorkoutId(null);
     setExerciseDetailId(null);
     setView('progress');
@@ -988,6 +1188,7 @@ function AuthenticatedAppContent({
     const index = ordered.findIndex((item) => item.id === set.id);
     const other = ordered[index + direction];
     if (index < 0 || !other) return;
+    const activityAt = new Date().toISOString();
 
     const firstPosition = set.position;
     await db.transaction('rw', db.sets, async () => {
@@ -1006,9 +1207,11 @@ function AuthenticatedAppContent({
           setId: item.id,
           baseRevision: item.revision,
           changes: { position },
+          activityAt,
         },
       });
     }
+    await recordLocalWorkoutActivity(set.workoutId, activityAt);
     await flushOutbox();
   }
 
@@ -1130,24 +1333,33 @@ function AuthenticatedAppContent({
             {view === 'workout' && (
               <WorkoutView
                 activeWorkout={workoutContext}
+                autoFinishedWorkout={autoFinishedWorkout}
                 catalog={exercises}
                 editingHistory={Boolean(editingWorkout)}
                 exercises={suggested}
+                inactivityState={inactivityState}
                 onAddSet={(exercise) => setSheet({ exercise, set: null })}
                 onAddExercise={() => setExercisePicker({ mode: 'add' })}
                 onDeleteSet={requestDeleteSet}
                 onEditSet={(exercise, set) => setSheet({ exercise, set })}
                 onFinish={requestFinishWorkout}
+                onFinishNow={() => void finishWorkout('manual')}
                 onFinishEditing={() => {
                   setEditingWorkoutId(null);
                   setView('progress');
                 }}
+                onDismissAutoFinish={() => void dismissAutoFinishNotice()}
+                onEditTiming={(workout) => setTimingWorkoutId(workout.id)}
                 onMoveExercise={moveExercise}
                 onMoveSet={moveSet}
                 onOpenExercise={(exercise) => setExerciseDetailId(exercise.id)}
                 onRemoveExercise={requestRemoveExercise}
                 onReplaceExercise={(itemId) => setExercisePicker({ mode: 'replace', itemId })}
+                onResumeAutoFinished={() => {
+                  if (autoFinishedWorkout) requestResumeWorkout(autoFinishedWorkout);
+                }}
                 onStart={startWorkout}
+                onStillTraining={() => void touchActiveWorkout()}
                 onToggleSuperset={toggleSuperset}
                 onDismissRecovery={() => setRecoveredWorkoutId(null)}
                 recovered={activeWorkout?.id === recoveredWorkoutId}
@@ -1276,6 +1488,14 @@ function AuthenticatedAppContent({
         }}
         onSave={saveSet}
       />
+      <WorkoutTimingSheet
+        onClose={() => setTimingWorkoutId(null)}
+        onSave={(startedAt, durationSeconds) => {
+          if (!timingWorkout) return;
+          return saveWorkoutTiming(timingWorkout, startedAt, durationSeconds);
+        }}
+        workout={timingWorkout ?? null}
+      />
       <ExercisePickerSheet
         catalog={catalogChoices}
         currentPlan={workoutContext?.exercises ?? []}
@@ -1375,9 +1595,11 @@ function LoginScreen({ googleEnabled }: { googleEnabled: boolean }) {
 
 function WorkoutView({
   activeWorkout,
+  autoFinishedWorkout,
   catalog,
   editingHistory,
   exercises,
+  inactivityState,
   sets,
   workouts,
   onStart,
@@ -1386,20 +1608,27 @@ function WorkoutView({
   onDeleteSet,
   onEditSet,
   onFinish,
+  onFinishNow,
   onFinishEditing,
+  onDismissAutoFinish,
+  onEditTiming,
   onMoveExercise,
   onMoveSet,
   onOpenExercise,
   onRemoveExercise,
   onReplaceExercise,
+  onResumeAutoFinished,
+  onStillTraining,
   onToggleSuperset,
   recovered,
   onDismissRecovery,
 }: {
   activeWorkout: LocalWorkout | undefined;
+  autoFinishedWorkout: LocalWorkout | undefined;
   catalog: Exercise[];
   editingHistory: boolean;
   exercises: Exercise[];
+  inactivityState: WorkoutInactivityState;
   sets: LocalSet[];
   workouts: LocalWorkout[];
   onStart: () => void;
@@ -1408,12 +1637,17 @@ function WorkoutView({
   onDeleteSet: (set: LocalSet) => void;
   onEditSet: (exercise: Exercise, set: LocalSet) => void;
   onFinish: () => void;
+  onFinishNow: () => void;
   onFinishEditing: () => void;
+  onDismissAutoFinish: () => void;
+  onEditTiming: (workout: LocalWorkout) => void;
   onMoveExercise: (itemId: string, direction: -1 | 1) => void;
   onMoveSet: (set: LocalSet, direction: -1 | 1) => void;
   onOpenExercise: (exercise: Exercise) => void;
   onRemoveExercise: (itemId: string, hasLoggedSets: boolean) => void;
   onReplaceExercise: (itemId: string) => void;
+  onResumeAutoFinished: () => void;
+  onStillTraining: () => void;
   onToggleSuperset: (itemId: string) => void;
   recovered: boolean;
   onDismissRecovery: () => void;
@@ -1430,8 +1664,20 @@ function WorkoutView({
   }, [activeWorkout?.id, editingHistory]);
 
   if (!activeWorkout) {
+    const autoFinishedSetCount = autoFinishedWorkout
+      ? sets.filter((set) => set.workoutId === autoFinishedWorkout.id && !set.deleted).length
+      : 0;
     return (
       <section className="screen">
+        {autoFinishedWorkout && (
+          <AutoFinishNotice
+            onContinue={onResumeAutoFinished}
+            onDismiss={onDismissAutoFinish}
+            onEdit={() => onEditTiming(autoFinishedWorkout)}
+            setCount={autoFinishedSetCount}
+            workout={autoFinishedWorkout}
+          />
+        )}
         <p className="eyebrow">{tr(locale, 'Сегодня', 'Today')}</p>
         <h1>{tr(locale, 'Готов к сильному дню?', 'Ready for a strong day?')}</h1>
         <p className="intro">
@@ -1588,7 +1834,10 @@ function WorkoutView({
                   hour: '2-digit',
                   minute: '2-digit',
                 }).format(new Date(activeWorkout.startedAt))
-              : formatWorkoutDuration(activeWorkout.startedAt, elapsedAt, locale)}
+              : formatWorkoutDurationSeconds(
+                  displayedWorkoutDurationSeconds(activeWorkout, elapsedAt),
+                  locale,
+                )}
           </h1>
         </div>
         <button
@@ -1609,8 +1858,8 @@ function WorkoutView({
           {editingHistory
             ? tr(
                 locale,
-                'Можно исправлять план и подходы; дата завершения останется прежней.',
-                'You can correct the plan and sets; the completion date stays unchanged.',
+                'Можно исправлять план, подходы, дату начала и длительность.',
+                'You can correct the plan, sets, start date, and duration.',
               )
             : tr(
                 locale,
@@ -1619,6 +1868,37 @@ function WorkoutView({
               )}
         </p>
       </details>
+      {editingHistory && activeWorkout.endedAt && (
+        <div className="workout-timing-summary">
+          <div>
+            <span>{tr(locale, 'Начало', 'Started')}</span>
+            <strong>
+              {new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'ru-RU', {
+                dateStyle: 'medium',
+                timeStyle: 'short',
+              }).format(new Date(activeWorkout.startedAt))}
+            </strong>
+          </div>
+          <div>
+            <span>{tr(locale, 'Длительность', 'Duration')}</span>
+            <strong>{formatWorkoutDurationSeconds(activeWorkout.durationSeconds, locale)}</strong>
+          </div>
+          <button
+            className="button ghost small"
+            onClick={() => onEditTiming(activeWorkout)}
+            type="button"
+          >
+            {tr(locale, 'Исправить дату и время', 'Edit date and time')}
+          </button>
+        </div>
+      )}
+      {!editingHistory && (
+        <WorkoutInactivityBanner
+          onContinue={onStillTraining}
+          onFinish={onFinishNow}
+          state={inactivityState}
+        />
+      )}
       {recovered && !editingHistory && (
         <div className="recovery-notice" role="status">
           <div>
@@ -3277,15 +3557,6 @@ function firstName(displayName: string, locale: CurrentUser['locale']) {
   return displayName.trim().split(/\s+/)[0] || tr(locale, 'спортсмен', 'athlete');
 }
 
-function formatWorkoutDuration(startedAt: string, now: number, locale: CurrentUser['locale']) {
-  const totalMinutes = Math.max(1, Math.floor((now - new Date(startedAt).getTime()) / 60_000));
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  if (!hours) return locale === 'en' ? `${minutes} min` : `${minutes} мин`;
-  if (!minutes) return locale === 'en' ? `${hours} hr` : `${hours} ч`;
-  return locale === 'en' ? `${hours} hr ${minutes} min` : `${hours} ч ${minutes} мин`;
-}
-
 function canUseTrainerConsole(role: CurrentUser['role']) {
   return role === 'trainer' || role === 'admin' || role === 'superadmin';
 }
@@ -3295,6 +3566,7 @@ function mutationWorkoutId(mutation: Parameters<typeof queueMutation>[0]) {
     case 'workout.create':
       return mutation.payload.id;
     case 'workout.update':
+    case 'workout.touch':
     case 'workout.delete':
     case 'set.create':
     case 'set.update':

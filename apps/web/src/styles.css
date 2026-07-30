@@ -6354,3 +6354,163 @@ body {
   min-height: 48px;
   padding-inline: 10px;
 }
+
+/* Forgotten workout lifecycle */
+.workout-inactivity-warning,
+.auto-finish-notice,
+.workout-timing-summary {
+  border: 2px solid var(--ink);
+  background: var(--surface);
+  box-shadow: 6px 6px 0 var(--accent);
+}
+
+.workout-inactivity-warning {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 14px 0;
+  padding: 14px;
+}
+
+.workout-inactivity-warning > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.workout-inactivity-warning > div:first-child {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.workout-inactivity-warning span,
+.auto-finish-notice span,
+.workout-timing-summary span {
+  color: var(--muted);
+}
+
+.auto-finish-notice {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  margin-bottom: 24px;
+  padding: 16px;
+}
+
+.auto-finish-notice-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.auto-finish-notice-copy .eyebrow {
+  margin: 0;
+}
+
+.auto-finish-notice-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.auto-finish-dismiss {
+  min-width: 40px;
+  min-height: 40px;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 24px;
+}
+
+.workout-timing-summary {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  margin: 14px 0;
+  padding: 14px;
+}
+
+.workout-timing-summary > div {
+  display: grid;
+  gap: 3px;
+}
+
+.workout-timing-summary .button {
+  margin-left: auto;
+}
+
+.workout-timing-sheet {
+  max-width: 620px;
+}
+
+.workout-timing-sheet form {
+  display: grid;
+  gap: 16px;
+}
+
+.workout-timing-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.workout-timing-fields label {
+  display: grid;
+  gap: 6px;
+  font-weight: 800;
+}
+
+.workout-timing-fields input {
+  width: 100%;
+  min-width: 0;
+}
+
+.timing-result {
+  margin: 0;
+  color: var(--muted);
+}
+
+.timing-result.error {
+  color: var(--accent);
+}
+
+@media (max-width: 600px) {
+  .workout-inactivity-warning,
+  .workout-timing-summary {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .workout-inactivity-warning > div:last-child,
+  .auto-finish-notice-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .auto-finish-notice {
+    grid-template-columns: 1fr;
+  }
+
+  .auto-finish-dismiss {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+  }
+
+  .workout-timing-summary .button {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .timing-sheet-backdrop {
+    align-items: flex-end;
+  }
+
+  .workout-timing-sheet {
+    max-height: min(92dvh, 760px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}

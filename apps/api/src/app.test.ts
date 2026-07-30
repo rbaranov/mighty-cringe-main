@@ -191,6 +191,33 @@ test('OAuth sessions isolate athlete data, support logout, and enforce admin rol
   });
   assert.equal(provenanceRewrite.statusCode, 400);
 
+  const touchWorkout = {
+    type: 'workout.touch',
+    payload: {
+      clientMutationId: '30000000-0000-4000-8000-000000000010',
+      workoutId,
+      activityAt: '2026-07-20T08:30:00.000Z',
+    },
+  };
+  const firstTouch = await app.inject({
+    method: 'POST',
+    url: '/api/v1/sync',
+    headers: { cookie: athleteOneCookie },
+    payload: touchWorkout,
+  });
+  assert.equal(firstTouch.statusCode, 200);
+  assert.equal(firstTouch.json().entity.revision, 1);
+  assert.equal(firstTouch.json().entity.lastActivityAt, '2026-07-20T08:30:00.000Z');
+  const repeatedTouch = await app.inject({
+    method: 'POST',
+    url: '/api/v1/sync',
+    headers: { cookie: athleteOneCookie },
+    payload: touchWorkout,
+  });
+  assert.equal(repeatedTouch.statusCode, 200);
+  assert.equal(repeatedTouch.json().duplicate, true);
+  assert.equal(repeatedTouch.json().entity.revision, 1);
+
   const finishWorkout = await app.inject({
     method: 'POST',
     url: '/api/v1/sync',
@@ -208,6 +235,58 @@ test('OAuth sessions isolate athlete data, support logout, and enforce admin rol
   assert.equal(finishWorkout.statusCode, 200);
   assert.equal(finishWorkout.json().entity.revision, 2);
   assert.equal(finishWorkout.json().entity.endedAt, '2026-07-20T09:00:00.000Z');
+  assert.equal(finishWorkout.json().entity.durationSeconds, 3_600);
+  assert.equal(finishWorkout.json().entity.activeSegmentStartedAt, null);
+  assert.equal(finishWorkout.json().entity.lastActivityAt, '2026-07-20T09:00:00.000Z');
+  assert.equal(finishWorkout.json().entity.completionReason, 'manual');
+
+  const correctWorkoutTiming = await app.inject({
+    method: 'POST',
+    url: '/api/v1/sync',
+    headers: { cookie: athleteOneCookie },
+    payload: {
+      type: 'workout.update',
+      payload: {
+        clientMutationId: '30000000-0000-4000-8000-000000000011',
+        workoutId,
+        baseRevision: 2,
+        changes: {
+          startedAt: '2026-07-20T07:30:00.000Z',
+          endedAt: '2026-07-20T09:00:00.000Z',
+          durationSeconds: 5_400,
+        },
+        activityAt: '2026-07-20T09:10:00.000Z',
+      },
+    },
+  });
+  assert.equal(correctWorkoutTiming.statusCode, 200);
+  assert.equal(correctWorkoutTiming.json().entity.revision, 3);
+  assert.equal(correctWorkoutTiming.json().entity.startedAt, '2026-07-20T07:30:00.000Z');
+  assert.equal(correctWorkoutTiming.json().entity.durationSeconds, 5_400);
+  assert.equal(correctWorkoutTiming.json().entity.endedAt, '2026-07-20T09:00:00.000Z');
+
+  const staleWorkoutTiming = await app.inject({
+    method: 'POST',
+    url: '/api/v1/sync',
+    headers: { cookie: athleteOneCookie },
+    payload: {
+      type: 'workout.update',
+      payload: {
+        clientMutationId: '30000000-0000-4000-8000-000000000012',
+        workoutId,
+        baseRevision: 2,
+        changes: {
+          startedAt: '2026-07-20T08:15:00.000Z',
+          endedAt: '2026-07-20T09:00:00.000Z',
+          durationSeconds: 2_700,
+        },
+        activityAt: '2026-07-20T09:11:00.000Z',
+      },
+    },
+  });
+  assert.equal(staleWorkoutTiming.statusCode, 409);
+  assert.equal(staleWorkoutTiming.json().code, 'revision_conflict');
+  assert.equal(staleWorkoutTiming.json().current.durationSeconds, 5_400);
 
   const reorderPlan = await app.inject({
     method: 'POST',
@@ -218,7 +297,7 @@ test('OAuth sessions isolate athlete data, support logout, and enforce admin rol
       payload: {
         clientMutationId: '30000000-0000-4000-8000-000000000003',
         workoutId,
-        baseRevision: 2,
+        baseRevision: 3,
         changes: {
           exercises: [
             { ...workout.exercises[1], position: 0 },
@@ -229,7 +308,7 @@ test('OAuth sessions isolate athlete data, support logout, and enforce admin rol
     },
   });
   assert.equal(reorderPlan.statusCode, 200);
-  assert.equal(reorderPlan.json().entity.revision, 3);
+  assert.equal(reorderPlan.json().entity.revision, 4);
   assert.equal(reorderPlan.json().entity.exercises[0].id, workout.exercises[1].id);
 
   const updateSet = await app.inject({
@@ -342,7 +421,7 @@ test('OAuth sessions isolate athlete data, support logout, and enforce admin rol
     url: '/api/v1/workouts',
     headers: { cookie: athleteOneCookie },
   });
-  assert.equal(athleteOneHistory.json().items[0].revision, 3);
+  assert.equal(athleteOneHistory.json().items[0].revision, 4);
   assert.equal(athleteOneHistory.json().items[0].exercises[0].id, workout.exercises[1].id);
   assert.equal(athleteOneHistory.json().items[0].sets.length, 1);
   assert.equal(athleteOneHistory.json().items[0].sets[0].weightKg, 62.5);
@@ -633,7 +712,7 @@ test('OAuth sessions isolate athlete data, support logout, and enforce admin rol
     payload: {
       clientMutationId: '30000000-0000-4000-8000-000000000004',
       workoutId,
-      baseRevision: 3,
+      baseRevision: 4,
     },
   };
   const deletedWorkout = await app.inject({
