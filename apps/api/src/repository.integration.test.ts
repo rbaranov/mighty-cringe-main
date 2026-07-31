@@ -36,6 +36,7 @@ test(
       activeSegmentStartedAt: '2026-07-21T10:00:00.000Z',
       lastActivityAt: '2026-07-21T10:00:00.000Z',
       completionReason: null,
+      isFavorite: false,
       notes: null,
       locale: 'ru' as const,
       exercises: [
@@ -74,6 +75,15 @@ test(
     });
     assert.equal(reorderedPlan.entity.revision, 2);
     assert.equal(reorderedPlan.entity.exercises[0].id, secondPlanItemId);
+
+    const favoriteWorkout = await repository.updateWorkout(user.id, {
+      clientMutationId: randomUUID(),
+      workoutId,
+      baseRevision: 2,
+      changes: { isFavorite: true },
+    });
+    assert.equal(favoriteWorkout.entity.revision, 3);
+    assert.equal(favoriteWorkout.entity.isFavorite, true);
 
     const setId = randomUUID();
     const createdSet = await repository.createSet(user.id, {
@@ -152,7 +162,8 @@ test(
     assert.equal(history[0].sets.length, 1);
     assert.ok([83, 84].includes(history[0].sets[0].weightKg));
     assert.equal(history[0].sets[0].revision, 3);
-    assert.equal(history[0].revision, 2);
+    assert.equal(history[0].revision, 3);
+    assert.equal(history[0].isFavorite, true);
     assert.equal(history[0].exercises[0].id, secondPlanItemId);
 
     await assert.rejects(
@@ -305,13 +316,13 @@ test(
     const deletedWorkout = await repository.deleteWorkout(user.id, {
       clientMutationId: deleteWorkoutMutationId,
       workoutId,
-      baseRevision: 2,
+      baseRevision: 3,
     });
     assert.equal(deletedWorkout.duplicate, false);
     const repeatedWorkoutDelete = await repository.deleteWorkout(user.id, {
       clientMutationId: deleteWorkoutMutationId,
       workoutId,
-      baseRevision: 2,
+      baseRevision: 3,
     });
     assert.equal(repeatedWorkoutDelete.duplicate, true);
     assert.deepEqual(await repository.listWorkouts(user.id), []);

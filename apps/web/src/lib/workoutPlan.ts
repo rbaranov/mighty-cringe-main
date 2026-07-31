@@ -1,4 +1,4 @@
-import type { WorkoutExercise } from '@mighty-cringe/contracts';
+import type { Exercise, WorkoutExercise } from '@mighty-cringe/contracts';
 
 import type { NaturalWorkoutCommand } from './naturalWorkoutCommand';
 
@@ -6,6 +6,62 @@ export type WorkoutPlanDisplayGroup<T> = {
   supersetGroup: number | null;
   entries: T[];
 };
+
+export function createWorkoutPlanFromExercises(
+  exercises: Pick<Exercise, 'id'>[],
+  createId: () => string = () => crypto.randomUUID(),
+): WorkoutExercise[] {
+  return normalizeWorkoutPlan(
+    exercises.map((exercise, position) => ({
+      id: createId(),
+      exerciseId: exercise.id,
+      position,
+      supersetGroup: Math.floor(position / 2) + 1,
+    })),
+  );
+}
+
+export function addExerciseToWorkoutPlan(
+  plan: WorkoutExercise[],
+  exerciseId: string,
+  createId: () => string = () => crypto.randomUUID(),
+) {
+  return normalizeWorkoutPlan([
+    ...plan,
+    {
+      id: createId(),
+      exerciseId,
+      position: plan.length,
+      supersetGroup: null,
+    },
+  ]);
+}
+
+export function replaceExerciseInWorkoutPlan(
+  plan: WorkoutExercise[],
+  itemId: string,
+  exerciseId: string,
+) {
+  return normalizeWorkoutPlan(
+    plan.map((item) => (item.id === itemId ? { ...item, exerciseId } : item)),
+  );
+}
+
+export function moveWorkoutPlanExercise(
+  plan: WorkoutExercise[],
+  itemId: string,
+  direction: -1 | 1,
+) {
+  const nextPlan = normalizeWorkoutPlan(plan).map((item) => ({ ...item }));
+  const index = nextPlan.findIndex((item) => item.id === itemId);
+  const destination = index + direction;
+  if (index < 0 || destination < 0 || destination >= nextPlan.length) return nextPlan;
+  if (nextPlan[index].supersetGroup !== nextPlan[destination].supersetGroup) {
+    nextPlan[index].supersetGroup = null;
+  }
+  [nextPlan[index], nextPlan[destination]] = [nextPlan[destination], nextPlan[index]];
+  return normalizeWorkoutPlan(nextPlan);
+}
 
 export function groupWorkoutPlanForDisplay<
   T extends { item: Pick<WorkoutExercise, 'supersetGroup'> },

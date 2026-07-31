@@ -81,6 +81,7 @@ describe('local user boundary', () => {
       activeSegmentStartedAt: '2026-07-22T05:00:00.000Z',
       lastActivityAt: '2026-07-22T05:00:00.000Z',
       completionReason: null,
+      isFavorite: false,
       notes: null,
       locale: 'ru',
       exercises: [],

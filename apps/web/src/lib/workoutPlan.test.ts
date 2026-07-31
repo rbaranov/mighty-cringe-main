@@ -2,7 +2,15 @@ import { describe, expect, it } from 'vitest';
 
 import type { WorkoutExercise } from '@mighty-cringe/contracts';
 
-import { copyWorkoutPlan, groupWorkoutPlanForDisplay, toggleWorkoutGroupLink } from './workoutPlan';
+import {
+  addExerciseToWorkoutPlan,
+  copyWorkoutPlan,
+  createWorkoutPlanFromExercises,
+  groupWorkoutPlanForDisplay,
+  moveWorkoutPlanExercise,
+  replaceExerciseInWorkoutPlan,
+  toggleWorkoutGroupLink,
+} from './workoutPlan';
 
 function item(position: number, group: number | null): WorkoutExercise {
   return {
@@ -14,6 +22,33 @@ function item(position: number, group: number | null): WorkoutExercise {
 }
 
 describe('workout groups', () => {
+  it('creates and edits a not-started workout plan without logging a workout', () => {
+    const ids = [
+      '30000000-0000-4000-8000-000000000001',
+      '30000000-0000-4000-8000-000000000002',
+      '30000000-0000-4000-8000-000000000003',
+    ];
+    const exercises = [item(0, null), item(1, null)].map((entry) => ({ id: entry.exerciseId }));
+    const created = createWorkoutPlanFromExercises(exercises, () => ids.shift()!);
+    const added = addExerciseToWorkoutPlan(created, item(2, null).exerciseId, () => ids.shift()!);
+    const replaced = replaceExerciseInWorkoutPlan(
+      added,
+      added[1].id,
+      '10000000-0000-4000-8000-000000000099',
+    );
+    const moved = moveWorkoutPlanExercise(replaced, replaced[2].id, -1);
+
+    expect(created.map((entry) => entry.supersetGroup)).toEqual([1, 1]);
+    expect(added[2]).toMatchObject({ position: 2, supersetGroup: null });
+    expect(replaced[1].exerciseId).toBe('10000000-0000-4000-8000-000000000099');
+    expect(moved.map((entry) => entry.exerciseId)).toEqual([
+      item(0, null).exerciseId,
+      item(2, null).exerciseId,
+      '10000000-0000-4000-8000-000000000099',
+    ]);
+    expect(moved.map((entry) => entry.position)).toEqual([0, 1, 2]);
+  });
+
   it('builds distinct display blocks for standalone exercises and one block per linked group', () => {
     const plan = [
       item(0, null),

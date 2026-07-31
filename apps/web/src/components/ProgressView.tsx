@@ -19,6 +19,7 @@ import {
   type ExerciseProgressPoint,
 } from '../lib/progress';
 import { BodyMeasurementsSection, type MeasurementDraft } from './BodyMeasurementsSection';
+import { StarIcon } from './StarIcon';
 
 const weekdayLabels = {
   ru: ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'],
@@ -55,6 +56,7 @@ export function ProgressView({
   onRepeatWorkout,
   onResumeWorkout,
   onSaveMeasurement,
+  onToggleFavorite,
 }: {
   workouts: LocalWorkout[];
   sets: LocalSet[];
@@ -67,6 +69,7 @@ export function ProgressView({
   onRepeatWorkout: (workout: LocalWorkout) => void;
   onResumeWorkout: (workout: LocalWorkout) => void;
   onSaveMeasurement: (draft: MeasurementDraft, existing: LocalMeasurement | null) => Promise<void>;
+  onToggleFavorite: (workout: LocalWorkout) => void;
 }) {
   const { locale, unitSystem } = usePreferences();
   const timeZone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', []);
@@ -312,6 +315,7 @@ export function ProgressView({
             onEditWorkout={onEditWorkout}
             onRepeatWorkout={onRepeatWorkout}
             onResumeWorkout={onResumeWorkout}
+            onToggleFavorite={onToggleFavorite}
             sets={visibleSets}
             workoutIds={selectedDay.workout.workoutIds}
             workouts={workouts}
@@ -513,6 +517,7 @@ function DayDetails({
   onEditWorkout,
   onRepeatWorkout,
   onResumeWorkout,
+  onToggleFavorite,
 }: {
   dateKey: string;
   workoutIds: string[];
@@ -523,6 +528,7 @@ function DayDetails({
   onEditWorkout: (workout: LocalWorkout) => void;
   onRepeatWorkout: (workout: LocalWorkout) => void;
   onResumeWorkout: (workout: LocalWorkout) => void;
+  onToggleFavorite: (workout: LocalWorkout) => void;
 }) {
   const { locale, unitSystem } = usePreferences();
   const exerciseById = new Map(exercises.map((exercise) => [exercise.id, exercise]));
@@ -565,14 +571,14 @@ function DayDetails({
                   {tr(locale, 'Редактировать', 'Edit')}
                 </button>
                 <button
-                  className="button primary small"
+                  className="button ghost small"
                   onClick={() => onResumeWorkout(workout)}
                   type="button"
                 >
                   {tr(locale, 'Продолжить', 'Continue')}
                 </button>
                 <button
-                  className="button ghost small"
+                  className="button primary small"
                   onClick={() => onRepeatWorkout(workout)}
                   type="button"
                 >
@@ -584,6 +590,23 @@ function DayDetails({
                   type="button"
                 >
                   {tr(locale, 'Удалить', 'Delete')}
+                </button>
+                <button
+                  aria-label={tr(
+                    locale,
+                    workout.isFavorite
+                      ? 'Убрать тренировку из избранного'
+                      : 'Добавить тренировку в избранное',
+                    workout.isFavorite
+                      ? 'Remove workout from favorites'
+                      : 'Add workout to favorites',
+                  )}
+                  aria-pressed={workout.isFavorite}
+                  className={`favorite-toggle ${workout.isFavorite ? 'active' : ''}`}
+                  onClick={() => onToggleFavorite(workout)}
+                  type="button"
+                >
+                  <StarIcon filled={workout.isFavorite} />
                 </button>
               </div>
             )}

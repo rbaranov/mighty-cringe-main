@@ -162,6 +162,7 @@ function workout(startedAt: string, endedAt: string | null, id: string): LocalWo
     activeSegmentStartedAt: endedAt ? null : startedAt,
     lastActivityAt: endedAt ?? startedAt,
     completionReason: endedAt ? 'manual' : null,
+    isFavorite: false,
     notes: null,
     locale: 'ru',
     revision: 1,

@@ -11,6 +11,7 @@ import {
 import {
   exerciseTags,
   muscleGroups,
+  workoutPlanSchema,
   type CurrentUser,
   type Exercise,
   type SetEntrySource,
@@ -25,6 +26,7 @@ import { AutoFinishNotice, WorkoutInactivityBanner } from './components/WorkoutL
 import { ConfirmationSheet } from './components/ConfirmationSheet';
 import { ExerciseDiscoveryPanel } from './components/ExerciseDiscoveryPanel';
 import { ExerciseEditorView } from './components/ExerciseEditorView';
+import { FavoriteWorkoutsSection } from './components/FavoriteWorkoutsSection';
 import type { MeasurementDraft } from './components/BodyMeasurementsSection';
 import { ProgressView } from './components/ProgressView';
 import { SettingsView } from './components/SettingsView';
@@ -53,6 +55,7 @@ import {
   type LogoutRisks,
   type PendingConfirmation,
   workoutDeletionSteps,
+  workoutFavoriteRemovalSteps,
 } from './lib/confirmation';
 import { fallbackCatalog, retiredGlobalExerciseIds } from './lib/fallbackCatalog';
 import {
@@ -96,12 +99,17 @@ import {
 } from './lib/sync';
 import {
   applyWorkoutCommandToPlan,
+  addExerciseToWorkoutPlan,
   copyWorkoutPlan,
+  createWorkoutPlanFromExercises,
   groupWorkoutPlanForDisplay,
+  moveWorkoutPlanExercise,
   normalizeWorkoutPlan,
+  replaceExerciseInWorkoutPlan,
   toggleWorkoutGroupLink,
 } from './lib/workoutPlan';
 import { buildSuggestedExercises } from './lib/workoutSuggestions';
+import { saveWorkoutFavorite } from './lib/workoutFavorites';
 import {
   displayedWorkoutDurationSeconds,
   editWorkoutTimingChanges,
@@ -121,7 +129,9 @@ type AuthState =
   | { status: 'anonymous'; googleEnabled: boolean }
   | { status: 'authenticated'; user: CurrentUser; restoredFromCache: boolean };
 
-type ExercisePickerMode = { mode: 'add' } | { mode: 'replace'; itemId: string };
+type ExercisePickerMode =
+  | { target: 'current' | 'draft'; mode: 'add' }
+  | { target: 'current' | 'draft'; mode: 'replace'; itemId: string };
 
 type NaturalInputResult =
   NaturalSetResult | Exclude<NaturalWorkoutCommandResult, { status: 'not_command' }>;
@@ -215,6 +225,7 @@ function AuthenticatedAppContent({
   const [view, setView] = useState<View>('workout');
   const [sheet, setSheet] = useState<{ exercise: Exercise; set: LocalSet | null } | null>(null);
   const [exercisePicker, setExercisePicker] = useState<ExercisePickerMode | null>(null);
+  const [draftPlan, setDraftPlan] = useState<WorkoutExercise[] | null>(null);
   const [exerciseDetailId, setExerciseDetailId] = useState<string | null>(null);
   const [exerciseEditor, setExerciseEditor] = useState<Exercise | null>(null);
   const [confirmation, setConfirmation] = useState<PendingConfirmation | null>(null);
@@ -264,6 +275,10 @@ function AuthenticatedAppContent({
     async () => (await db.meta.get('autoFinishNoticeWorkoutId'))?.value ?? null,
     [],
     null,
+  );
+  const storedDraftPlan = useLiveQuery(
+    async () => ({ value: (await db.meta.get('draftWorkoutPlan'))?.value ?? null }),
+    [],
   );
   const conflicts = useLiveQuery(
     () => db.conflicts.orderBy('createdAt').reverse().toArray(),
@@ -331,6 +346,22 @@ function AuthenticatedAppContent({
     () => buildSuggestedExercises({ catalog: catalogChoices, workouts }),
     [catalogChoices, workouts],
   );
+  const favoriteWorkouts = useMemo(
+    () => workouts.filter((workout) => workout.endedAt !== null && workout.isFavorite),
+    [workouts],
+  );
+
+  useEffect(() => {
+    if (activeWorkout || draftPlan !== null || storedDraftPlan === undefined) return;
+    const saved = parseDraftWorkoutPlan(storedDraftPlan.value);
+    if (saved) {
+      setDraftPlan(saved);
+      return;
+    }
+    if (!catalogChoices.length) return;
+    if (storedDraftPlan.value !== null) void db.meta.delete('draftWorkoutPlan');
+    setDraftPlan(createWorkoutPlanFromExercises(suggested));
+  }, [activeWorkout?.id, catalogChoices.length, draftPlan, storedDraftPlan, suggested]);
   const setDefaults = useMemo(() => {
     if (!sheet || sheet.set) return null;
     const candidates = sets.filter((set) => set.exerciseId === sheet.exercise.id && !set.deleted);
@@ -461,6 +492,7 @@ function AuthenticatedAppContent({
       activeSegmentStartedAt: startedAt,
       lastActivityAt: startedAt,
       completionReason: null,
+      isFavorite: false,
       notes: null,
       locale,
       exercises: workoutExercises,
@@ -479,6 +511,7 @@ function AuthenticatedAppContent({
         activeSegmentStartedAt: startedAt,
         lastActivityAt: startedAt,
         completionReason: null,
+        isFavorite: false,
         notes: null,
         locale,
         exercises: workoutExercises,
@@ -488,22 +521,43 @@ function AuthenticatedAppContent({
     await flushOutbox();
   }
 
+  async function updateDraftPlan(nextPlan: WorkoutExercise[]) {
+    const normalized = normalizeWorkoutPlan(nextPlan);
+    setDraftPlan(normalized);
+    await db.meta.put({ key: 'draftWorkoutPlan', value: JSON.stringify(normalized) });
+  }
+
+  async function clearDraftPlan() {
+    setDraftPlan([]);
+    await db.meta.delete('draftWorkoutPlan');
+  }
+
   async function startWorkout() {
-    await createWorkoutWithPlan(
-      suggested.map((exercise, position) => ({
-        id: crypto.randomUUID(),
-        exerciseId: exercise.id,
-        position,
-        supersetGroup: Math.floor(position / 2) + 1,
-      })),
-    );
+    await createWorkoutWithPlan(draftPlan ?? createWorkoutPlanFromExercises(suggested));
+    await clearDraftPlan();
   }
 
   async function repeatWorkout(workout: LocalWorkout) {
     if (activeWorkout || workout.endedAt === null) return;
     await createWorkoutWithPlan(copyWorkoutPlan(workout.exercises));
+    await clearDraftPlan();
     setExerciseDetailId(null);
     setView('workout');
+  }
+
+  async function updateWorkoutFavorite(workout: LocalWorkout, isFavorite: boolean) {
+    await saveWorkoutFavorite(workout, isFavorite);
+  }
+
+  function requestToggleWorkoutFavorite(workout: LocalWorkout) {
+    if (!workout.isFavorite) {
+      void updateWorkoutFavorite(workout, true);
+      return;
+    }
+    openConfirmation({
+      steps: workoutFavoriteRemovalSteps(locale),
+      action: () => updateWorkoutFavorite(workout, false),
+    });
   }
 
   function openConfirmation(request: ConfirmationRequest) {
@@ -663,6 +717,7 @@ function AuthenticatedAppContent({
         }
         await queueMutation(mutation);
       });
+      setDraftPlan(null);
       await flushOutbox();
     } finally {
       finishingWorkoutId.current = null;
@@ -852,10 +907,20 @@ function AuthenticatedAppContent({
   }
 
   async function chooseExercise(exercise: Exercise) {
-    if (!workoutContext || !exercisePicker) return;
+    if (!exercisePicker) return;
     const picker = exercisePicker;
     setExercisePicker(null);
     try {
+      if (picker.target === 'draft') {
+        const current = draftPlan ?? [];
+        await updateDraftPlan(
+          picker.mode === 'add'
+            ? addExerciseToWorkoutPlan(current, exercise.id)
+            : replaceExerciseInWorkoutPlan(current, picker.itemId, exercise.id),
+        );
+        return;
+      }
+      if (!workoutContext) return;
       if (picker.mode === 'add') {
         await updateWorkoutPlan([
           ...workoutContext.exercises,
@@ -877,6 +942,21 @@ function AuthenticatedAppContent({
       setExercisePicker(picker);
       throw error;
     }
+  }
+
+  async function removeDraftExercise(itemId: string) {
+    if (!draftPlan) return;
+    await updateDraftPlan(draftPlan.filter((item) => item.id !== itemId));
+  }
+
+  async function moveDraftExercise(itemId: string, direction: -1 | 1) {
+    if (!draftPlan) return;
+    await updateDraftPlan(moveWorkoutPlanExercise(draftPlan, itemId, direction));
+  }
+
+  async function toggleDraftSuperset(itemId: string) {
+    if (!draftPlan) return;
+    await updateDraftPlan(toggleWorkoutGroupLink(draftPlan, itemId));
   }
 
   async function removeExercise(itemId: string) {
@@ -1321,10 +1401,11 @@ function AuthenticatedAppContent({
             onEditSet={(exercise, set) => setSheet({ exercise, set })}
             onMoveSet={moveSet}
             onReplaceExercise={() => {
-              const item = workoutContext?.exercises.find(
+              const target = workoutContext ? 'current' : 'draft';
+              const item = (workoutContext?.exercises ?? draftPlan ?? []).find(
                 (candidate) => candidate.exerciseId === exerciseDetail.id,
               );
-              if (item) setExercisePicker({ mode: 'replace', itemId: item.id });
+              if (item) setExercisePicker({ target, mode: 'replace', itemId: item.id });
             }}
             sets={sets}
             workouts={workouts}
@@ -1336,11 +1417,14 @@ function AuthenticatedAppContent({
                 activeWorkout={workoutContext}
                 autoFinishedWorkout={autoFinishedWorkout}
                 catalog={exercises}
+                draftPlan={draftPlan ?? []}
                 editingHistory={Boolean(editingWorkout)}
-                exercises={suggested}
+                favoriteWorkouts={favoriteWorkouts}
                 inactivityState={inactivityState}
                 onAddSet={(exercise) => setSheet({ exercise, set: null })}
-                onAddExercise={() => setExercisePicker({ mode: 'add' })}
+                onAddExercise={() =>
+                  setExercisePicker({ target: workoutContext ? 'current' : 'draft', mode: 'add' })
+                }
                 onDeleteSet={requestDeleteSet}
                 onEditSet={(exercise, set) => setSheet({ exercise, set })}
                 onFinish={requestFinishWorkout}
@@ -1351,21 +1435,38 @@ function AuthenticatedAppContent({
                 }}
                 onDismissAutoFinish={() => void dismissAutoFinishNotice()}
                 onEditTiming={(workout) => setTimingWorkoutId(workout.id)}
-                onMoveExercise={moveExercise}
+                onMoveExercise={(itemId, direction) =>
+                  workoutContext
+                    ? void moveExercise(itemId, direction)
+                    : void moveDraftExercise(itemId, direction)
+                }
                 onMoveSet={moveSet}
                 onOpenExercise={(exercise) => setExerciseDetailId(exercise.id)}
-                onRemoveExercise={requestRemoveExercise}
-                onReplaceExercise={(itemId) => setExercisePicker({ mode: 'replace', itemId })}
+                onRemoveExercise={(itemId, hasLoggedSets) =>
+                  workoutContext
+                    ? requestRemoveExercise(itemId, hasLoggedSets)
+                    : void removeDraftExercise(itemId)
+                }
+                onRemoveFavorite={requestToggleWorkoutFavorite}
+                onRepeatFavorite={requestRepeatWorkout}
+                onReplaceExercise={(itemId) =>
+                  setExercisePicker({
+                    target: workoutContext ? 'current' : 'draft',
+                    mode: 'replace',
+                    itemId,
+                  })
+                }
                 onResumeAutoFinished={() => {
                   if (autoFinishedWorkout) requestResumeWorkout(autoFinishedWorkout);
                 }}
                 onStart={startWorkout}
                 onStillTraining={() => void touchActiveWorkout()}
-                onToggleSuperset={toggleSuperset}
+                onToggleSuperset={(itemId) =>
+                  workoutContext ? void toggleSuperset(itemId) : void toggleDraftSuperset(itemId)
+                }
                 onDismissRecovery={() => setRecoveredWorkoutId(null)}
                 recovered={activeWorkout?.id === recoveredWorkoutId}
                 sets={sets}
-                workouts={workouts}
               />
             )}
             {view === 'catalog' && (
@@ -1385,6 +1486,7 @@ function AuthenticatedAppContent({
                 onRepeatWorkout={requestRepeatWorkout}
                 onResumeWorkout={requestResumeWorkout}
                 onSaveMeasurement={saveMeasurement}
+                onToggleFavorite={requestToggleWorkoutFavorite}
                 sets={sets}
                 workouts={workouts}
               />
@@ -1499,7 +1601,9 @@ function AuthenticatedAppContent({
       />
       <ExercisePickerSheet
         catalog={catalogChoices}
-        currentPlan={workoutContext?.exercises ?? []}
+        currentPlan={
+          exercisePicker?.target === 'draft' ? (draftPlan ?? []) : (workoutContext?.exercises ?? [])
+        }
         mode={exercisePicker}
         onChoose={chooseExercise}
         onClose={() => setExercisePicker(null)}
@@ -1598,11 +1702,11 @@ function WorkoutView({
   activeWorkout,
   autoFinishedWorkout,
   catalog,
+  draftPlan,
   editingHistory,
-  exercises,
+  favoriteWorkouts,
   inactivityState,
   sets,
-  workouts,
   onStart,
   onAddExercise,
   onAddSet,
@@ -1617,6 +1721,8 @@ function WorkoutView({
   onMoveSet,
   onOpenExercise,
   onRemoveExercise,
+  onRemoveFavorite,
+  onRepeatFavorite,
   onReplaceExercise,
   onResumeAutoFinished,
   onStillTraining,
@@ -1627,11 +1733,11 @@ function WorkoutView({
   activeWorkout: LocalWorkout | undefined;
   autoFinishedWorkout: LocalWorkout | undefined;
   catalog: Exercise[];
+  draftPlan: WorkoutExercise[];
   editingHistory: boolean;
-  exercises: Exercise[];
+  favoriteWorkouts: LocalWorkout[];
   inactivityState: WorkoutInactivityState;
   sets: LocalSet[];
-  workouts: LocalWorkout[];
   onStart: () => void;
   onAddExercise: () => void;
   onAddSet: (exercise: Exercise) => void;
@@ -1646,6 +1752,8 @@ function WorkoutView({
   onMoveSet: (set: LocalSet, direction: -1 | 1) => void;
   onOpenExercise: (exercise: Exercise) => void;
   onRemoveExercise: (itemId: string, hasLoggedSets: boolean) => void;
+  onRemoveFavorite: (workout: LocalWorkout) => void;
+  onRepeatFavorite: (workout: LocalWorkout) => void;
   onReplaceExercise: (itemId: string) => void;
   onResumeAutoFinished: () => void;
   onStillTraining: () => void;
@@ -1668,6 +1776,62 @@ function WorkoutView({
     const autoFinishedSetCount = autoFinishedWorkout
       ? sets.filter((set) => set.workoutId === autoFinishedWorkout.id && !set.deleted).length
       : 0;
+    const plan = [...draftPlan]
+      .sort((left, right) => left.position - right.position)
+      .flatMap((item) => {
+        const exercise = catalog.find((candidate) => candidate.id === item.exerciseId);
+        return exercise ? [{ item, exercise }] : [];
+      });
+    const optionsSelection = plan.find(({ item }) => item.id === optionsItemId) ?? null;
+    const optionsIndex = optionsSelection
+      ? plan.findIndex(({ item }) => item.id === optionsSelection.item.id)
+      : -1;
+    const displayGroups = groupWorkoutPlanForDisplay(plan);
+    const displayGroupSizes = new Map(
+      displayGroups.flatMap((group) =>
+        group.supersetGroup === null ? [] : [[group.supersetGroup, group.entries.length] as const],
+      ),
+    );
+    const renderDraftEntry = ({ item, exercise }: (typeof plan)[number]) => (
+      <article
+        className={[
+          'exercise-card',
+          'draft-exercise-card',
+          item.supersetGroup === null ? '' : 'superset-member',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+        key={item.id}
+      >
+        <div className="exercise-card-head">
+          <button
+            className="exercise-title-button"
+            onClick={() => onOpenExercise(exercise)}
+            type="button"
+          >
+            <strong>{exerciseName(exercise, locale)}</strong>
+            <span className="exercise-card-meta">
+              <small>{muscleLabel(exercise.primaryMuscles[0], locale)}</small>
+              <Tag tag={exercise.tag} />
+              {item.supersetGroup !== null && (
+                <span className="superset-label">
+                  {workoutGroupLabel(displayGroupSizes.get(item.supersetGroup) ?? 2, locale)}{' '}
+                  {item.supersetGroup}
+                </span>
+              )}
+            </span>
+          </button>
+          <button
+            aria-label={`${tr(locale, 'Настроить упражнение', 'Exercise options')}: ${exerciseName(exercise, locale)}`}
+            className="exercise-options-trigger"
+            onClick={() => setOptionsItemId(item.id)}
+            type="button"
+          >
+            •••
+          </button>
+        </div>
+      </article>
+    );
     return (
       <section className="screen">
         {autoFinishedWorkout && (
@@ -1684,34 +1848,83 @@ function WorkoutView({
         <p className="intro">
           {tr(
             locale,
-            'Свободная full-body тренировка. Меняй всё по ходу — приложение подстроится.',
-            'A flexible full-body workout. Change anything as you go — the app will adapt.',
+            'Настрой упражнения и связки заранее или начни сразу — таймер запустится только после старта.',
+            'Adjust exercises and groups now or start right away — the timer begins only after you start.',
           )}
         </p>
         <button className="button primary action" onClick={onStart} type="button">
           {tr(locale, 'Начать тренировку', 'Start workout')}
         </button>
+        <FavoriteWorkoutsSection
+          exercises={catalog}
+          onRemove={onRemoveFavorite}
+          onRepeat={onRepeatFavorite}
+          workouts={favoriteWorkouts}
+        />
         <div className="section-head">
           <h2>{tr(locale, 'План на сегодня', "Today's plan")}</h2>
-          <span>{tr(locale, 'можно менять', 'editable')}</span>
         </div>
-        <div className="exercise-list compact">
-          {exercises.map((exercise, index) => (
-            <button
-              className="exercise-row exercise-row-button"
-              key={exercise.id}
-              onClick={() => onOpenExercise(exercise)}
-              type="button"
-            >
-              <span className="order">{index + 1}</span>
-              <div>
-                <strong>{exerciseName(exercise, locale)}</strong>
-                <small>{muscleLabel(exercise.primaryMuscles[0], locale)}</small>
-              </div>
-              <Tag tag={exercise.tag} />
-            </button>
-          ))}
+        <div className="exercise-list draft-plan-list">
+          {displayGroups.map((group) => {
+            if (group.supersetGroup === null) return renderDraftEntry(group.entries[0]);
+            return (
+              <section
+                aria-label={`${workoutGroupLabel(group.entries.length, locale)} ${group.supersetGroup}`}
+                className="superset-cluster"
+                key={`draft-superset-${group.supersetGroup}`}
+              >
+                <div className="superset-cluster-items">{group.entries.map(renderDraftEntry)}</div>
+              </section>
+            );
+          })}
+          {!plan.length && (
+            <div className="empty-plan">
+              <strong>{tr(locale, 'План пока пуст', 'The plan is empty')}</strong>
+              <span>
+                {tr(
+                  locale,
+                  'Добавь упражнения перед началом — таймер ещё не идёт.',
+                  'Add exercises before starting — the timer is not running yet.',
+                )}
+              </span>
+            </div>
+          )}
+          <button className="button ghost full add-exercise" onClick={onAddExercise} type="button">
+            ＋ {tr(locale, 'Добавить упражнение', 'Add exercise')}
+          </button>
         </div>
+        <ExerciseOptionsSheet
+          exercise={optionsSelection?.exercise ?? null}
+          hasLoggedSets={false}
+          index={optionsIndex}
+          linkedWithNext={
+            optionsSelection !== null &&
+            optionsSelection.item.supersetGroup !== null &&
+            optionsSelection.item.supersetGroup === plan[optionsIndex + 1]?.item.supersetGroup
+          }
+          onClose={() => setOptionsItemId(null)}
+          onLink={() => {
+            if (!optionsSelection) return;
+            setOptionsItemId(null);
+            onToggleSuperset(optionsSelection.item.id);
+          }}
+          onMove={(direction) => {
+            if (!optionsSelection) return;
+            setOptionsItemId(null);
+            onMoveExercise(optionsSelection.item.id, direction);
+          }}
+          onRemove={() => {
+            if (!optionsSelection) return;
+            setOptionsItemId(null);
+            onRemoveExercise(optionsSelection.item.id, false);
+          }}
+          onReplace={() => {
+            if (!optionsSelection) return;
+            setOptionsItemId(null);
+            onReplaceExercise(optionsSelection.item.id);
+          }}
+          planLength={plan.length}
+        />
       </section>
     );
   }
@@ -3606,6 +3819,16 @@ function firstName(displayName: string, locale: CurrentUser['locale']) {
 
 function canUseTrainerConsole(role: CurrentUser['role']) {
   return role === 'trainer' || role === 'admin' || role === 'superadmin';
+}
+
+function parseDraftWorkoutPlan(value: string | null) {
+  if (value === null) return null;
+  try {
+    const parsed = workoutPlanSchema.safeParse(JSON.parse(value));
+    return parsed.success ? normalizeWorkoutPlan(parsed.data) : null;
+  } catch {
+    return null;
+  }
 }
 
 function mutationWorkoutId(mutation: Parameters<typeof queueMutation>[0]) {
