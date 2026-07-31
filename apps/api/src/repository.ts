@@ -340,6 +340,7 @@ export class MemoryRepository implements WorkoutRepository {
       activeSegmentStartedAt: input.activeSegmentStartedAt,
       lastActivityAt: input.lastActivityAt,
       completionReason: input.completionReason,
+      isFavorite: input.isFavorite,
       notes: input.notes,
       locale: input.locale,
       exercises: orderedPlan(input.exercises),
@@ -426,6 +427,9 @@ export class MemoryRepository implements WorkoutRepository {
       workout.completionReason = 'manual';
     } else if (legacyResume) {
       workout.completionReason = null;
+    }
+    if (input.changes.isFavorite !== undefined) {
+      workout.isFavorite = input.changes.isFavorite;
     }
     touchMemoryWorkout(workout, legacyResume ? legacyResumeAt : input.activityAt);
     if ('notes' in input.changes) workout.notes = input.changes.notes ?? null;
@@ -986,6 +990,7 @@ export class MemoryRepository implements WorkoutRepository {
       activeSegmentStartedAt: workout.activeSegmentStartedAt,
       lastActivityAt: workout.lastActivityAt,
       completionReason: workout.completionReason,
+      isFavorite: workout.isFavorite,
       notes: workout.notes,
       locale: workout.locale,
       exercises: orderedPlan(workout.exercises),
@@ -1177,6 +1182,7 @@ export class PostgresRepository implements WorkoutRepository {
           : null,
         lastActivityAt: new Date(input.lastActivityAt),
         completionReason: input.completionReason,
+        isFavorite: input.isFavorite,
         notes: input.notes,
         locale: input.locale,
       });
@@ -1278,6 +1284,7 @@ export class PostgresRepository implements WorkoutRepository {
           activeSegmentStartedAt: nextActiveSegmentStartedAt,
           lastActivityAt: nextLastActivityAt,
           completionReason: nextCompletionReason,
+          isFavorite: input.changes.isFavorite ?? existing.isFavorite,
           notes: 'notes' in input.changes ? (input.changes.notes ?? null) : existing.notes,
           revision: existing.revision + 1,
           updatedAt: processingAt,
@@ -2313,6 +2320,7 @@ function toWorkoutRecord(
     activeSegmentStartedAt: workout.activeSegmentStartedAt?.toISOString() ?? null,
     lastActivityAt: workout.lastActivityAt.toISOString(),
     completionReason: workout.completionReason,
+    isFavorite: workout.isFavorite,
     notes: workout.notes,
     locale: workout.locale === 'en' ? 'en' : 'ru',
     revision: workout.revision,
@@ -2435,6 +2443,7 @@ function sameWorkoutCreate(
     asNullableIso(workout.activeSegmentStartedAt) === input.activeSegmentStartedAt &&
     asIso(workout.lastActivityAt) === input.lastActivityAt &&
     workout.completionReason === input.completionReason &&
+    workout.isFavorite === input.isFavorite &&
     workout.notes === input.notes &&
     workout.locale === input.locale &&
     samePlan(storedPlan, input.exercises)
@@ -2482,6 +2491,7 @@ function workoutChangesMatch(
       asIso(workout.lastActivityAt) === changes.lastActivityAt) &&
     (!('completionReason' in changes) ||
       workout.completionReason === (changes.completionReason ?? null)) &&
+    (changes.isFavorite === undefined || workout.isFavorite === changes.isFavorite) &&
     (!('notes' in changes) || workout.notes === (changes.notes ?? null)) &&
     (changes.exercises === undefined || samePlan(storedPlan, changes.exercises))
   );

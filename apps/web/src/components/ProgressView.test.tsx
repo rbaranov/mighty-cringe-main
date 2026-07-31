@@ -13,6 +13,8 @@ describe('ProgressView', () => {
   });
 
   it('renders source-backed calendar and strength details', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-31T12:00:00.000Z'));
     const exercise: Exercise = {
       id: '10000000-0000-4000-8000-000000000003',
       nameRu: 'Жим лёжа',
@@ -31,6 +33,7 @@ describe('ProgressView', () => {
       activeSegmentStartedAt: null,
       lastActivityAt: '2026-07-21T17:45:00.000Z',
       completionReason: 'automatic',
+      isFavorite: true,
       notes: null,
       locale: 'ru',
       revision: 1,
@@ -66,6 +69,7 @@ describe('ProgressView', () => {
         onRepeatWorkout={() => {}}
         onResumeWorkout={() => {}}
         onSaveMeasurement={async () => {}}
+        onToggleFavorite={() => {}}
         sets={[set]}
         workouts={[workout]}
       />,
@@ -81,9 +85,15 @@ describe('ProgressView', () => {
     expect(html).toContain('Редактировать');
     expect(html).toContain('Продолжить');
     expect(html).toContain('Повторить');
+    expect(html).toContain('aria-label="Убрать тренировку из избранного"');
+    expect(html).toMatch(/class="button ghost small"[^>]*>Продолжить</u);
+    expect(html).toMatch(/class="button primary small"[^>]*>Повторить</u);
+    expect(html).toContain('data-icon="favorite-star"');
   });
 
   it('renders English catalog names and imperial weights from profile preferences', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-31T12:00:00.000Z'));
     const exercise: Exercise = {
       id: '10000000-0000-4000-8000-000000000003',
       nameRu: 'Жим лёжа',
@@ -102,6 +112,7 @@ describe('ProgressView', () => {
       activeSegmentStartedAt: null,
       lastActivityAt: '2026-07-21T17:45:00.000Z',
       completionReason: 'manual' as const,
+      isFavorite: false,
       notes: null,
       locale: 'en' as const,
       revision: 1,
@@ -138,6 +149,7 @@ describe('ProgressView', () => {
           onRepeatWorkout={() => {}}
           onResumeWorkout={() => {}}
           onSaveMeasurement={async () => {}}
+          onToggleFavorite={() => {}}
           sets={[set]}
           workouts={[workout]}
         />
@@ -160,6 +172,7 @@ describe('ProgressView', () => {
       activeSegmentStartedAt: null,
       lastActivityAt: '2026-07-21T17:45:00.000Z',
       completionReason: 'manual',
+      isFavorite: false,
       notes: null,
       locale: 'ru',
       revision: 1,
@@ -179,6 +192,7 @@ describe('ProgressView', () => {
         onRepeatWorkout={() => {}}
         onResumeWorkout={() => {}}
         onSaveMeasurement={async () => {}}
+        onToggleFavorite={() => {}}
         sets={[]}
         workouts={[workout]}
       />,

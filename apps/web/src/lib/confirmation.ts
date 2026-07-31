@@ -86,6 +86,20 @@ export function workoutDeletionSteps({
   ];
 }
 
+export function workoutFavoriteRemovalSteps(locale: CurrentUser['locale']): [ConfirmationStep] {
+  return [
+    {
+      title: translate(locale, 'Убрать из избранного?', 'Remove from favorites?'),
+      message: translate(
+        locale,
+        'Тренировка останется в истории и расчётах прогресса. Исчезнет только метка избранного и быстрый доступ на вкладке «Тренировка».',
+        'The workout will stay in history and progress calculations. Only its favorite mark and quick access on the Workout tab will be removed.',
+      ),
+      confirmLabel: translate(locale, 'Убрать из избранного', 'Remove from favorites'),
+    },
+  ];
+}
+
 export function missingServerWorkoutDeletionSteps({
   date,
   locale,

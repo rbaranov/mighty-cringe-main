@@ -9,6 +9,7 @@ import {
   logoutConfirmationSteps,
   missingServerWorkoutDeletionSteps,
   workoutDeletionSteps,
+  workoutFavoriteRemovalSteps,
 } from './confirmation';
 
 describe('confirmation flow', () => {
@@ -122,6 +123,18 @@ describe('workout deletion confirmations', () => {
   });
 });
 
+describe('favorite workout confirmation', () => {
+  it('removes only the bookmark and keeps workout history explicit', () => {
+    const russian = workoutFavoriteRemovalSteps('ru')[0];
+    const english = workoutFavoriteRemovalSteps('en')[0];
+
+    expect(russian.title).toBe('Убрать из избранного?');
+    expect(russian.message).toContain('останется в истории');
+    expect(russian.message).toContain('метка избранного');
+    expect(english.confirmLabel).toBe('Remove from favorites');
+  });
+});
+
 describe('risky logout confirmations', () => {
   it('does not interrupt a fully synchronized logout', () => {
     expect(
@@ -182,6 +195,7 @@ function serverWorkout(): NonNullable<SyncConflict['current']> {
     activeSegmentStartedAt: null,
     lastActivityAt: '2026-07-29T10:45:00.000Z',
     completionReason: 'manual',
+    isFavorite: false,
     notes: null,
     locale: 'ru',
     exercises: [],

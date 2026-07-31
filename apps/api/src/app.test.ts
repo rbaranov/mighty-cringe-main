@@ -311,6 +311,24 @@ test('OAuth sessions isolate athlete data, support logout, and enforce admin rol
   assert.equal(reorderPlan.json().entity.revision, 4);
   assert.equal(reorderPlan.json().entity.exercises[0].id, workout.exercises[1].id);
 
+  const favoriteWorkout = await app.inject({
+    method: 'POST',
+    url: '/api/v1/sync',
+    headers: { cookie: athleteOneCookie },
+    payload: {
+      type: 'workout.update',
+      payload: {
+        clientMutationId: '30000000-0000-4000-8000-000000000013',
+        workoutId,
+        baseRevision: 4,
+        changes: { isFavorite: true },
+      },
+    },
+  });
+  assert.equal(favoriteWorkout.statusCode, 200);
+  assert.equal(favoriteWorkout.json().entity.revision, 5);
+  assert.equal(favoriteWorkout.json().entity.isFavorite, true);
+
   const updateSet = await app.inject({
     method: 'POST',
     url: '/api/v1/sync',
@@ -421,7 +439,8 @@ test('OAuth sessions isolate athlete data, support logout, and enforce admin rol
     url: '/api/v1/workouts',
     headers: { cookie: athleteOneCookie },
   });
-  assert.equal(athleteOneHistory.json().items[0].revision, 4);
+  assert.equal(athleteOneHistory.json().items[0].revision, 5);
+  assert.equal(athleteOneHistory.json().items[0].isFavorite, true);
   assert.equal(athleteOneHistory.json().items[0].exercises[0].id, workout.exercises[1].id);
   assert.equal(athleteOneHistory.json().items[0].sets.length, 1);
   assert.equal(athleteOneHistory.json().items[0].sets[0].weightKg, 62.5);
@@ -712,7 +731,7 @@ test('OAuth sessions isolate athlete data, support logout, and enforce admin rol
     payload: {
       clientMutationId: '30000000-0000-4000-8000-000000000004',
       workoutId,
-      baseRevision: 4,
+      baseRevision: 5,
     },
   };
   const deletedWorkout = await app.inject({

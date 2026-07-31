@@ -13,6 +13,7 @@ const workout: LocalWorkout = {
   activeSegmentStartedAt: null,
   lastActivityAt: '2026-07-30T11:15:00.000Z',
   completionReason: 'automatic',
+  isFavorite: false,
   notes: null,
   locale: 'ru',
   exercises: [],

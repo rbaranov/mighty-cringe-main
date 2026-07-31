@@ -506,6 +506,7 @@ async function rebaseMutation(conflict: SyncConflict): Promise<SyncMutation | nu
         activeSegmentStartedAt: local.activeSegmentStartedAt,
         lastActivityAt: local.lastActivityAt,
         completionReason: local.completionReason,
+        isFavorite: local.isFavorite,
         notes: local.notes,
         locale: local.locale,
         exercises: local.exercises,
