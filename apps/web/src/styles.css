@@ -5173,6 +5173,7 @@ body {
   background: var(--surface);
   color: var(--ink);
   font: inherit;
+  font-size: 16px;
 }
 
 .catalog-filter-chips {
