@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { CurrentUser } from '@mighty-cringe/contracts';
 
 import { PreferencesProvider } from '../lib/preferences';
+import { DataExportPanel } from './DataExportPanel';
 import { SettingsView } from './SettingsView';
 
 const user: CurrentUser = {
@@ -33,6 +34,7 @@ describe('SettingsView', () => {
     );
 
     const account = html.indexOf('Аккаунт');
+    const data = html.indexOf('Данные и экспорт');
     const coach = html.indexOf('Тренер и доступ');
     const athletes = html.indexOf('Подопечные');
     const notifications = html.indexOf('Уведомления');
@@ -40,12 +42,14 @@ describe('SettingsView', () => {
     const preferences = html.indexOf('Язык и единицы измерения');
 
     expect(account).toBeGreaterThan(-1);
-    expect(coach).toBeGreaterThan(account);
+    expect(data).toBeGreaterThan(account);
+    expect(coach).toBeGreaterThan(data);
     expect(athletes).toBeGreaterThan(coach);
     expect(notifications).toBeGreaterThan(athletes);
     expect(audio).toBeGreaterThan(notifications);
     expect(preferences).toBeGreaterThan(audio);
     expect(html).not.toContain('Записи команд');
+    expect(html).toContain('Локальная копия тренировок и замеров');
     expect(html).toContain('интенсивных силовых тренировок');
     expect(html).toContain('Минимум лишних действий — максимум честно зафиксированной работы.');
     expect(html).toContain('⚡ Mighty');
@@ -88,5 +92,20 @@ describe('SettingsView', () => {
     expect(html).toContain('href="https://www.youtube.com/watch?v=4r7wHMg5Yjg"');
     expect(html).toContain('>he is cool and does not give a damn</a>.');
     expect(html).not.toContain('Watch the video');
+  });
+
+  it('explains the offline JSON export and its privacy boundary', () => {
+    const html = renderToStaticMarkup(
+      <PreferencesProvider locale="ru" unitSystem="metric">
+        <DataExportPanel />
+      </PreferencesProvider>,
+    );
+
+    expect(html).toContain('Копия данных этого устройства');
+    expect(html).toContain('Работает офлайн');
+    expect(html).toContain('которые ещё не синхронизировались');
+    expect(html).toContain('Сохранить в Файлы');
+    expect(html).toContain('Импорт в приложение пока не поддерживается');
+    expect(html).toContain('disabled=""');
   });
 });

@@ -8,12 +8,13 @@ import { getNotificationSettings } from '../lib/notifications';
 import { tr, updateProfilePreferences, usePreferences } from '../lib/preferences';
 import { getTrainerRelationship } from '../lib/trainer';
 import { hasAcceptedVoiceConsent, loadVoiceConfig } from '../lib/voice';
+import { DataExportPanel } from './DataExportPanel';
 import { PushReminderSettings } from './PushReminderSettings';
 import { TrainerRelationshipCard } from './TrainerAccess';
 import { VoiceCommandSettingsPanel, VoiceRecordingsPanel } from './VoicePanel';
 
 type Section =
-  'preferences' | 'notifications' | 'audio' | 'recordings' | 'coach' | 'sync' | 'account';
+  'preferences' | 'notifications' | 'audio' | 'recordings' | 'coach' | 'data' | 'account';
 
 export function SettingsView({
   user,
@@ -134,8 +135,22 @@ export function SettingsView({
             <TrainerRelationshipCard refreshKey={relationshipRefreshKey} />
           </>
         )}
-        {section === 'sync' && (
-          <ConflictSettings conflicts={conflicts} onResolveConflict={onResolveConflict} />
+        {section === 'data' && (
+          <>
+            <p className="eyebrow">{tr(locale, 'Личные данные', 'Personal data')}</p>
+            <h1>{tr(locale, 'Данные и экспорт', 'Data and export')}</h1>
+            <p className="intro">
+              {tr(
+                locale,
+                'Сохрани локальную копию журнала или разбери изменения, которые требуют выбора.',
+                'Save a local copy of your journal or review changes that need your decision.',
+              )}
+            </p>
+            <DataExportPanel />
+            {conflicts.length > 0 && (
+              <ConflictSettings conflicts={conflicts} onResolveConflict={onResolveConflict} />
+            )}
+          </>
         )}
         {section === 'account' && (
           <>
@@ -175,26 +190,32 @@ export function SettingsView({
         </a>
       </div>
       <div className="settings-menu">
-        {conflicts.length > 0 && (
-          <MenuItem
-            description={tr(
-              locale,
-              'Выбрать версию изменений с разных устройств',
-              'Choose between changes from different devices',
-            )}
-            icon="!"
-            onClick={() => setSection('sync')}
-            status={`${conflicts.length}`}
-            title={tr(locale, 'Данные и синхронизация', 'Data and sync')}
-            urgent
-          />
-        )}
         <MenuItem
           description={user.email}
           icon="R"
           onClick={() => setSection('account')}
           status={roleLabel(user.role, locale)}
           title={tr(locale, 'Аккаунт', 'Account')}
+        />
+        <MenuItem
+          description={
+            conflicts.length > 0
+              ? tr(
+                  locale,
+                  'Есть изменения, которые требуют выбора',
+                  'Some changes need your decision',
+                )
+              : tr(
+                  locale,
+                  'Локальная копия тренировок и замеров',
+                  'Local copy of workouts and measurements',
+                )
+          }
+          icon={conflicts.length > 0 ? '!' : '↓'}
+          onClick={() => setSection('data')}
+          status={conflicts.length > 0 ? `${conflicts.length}` : 'JSON'}
+          title={tr(locale, 'Данные и экспорт', 'Data and export')}
+          urgent={conflicts.length > 0}
         />
         <MenuItem
           description={tr(
@@ -498,7 +519,7 @@ function ConflictSettings({
   return (
     <section className="conflict-panel" aria-live="polite">
       <p className="eyebrow">{tr(locale, 'Нужен выбор', 'Choose a version')}</p>
-      <h1>{tr(locale, 'Данные и синхронизация', 'Data and sync')}</h1>
+      <h2>{tr(locale, 'Конфликты синхронизации', 'Sync conflicts')}</h2>
       <p className="intro">
         {tr(
           locale,
