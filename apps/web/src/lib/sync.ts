@@ -11,7 +11,7 @@ import type {
   WorkoutRecord,
 } from '@mighty-cringe/contracts';
 
-import { db, type OutboxMutation, type SyncConflict } from './db';
+import { db, type LocalWorkout, type OutboxMutation, type SyncConflict } from './db';
 import { flushVoiceQueue, refreshVoiceEntries } from './voice';
 
 type MutationResponse =
@@ -293,7 +293,11 @@ async function performFlush(): Promise<SyncOutcome> {
 async function prepareMutation(queued: OutboxMutation) {
   if (queued.mutation.type === 'workout.update') {
     const workout = await db.workouts.get(queued.mutation.payload.workoutId);
-    if (!workout || workout.revision === 0) return null;
+    if (!workout) return null;
+    if (workout.revision === 0) {
+      if (workout.syncState === 'conflict') return null;
+      return restoreMissingWorkoutCreate(queued, workout);
+    }
     if (queued.mutation.payload.baseRevision !== workout.revision) {
       queued.mutation.payload.baseRevision = workout.revision;
       await db.outbox.put(queued);
@@ -327,6 +331,52 @@ async function prepareMutation(queued: OutboxMutation) {
     }
   }
   return queued;
+}
+
+async function restoreMissingWorkoutCreate(
+  blockedUpdate: OutboxMutation,
+  workout: LocalWorkout,
+): Promise<OutboxMutation> {
+  const queuedCreate = await db.outbox
+    .filter(
+      (item) => item.mutation.type === 'workout.create' && item.mutation.payload.id === workout.id,
+    )
+    .first();
+
+  if (queuedCreate) {
+    if (queuedCreate.sequence >= blockedUpdate.sequence) {
+      queuedCreate.sequence = blockedUpdate.sequence - 1;
+      await db.outbox.put(queuedCreate);
+    }
+    return queuedCreate;
+  }
+
+  const clientMutationId = crypto.randomUUID();
+  const restoredCreate: OutboxMutation = {
+    id: clientMutationId,
+    sequence: blockedUpdate.sequence - 1,
+    createdAt: new Date().toISOString(),
+    mutation: {
+      type: 'workout.create',
+      payload: {
+        id: workout.id,
+        clientMutationId,
+        startedAt: workout.startedAt,
+        endedAt: workout.endedAt,
+        durationSeconds: workout.durationSeconds,
+        activeSegmentStartedAt: workout.activeSegmentStartedAt,
+        lastActivityAt: workout.lastActivityAt,
+        completionReason: workout.completionReason,
+        isFavorite: workout.isFavorite,
+        notes: workout.notes,
+        locale: workout.locale,
+        exercises: workout.exercises,
+        activityAt: workout.lastActivityAt,
+      },
+    },
+  };
+  await db.outbox.put(restoredCreate);
+  return restoredCreate;
 }
 
 async function applyMutationResult(queued: OutboxMutation, result: MutationResponse) {
@@ -456,6 +506,34 @@ async function applyCurrent(current: WorkoutRecord | SetRecord | MeasurementReco
 
 async function rebaseMutation(conflict: SyncConflict): Promise<SyncMutation | null> {
   const clientMutationId = crypto.randomUUID();
+  if (
+    conflict.mutation.type === 'workout.create' &&
+    conflict.current &&
+    isWorkoutRecord(conflict.current)
+  ) {
+    const local = await db.workouts.get(conflict.mutation.payload.id);
+    if (!local) return null;
+    return {
+      type: 'workout.update',
+      payload: {
+        clientMutationId,
+        workoutId: local.id,
+        baseRevision: conflict.current.revision,
+        changes: {
+          startedAt: local.startedAt,
+          endedAt: local.endedAt,
+          durationSeconds: local.durationSeconds,
+          activeSegmentStartedAt: local.activeSegmentStartedAt,
+          lastActivityAt: local.lastActivityAt,
+          completionReason: local.completionReason,
+          isFavorite: local.isFavorite,
+          notes: local.notes,
+          exercises: local.exercises,
+        },
+        activityAt: local.lastActivityAt,
+      },
+    };
+  }
   if (
     conflict.mutation.type === 'workout.update' &&
     conflict.current &&
