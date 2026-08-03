@@ -575,6 +575,7 @@ function roleLabel(role: CurrentUser['role'], locale: CurrentUser['locale']) {
 
 function canKeepMine(conflict: SyncConflict) {
   return (
+    conflict.mutation.type === 'workout.create' ||
     conflict.mutation.type === 'workout.update' ||
     conflict.mutation.type === 'workout.delete' ||
     conflict.mutation.type === 'set.update' ||
