@@ -4488,6 +4488,103 @@ body {
   min-height: 54px;
 }
 
+.data-export-card {
+  margin-top: 18px;
+  border: 1.5px solid var(--ink);
+  border-radius: 3px;
+  padding: 14px;
+  background: var(--surface);
+}
+
+.data-export-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.data-export-heading h2 {
+  margin-top: 4px;
+  font-size: 19px;
+}
+
+.data-export-heading > span {
+  flex: none;
+  border: 1px solid var(--ink);
+  padding: 5px 7px;
+  background: var(--surface-soft);
+  color: var(--ink);
+  font-size: 9px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.data-export-card > p {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.data-export-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.data-export-summary > div {
+  min-width: 0;
+  border: 1px solid var(--line);
+  padding: 10px 8px;
+  background: var(--surface-soft);
+}
+
+.data-export-summary strong,
+.data-export-summary span {
+  display: block;
+}
+
+.data-export-summary strong {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.data-export-summary span {
+  margin-top: 5px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+}
+
+.data-export-card > .data-export-unsynced {
+  border-left: 3px solid var(--accent);
+  padding: 8px 10px;
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.data-export-card > .data-export-note {
+  font-size: 10px;
+}
+
+.data-export-card > .data-export-status {
+  border: 1px solid var(--ink);
+  padding: 9px 10px;
+  background: var(--surface-soft);
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.data-export-card > .data-export-status.error {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
 .settings-detail-screen > .push-settings > .eyebrow,
 .settings-detail-screen > .voice-settings-panel .eyebrow {
   margin-top: 0;
