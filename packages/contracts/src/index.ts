@@ -74,7 +74,7 @@ const exerciseDetailsSchema = z.object({
   secondaryMuscles: z.array(z.enum(muscleGroups)).max(6),
   equipment: z.array(z.string().trim().min(1).max(100)).max(10),
   videos: z.array(exerciseLinkSchema).max(5),
-  sources: z.array(exerciseLinkSchema).min(1).max(8),
+  sources: z.array(exerciseLinkSchema).max(8),
   notes: z.string().trim().min(1).max(2_000).nullable(),
 });
 
@@ -127,6 +127,13 @@ export const createExerciseSchema = exerciseDetailsSchema
   })
   .superRefine(canonicalExerciseNamesRefinement);
 
+export const createExerciseMutationSchema = exerciseDetailsSchema
+  .extend({
+    id: z.string().uuid(),
+    clientMutationId: z.string().uuid(),
+  })
+  .superRefine(canonicalExerciseNamesRefinement);
+
 export const updateExerciseSchema = exerciseDetailsSchema
   .extend({
     sources: z.array(exerciseLinkSchema).max(8),
@@ -141,7 +148,7 @@ export const exerciseDiscoveryQuerySchema = z.object({
 
 export const exerciseDiscoveryCandidateSchema = exerciseDetailsSchema
   .extend({
-    videos: z.array(exerciseLinkSchema).min(1).max(5),
+    sources: z.array(exerciseLinkSchema).min(1).max(8),
     confidence: z.enum(['high', 'medium', 'low']),
     matchReason: z.string().trim().min(1).max(500),
   })
@@ -150,6 +157,31 @@ export const exerciseDiscoveryCandidateSchema = exerciseDetailsSchema
 export const exerciseDiscoveryResultSchema = z.object({
   query: z.string().min(1),
   candidates: z.array(exerciseDiscoveryCandidateSchema).max(3),
+});
+
+export const exerciseDiscoveryPhases = [
+  'information',
+  'video',
+  'structuring',
+  'verification',
+] as const;
+
+export const startExerciseDiscoverySchema = exerciseDiscoveryQuerySchema.extend({
+  exerciseId: z.string().uuid().optional(),
+});
+
+export const exerciseDiscoveryJobSchema = z.object({
+  id: z.string().uuid(),
+  status: z.enum(['running', 'completed', 'failed', 'cancelled']),
+  startedAt: z.string().datetime(),
+  phases: z.array(
+    z.object({
+      phase: z.enum(exerciseDiscoveryPhases),
+      status: z.enum(['pending', 'running', 'completed', 'failed', 'skipped']),
+    }),
+  ),
+  result: exerciseDiscoveryResultSchema.nullable(),
+  error: z.enum(['discovery_unavailable']).nullable(),
 });
 
 export const workoutExerciseSchema = z.object({
@@ -473,6 +505,7 @@ export const deleteSetSchema = z.object({
 });
 
 export const syncMutationSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('exercise.create'), payload: createExerciseMutationSchema }),
   z.object({ type: z.literal('workout.create'), payload: createWorkoutSchema }),
   z.object({ type: z.literal('workout.update'), payload: updateWorkoutSchema }),
   z.object({ type: z.literal('workout.touch'), payload: touchWorkoutSchema }),
@@ -504,9 +537,13 @@ export const workoutRecordSchema = z.object({
 
 export type Exercise = z.infer<typeof exerciseSchema>;
 export type CreateExerciseInput = z.infer<typeof createExerciseSchema>;
+export type CreateExerciseMutationInput = z.infer<typeof createExerciseMutationSchema>;
 export type UpdateExerciseInput = z.infer<typeof updateExerciseSchema>;
 export type ExerciseDiscoveryCandidate = z.infer<typeof exerciseDiscoveryCandidateSchema>;
 export type ExerciseDiscoveryResult = z.infer<typeof exerciseDiscoveryResultSchema>;
+export type StartExerciseDiscoveryInput = z.infer<typeof startExerciseDiscoverySchema>;
+export type ExerciseDiscoveryJob = z.infer<typeof exerciseDiscoveryJobSchema>;
+export type ExerciseDiscoveryPhase = (typeof exerciseDiscoveryPhases)[number];
 export type WorkoutExercise = z.infer<typeof workoutExerciseSchema>;
 export type SetInput = z.infer<typeof setInputSchema>;
 export type SetEntrySource = SetInput['entrySource'];

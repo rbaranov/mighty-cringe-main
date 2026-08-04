@@ -28,6 +28,10 @@ export type LocalMeasurement = MeasurementRecord & {
   deleted: boolean;
 };
 
+export type LocalExercise = Exercise & {
+  syncState?: SyncState;
+};
+
 export type LocalVoiceStatus = VoiceEntryRecord['status'] | 'queued' | 'uploading' | 'deleting';
 
 export type LocalVoiceEntry = Omit<VoiceEntryRecord, 'status'> & {
@@ -66,7 +70,7 @@ type LocalMeta = {
 export class MightyCringeDatabase extends Dexie {
   workouts!: EntityTable<LocalWorkout, 'id'>;
   sets!: EntityTable<LocalSet, 'id'>;
-  exercises!: EntityTable<Exercise, 'id'>;
+  exercises!: EntityTable<LocalExercise, 'id'>;
   measurements!: EntityTable<LocalMeasurement, 'id'>;
   voiceEntries!: EntityTable<LocalVoiceEntry, 'id'>;
   outbox!: EntityTable<OutboxMutation, 'id'>;

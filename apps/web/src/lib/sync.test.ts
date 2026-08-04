@@ -5,6 +5,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SyncMutation } from '@mighty-cringe/contracts';
 
 import { db } from './db';
+import { createManualExercise } from './exercises';
 import { flushOutbox, getSyncStatus, queueMutation } from './sync';
 
 const measuredOn = '2026-07-22T06:00:00.000Z';
@@ -271,6 +272,40 @@ describe('durable sync status', () => {
         },
       },
     });
+  });
+
+  it('keeps a manually created exercise locally and synchronizes its durable mutation', async () => {
+    vi.stubGlobal('navigator', { onLine: false });
+
+    const exercise = await createManualExercise({
+      name: 'Отведение руки с гантелью лёжа на боку',
+      locale: 'ru',
+      primaryMuscle: 'middle_delt',
+    });
+
+    expect(await db.exercises.get(exercise.id)).toMatchObject({
+      nameRu: exercise.nameRu,
+      syncState: 'pending',
+    });
+    const queued = await db.outbox.orderBy('sequence').first();
+    expect(queued?.mutation).toMatchObject({
+      type: 'exercise.create',
+      payload: { id: exercise.id, sources: [], videos: [] },
+    });
+
+    vi.stubGlobal('navigator', { onLine: true });
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        Response.json({ entityType: 'exercise', entity: exercise, duplicate: false }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(flushOutbox()).resolves.toBe('success');
+    expect(await db.outbox.count()).toBe(0);
+    expect(await db.exercises.get(exercise.id)).toMatchObject({ syncState: 'synced' });
+    const sent = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as SyncMutation;
+    expect(sent.type).toBe('exercise.create');
   });
 });
 

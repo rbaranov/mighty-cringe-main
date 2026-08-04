@@ -8,6 +8,7 @@ import {
   OpenRouterExerciseDiscovery,
   exerciseDiscoveryFromEnvironment,
   type ExerciseDiscovery,
+  type ExerciseDiscoveryOptions,
 } from './exerciseDiscovery.js';
 import { MemoryRepository, RepositoryConflictError } from './repository.js';
 
@@ -49,7 +50,7 @@ test('OpenRouter discovery keeps only web-cited sources and cited YouTube videos
             {
               message: {
                 content: structured
-                  ? JSON.stringify({ candidates: [candidate] })
+                  ? JSON.stringify({ candidates: [{ ...candidate, isExercise: true }] })
                   : videoSearch
                     ? 'Grounded technique video research.'
                     : 'Grounded exercise research with citations.',
@@ -153,7 +154,7 @@ test('does not synthesize a candidate when web search returns no citations', asy
   assert.equal(requests, 2);
 });
 
-test('does not offer a discovered exercise without a cited YouTube video', async () => {
+test('offers a grounded exercise even when no cited YouTube video is available', async () => {
   const discovery = new OpenRouterExerciseDiscovery(
     'secret',
     'provider/model',
@@ -162,7 +163,15 @@ test('does not offer a discovered exercise without a cited YouTube video', async
       const messages = request.messages as Array<{ content: string }>;
       if (request.response_format !== undefined) {
         return Response.json({
-          choices: [{ message: { content: JSON.stringify({ candidates: [candidate] }) } }],
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  candidates: [{ ...candidate, isExercise: true }],
+                }),
+              },
+            },
+          ],
         });
       }
       const videoSearch = messages[0].content.includes('dedicated video-research');
@@ -191,7 +200,62 @@ test('does not offer a discovered exercise without a cited YouTube video', async
 
   const result = await discovery.discover('тяга арни', 'ru');
 
-  assert.deepEqual(result, { query: 'тяга арни', candidates: [] });
+  assert.equal(result.candidates.length, 1);
+  assert.deepEqual(result.candidates[0].videos, []);
+  assert.deepEqual(result.candidates[0].sources, [
+    { title: 'Verified row source', url: 'https://example.test/row' },
+  ]);
+});
+
+test('rejects anatomy as a candidate and reports real discovery phases', async () => {
+  const progress: string[] = [];
+  const discovery = new OpenRouterExerciseDiscovery(
+    'secret',
+    'provider/model',
+    async (_input, init) => {
+      const request = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      if (request.response_format !== undefined) {
+        return Response.json({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  candidates: [
+                    { ...candidate, nameRu: 'Трёхглавая мышца плеча', isExercise: false },
+                  ],
+                }),
+              },
+            },
+          ],
+        });
+      }
+      return Response.json({
+        choices: [
+          {
+            message: {
+              content: 'Grounded research.',
+              annotations: [
+                {
+                  type: 'url_citation',
+                  url_citation: { url: 'https://example.test/row', title: 'Source' },
+                },
+              ],
+            },
+          },
+        ],
+      });
+    },
+  );
+
+  const result = await discovery.discover('разгибатели плеча', 'ru', {
+    onProgress: (phase, status) => progress.push(`${phase}:${status}`),
+  });
+
+  assert.deepEqual(result.candidates, []);
+  assert.ok(progress.includes('information:running'));
+  assert.ok(progress.includes('video:running'));
+  assert.ok(progress.includes('structuring:running'));
+  assert.ok(progress.includes('verification:completed'));
 });
 
 test('environment enables exercise discovery only with a key and model', () => {
@@ -219,8 +283,10 @@ test('API discovers, confirms and stores an exercise in the current user catalog
     },
     'athlete',
   );
+  let enrichmentContext: ExerciseDiscoveryOptions['context'];
   const exerciseDiscovery: ExerciseDiscovery = {
-    async discover(query) {
+    async discover(query, _locale, options) {
+      enrichmentContext = options?.context;
       return { query, candidates: [candidate] };
     },
   };
@@ -283,6 +349,15 @@ test('API discovers, confirms and stores an exercise in the current user catalog
   assert.equal(corrected.statusCode, 200);
   assert.equal(corrected.json().exercise.nameRu, 'Тяга Арнольда');
 
+  const enrichment = await app.inject({
+    method: 'POST',
+    url: '/api/v1/exercise-discoveries',
+    payload: { query: 'Тяга Арнольда', locale: 'ru', exerciseId },
+  });
+  assert.equal(enrichment.statusCode, 202);
+  assert.equal(enrichmentContext?.nameRu, 'Тяга Арнольда');
+  assert.deepEqual(enrichmentContext?.primaryMuscles, candidate.primaryMuscles);
+
   const globalEdit = await app.inject({
     method: 'PUT',
     url: '/api/v1/exercises/10000000-0000-4000-8000-000000000001',
@@ -308,6 +383,112 @@ test('API discovers, confirms and stores an exercise in the current user catalog
       ),
   );
 
+  await app.close();
+});
+
+test('discovery jobs expose progress and cancel the provider request', async () => {
+  const repository = new MemoryRepository();
+  const developmentUser = await repository.upsertGoogleUser(
+    {
+      subject: 'job-owner',
+      email: 'job-owner@example.test',
+      displayName: 'Job owner',
+      avatarUrl: null,
+    },
+    'athlete',
+  );
+  let providerAborted = false;
+  const exerciseDiscovery: ExerciseDiscovery = {
+    async discover(_query, _locale, options) {
+      options?.onProgress?.('information', 'running');
+      options?.onProgress?.('video', 'running');
+      return await new Promise((_resolve, reject) => {
+        options?.signal?.addEventListener('abort', () => {
+          providerAborted = true;
+          reject(new Error('aborted'));
+        });
+      });
+    },
+  };
+  const app = buildApp(repository, { developmentUser, exerciseDiscovery });
+  await app.ready();
+
+  const started = await app.inject({
+    method: 'POST',
+    url: '/api/v1/exercise-discoveries',
+    payload: { query: 'мах гантелью лёжа на боку', locale: 'ru' },
+  });
+  assert.equal(started.statusCode, 202);
+  const jobId = started.json().job.id as string;
+
+  const progress = await app.inject({
+    method: 'GET',
+    url: `/api/v1/exercise-discoveries/${jobId}`,
+  });
+  assert.equal(progress.statusCode, 200);
+  assert.equal(progress.json().job.status, 'running');
+  assert.equal(
+    progress.json().job.phases.find((phase: { phase: string }) => phase.phase === 'video').status,
+    'running',
+  );
+
+  const cancelled = await app.inject({
+    method: 'DELETE',
+    url: `/api/v1/exercise-discoveries/${jobId}`,
+  });
+  assert.equal(cancelled.statusCode, 204);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(providerAborted, true);
+
+  const afterCancel = await app.inject({
+    method: 'GET',
+    url: `/api/v1/exercise-discoveries/${jobId}`,
+  });
+  assert.equal(afterCancel.json().job.status, 'cancelled');
+  await app.close();
+});
+
+test('offline-created exercises synchronize before workout changes', async () => {
+  const repository = new MemoryRepository();
+  const developmentUser = await repository.upsertGoogleUser(
+    {
+      subject: 'manual-exercise-owner',
+      email: 'manual@example.test',
+      displayName: 'Manual owner',
+      avatarUrl: null,
+    },
+    'athlete',
+  );
+  const app = buildApp(repository, { developmentUser });
+  await app.ready();
+  const exerciseId = '70000000-0000-4000-8000-000000000077';
+
+  const created = await app.inject({
+    method: 'POST',
+    url: '/api/v1/sync',
+    payload: {
+      type: 'exercise.create',
+      payload: {
+        id: exerciseId,
+        clientMutationId: '71000000-0000-4000-8000-000000000077',
+        nameRu: 'Отведение руки с гантелью лёжа на боку',
+        nameEn: 'Отведение руки с гантелью лёжа на боку',
+        aliases: [],
+        tag: 'normal',
+        primaryMuscles: ['middle_delt'],
+        secondaryMuscles: [],
+        equipment: [],
+        videos: [],
+        sources: [],
+        notes: null,
+      },
+    },
+  });
+
+  assert.equal(created.statusCode, 201);
+  assert.equal(created.json().entityType, 'exercise');
+  const catalog = await app.inject({ method: 'GET', url: '/api/v1/exercises' });
+  assert.ok(catalog.json().items.some((exercise: { id: string }) => exercise.id === exerciseId));
   await app.close();
 });
 

@@ -13,6 +13,7 @@ import {
   deleteWorkoutSchema,
   exerciseDiscoveryQuerySchema,
   exerciseIdSchema,
+  startExerciseDiscoverySchema,
   syncMutationSchema,
   pushSubscriptionSchema,
   trainerAthleteIdSchema,
@@ -40,6 +41,7 @@ import Fastify, { type FastifyBaseLogger, type FastifyReply, type FastifyRequest
 
 import { codeChallenge, hashToken, randomToken, type AuthOptions } from './auth.js';
 import type { ExerciseDiscovery } from './exerciseDiscovery.js';
+import { ExerciseDiscoveryJobs } from './exerciseDiscoveryJobs.js';
 import {
   RepositoryConflictError,
   RepositoryInviteError,
@@ -68,6 +70,9 @@ type AppOptions = {
 export function buildApp(repository: WorkoutRepository, options: AppOptions = {}) {
   const app = Fastify({ logger: options.logger ?? true, bodyLimit: maximumVoiceBytes });
   const now = options.now ?? (() => new Date());
+  const exerciseDiscoveryJobs = options.exerciseDiscovery
+    ? new ExerciseDiscoveryJobs(options.exerciseDiscovery, now)
+    : null;
   app.decorate('developmentUser', options.developmentUser ?? null);
 
   app.addContentTypeParser(
@@ -376,6 +381,62 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
       request.log.error({ err: error }, 'Exercise discovery failed');
       return reply.status(502).send({ error: 'Exercise discovery provider is unavailable' });
     }
+  });
+
+  app.post('/api/v1/exercise-discoveries', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    if (!exerciseDiscoveryJobs) {
+      return reply.status(503).send({ error: 'Online exercise discovery is not configured' });
+    }
+    const input = startExerciseDiscoverySchema.safeParse(request.body);
+    if (!input.success) return reply.status(400).send({ error: input.error.flatten() });
+    const exercise = input.data.exerciseId
+      ? (await repository.listExercises(user.id)).find(
+          (item) => item.id === input.data.exerciseId && item.scope === 'user' && !item.deletedAt,
+        )
+      : undefined;
+    if (input.data.exerciseId) {
+      if (!exercise) return reply.status(404).send({ error: 'Personal exercise not found' });
+    }
+    return reply.status(202).send({
+      job: exerciseDiscoveryJobs.start(
+        user.id,
+        input.data.query,
+        input.data.locale,
+        exercise
+          ? {
+              nameRu: exercise.nameRu,
+              nameEn: exercise.nameEn,
+              aliases: exercise.aliases,
+              primaryMuscles: exercise.primaryMuscles,
+              secondaryMuscles: exercise.secondaryMuscles,
+              equipment: exercise.equipment,
+              notes: exercise.notes,
+            }
+          : undefined,
+      ),
+    });
+  });
+
+  app.get('/api/v1/exercise-discoveries/:jobId', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    const jobId = exerciseIdSchema.safeParse((request.params as { jobId?: unknown }).jobId);
+    if (!jobId.success) return reply.status(400).send({ error: 'Invalid discovery id' });
+    const job = exerciseDiscoveryJobs?.get(user.id, jobId.data);
+    return job ? { job } : reply.status(404).send({ error: 'Discovery not found' });
+  });
+
+  app.delete('/api/v1/exercise-discoveries/:jobId', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    const jobId = exerciseIdSchema.safeParse((request.params as { jobId?: unknown }).jobId);
+    if (!jobId.success) return reply.status(400).send({ error: 'Invalid discovery id' });
+    const job = exerciseDiscoveryJobs?.cancel(user.id, jobId.data);
+    return job
+      ? reply.status(204).send()
+      : reply.status(404).send({ error: 'Discovery not found' });
   });
 
   app.post('/api/v1/exercises', async (request, reply) => {
@@ -745,6 +806,15 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
     try {
       let result;
       switch (parsed.data.type) {
+        case 'exercise.create': {
+          const { clientMutationId: _clientMutationId, ...input } = parsed.data.payload;
+          result = {
+            entityType: 'exercise' as const,
+            entity: await repository.createExercise(user.id, input),
+            duplicate: false,
+          };
+          break;
+        }
         case 'workout.create':
           result = await repository.createWorkout(user.id, parsed.data.payload);
           break;
@@ -777,6 +847,7 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
           break;
       }
       const created =
+        parsed.data.type === 'exercise.create' ||
         parsed.data.type === 'workout.create' ||
         parsed.data.type === 'set.create' ||
         parsed.data.type === 'measurement.create';

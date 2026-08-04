@@ -2,6 +2,7 @@ import type {
   DeleteMeasurementInput,
   DeleteSetInput,
   DeleteWorkoutInput,
+  Exercise,
   MeasurementRecord,
   SetRecord,
   SyncMutation,
@@ -15,6 +16,7 @@ import { db, type LocalWorkout, type OutboxMutation, type SyncConflict } from '.
 import { flushVoiceQueue, refreshVoiceEntries } from './voice';
 
 type MutationResponse =
+  | { entityType: 'exercise'; entity: Exercise; duplicate: boolean }
   | { entityType: 'workout'; entity: WorkoutRecord; duplicate: boolean }
   | { entityType: 'workout'; entity: null; entityId: string; duplicate: boolean }
   | { entityType: 'set'; entity: SetRecord; duplicate: boolean }
@@ -270,6 +272,12 @@ async function performFlush(): Promise<SyncOutcome> {
       window.dispatchEvent(new Event('mighty-cringe:unauthorized'));
       return 'unauthorized';
     }
+    if (
+      queued.mutation.type === 'exercise.create' &&
+      (response.status === 409 || response.status === 400 || response.status === 404)
+    ) {
+      return 'retry';
+    }
     if (response.status === 409 || response.status === 400 || response.status === 404) {
       const payload = (await response.json().catch(() => ({}))) as {
         error?: string;
@@ -380,75 +388,85 @@ async function restoreMissingWorkoutCreate(
 }
 
 async function applyMutationResult(queued: OutboxMutation, result: MutationResponse) {
-  await db.transaction('rw', db.workouts, db.sets, db.measurements, db.outbox, async () => {
-    const remaining = (await db.outbox.toArray()).filter((item) => item.id !== queued.id);
-    const hasNewerLocalChange = remaining.some(
-      (item) => mutationEntity(item.mutation).key === mutationEntity(queued.mutation).key,
-    );
+  await db.transaction(
+    'rw',
+    db.exercises,
+    db.workouts,
+    db.sets,
+    db.measurements,
+    db.outbox,
+    async () => {
+      const remaining = (await db.outbox.toArray()).filter((item) => item.id !== queued.id);
+      const hasNewerLocalChange = remaining.some(
+        (item) => mutationEntity(item.mutation).key === mutationEntity(queued.mutation).key,
+      );
 
-    if (result.entity === null) {
-      if (result.entityType === 'workout') {
-        await db.sets.where('workoutId').equals(result.entityId).delete();
-        await db.workouts.delete(result.entityId);
+      if (result.entity === null) {
+        if (result.entityType === 'workout') {
+          await db.sets.where('workoutId').equals(result.entityId).delete();
+          await db.workouts.delete(result.entityId);
+        } else if (result.entityType === 'set') {
+          await db.sets.delete(result.entityId);
+        } else {
+          await db.measurements.delete(result.entityId);
+        }
+        await db.outbox.delete(queued.id);
+        return;
+      }
+
+      if (result.entityType === 'exercise') {
+        await db.exercises.put({ ...result.entity, syncState: 'synced' });
+      } else if (result.entityType === 'workout') {
+        const local = await db.workouts.get(result.entity.id);
+        if (hasNewerLocalChange && local) {
+          await db.workouts.update(local.id, {
+            revision: result.entity.revision,
+            updatedAt: result.entity.updatedAt,
+            syncState: 'pending',
+          });
+        } else {
+          const serverWorkout = withoutSets(result.entity);
+          await db.workouts.put({
+            ...serverWorkout,
+            lastActivityAt:
+              local && local.lastActivityAt > serverWorkout.lastActivityAt
+                ? local.lastActivityAt
+                : serverWorkout.lastActivityAt,
+            syncState: 'synced',
+          });
+        }
+        for (const set of result.entity.sets) {
+          const localSet = await db.sets.get(set.id);
+          if (!localSet || localSet.syncState === 'synced') {
+            await db.sets.put({ ...set, deleted: false, syncState: 'synced' });
+          }
+        }
       } else if (result.entityType === 'set') {
-        await db.sets.delete(result.entityId);
+        const local = await db.sets.get(result.entity.id);
+        if (hasNewerLocalChange && local) {
+          await db.sets.update(local.id, {
+            revision: result.entity.revision,
+            updatedAt: result.entity.updatedAt,
+            syncState: 'pending',
+          });
+        } else {
+          await db.sets.put({ ...result.entity, deleted: false, syncState: 'synced' });
+        }
       } else {
-        await db.measurements.delete(result.entityId);
-      }
-      await db.outbox.delete(queued.id);
-      return;
-    }
-
-    if (result.entityType === 'workout') {
-      const local = await db.workouts.get(result.entity.id);
-      if (hasNewerLocalChange && local) {
-        await db.workouts.update(local.id, {
-          revision: result.entity.revision,
-          updatedAt: result.entity.updatedAt,
-          syncState: 'pending',
-        });
-      } else {
-        const serverWorkout = withoutSets(result.entity);
-        await db.workouts.put({
-          ...serverWorkout,
-          lastActivityAt:
-            local && local.lastActivityAt > serverWorkout.lastActivityAt
-              ? local.lastActivityAt
-              : serverWorkout.lastActivityAt,
-          syncState: 'synced',
-        });
-      }
-      for (const set of result.entity.sets) {
-        const localSet = await db.sets.get(set.id);
-        if (!localSet || localSet.syncState === 'synced') {
-          await db.sets.put({ ...set, deleted: false, syncState: 'synced' });
+        const local = await db.measurements.get(result.entity.id);
+        if (hasNewerLocalChange && local) {
+          await db.measurements.update(local.id, {
+            revision: result.entity.revision,
+            updatedAt: result.entity.updatedAt,
+            syncState: 'pending',
+          });
+        } else {
+          await db.measurements.put({ ...result.entity, deleted: false, syncState: 'synced' });
         }
       }
-    } else if (result.entityType === 'set') {
-      const local = await db.sets.get(result.entity.id);
-      if (hasNewerLocalChange && local) {
-        await db.sets.update(local.id, {
-          revision: result.entity.revision,
-          updatedAt: result.entity.updatedAt,
-          syncState: 'pending',
-        });
-      } else {
-        await db.sets.put({ ...result.entity, deleted: false, syncState: 'synced' });
-      }
-    } else {
-      const local = await db.measurements.get(result.entity.id);
-      if (hasNewerLocalChange && local) {
-        await db.measurements.update(local.id, {
-          revision: result.entity.revision,
-          updatedAt: result.entity.updatedAt,
-          syncState: 'pending',
-        });
-      } else {
-        await db.measurements.put({ ...result.entity, deleted: false, syncState: 'synced' });
-      }
-    }
-    await db.outbox.delete(queued.id);
-  });
+      await db.outbox.delete(queued.id);
+    },
+  );
 }
 
 async function storeConflict(
@@ -456,7 +474,9 @@ async function storeConflict(
   current: WorkoutRecord | SetRecord | MeasurementRecord | null,
   message: string,
 ) {
+  if (queued.mutation.type === 'exercise.create') return;
   const entity = mutationEntity(queued.mutation);
+  if (entity.type === 'exercise') return;
   await db.transaction(
     'rw',
     db.workouts,
@@ -486,6 +506,8 @@ async function markSyncState(mutation: SyncMutation, syncState: 'pending' | 'con
     await db.workouts.update(entity.id, { syncState });
   } else if (entity.type === 'set') {
     await db.sets.update(entity.id, { syncState });
+  } else if (entity.type === 'exercise') {
+    await db.exercises.update(entity.id, { syncState });
   } else {
     await db.measurements.update(entity.id, { syncState });
   }
@@ -669,6 +691,12 @@ async function rebaseMutation(conflict: SyncConflict): Promise<SyncMutation | nu
 
 function mutationEntity(mutation: SyncMutation) {
   switch (mutation.type) {
+    case 'exercise.create':
+      return {
+        type: 'exercise' as const,
+        id: mutation.payload.id,
+        key: `exercise:${mutation.payload.id}`,
+      };
     case 'workout.create':
       return {
         type: 'workout' as const,

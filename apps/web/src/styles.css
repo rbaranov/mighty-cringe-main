@@ -6726,6 +6726,222 @@ body {
   width: 100%;
 }
 
+/* Unified manual and web-assisted personal exercise creation. */
+.exercise-add-panel {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1.5px dashed var(--ink);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.exercise-add-panel > p,
+.exercise-add-panel.manual > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.exercise-add-panel label,
+.exercise-add-panel fieldset {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.exercise-add-panel input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  border: 1.5px solid var(--ink);
+  border-radius: 2px;
+  padding: 9px 10px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+}
+
+.exercise-add-back,
+.catalog-add-alternative {
+  border: 0;
+  padding: 4px 0;
+  background: transparent;
+  color: var(--danger);
+  font-size: 11px;
+  font-weight: 850;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.manual-muscle-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.manual-muscle-grid button {
+  min-height: 38px;
+  border: 1px solid var(--ink);
+  padding: 6px;
+  background: var(--surface-soft);
+  color: var(--ink);
+  font-size: 9px;
+  font-weight: 850;
+}
+
+.manual-muscle-grid button.active {
+  background: var(--ink);
+  color: var(--surface);
+}
+
+.exercise-add-panel .exercise-discovery {
+  margin: 0;
+}
+
+.discovery-progress {
+  display: grid;
+  gap: 9px;
+  padding: 11px;
+  border: 1.5px solid var(--ink);
+  background: var(--surface);
+}
+
+.discovery-progress-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.discovery-progress-heading button {
+  border: 0;
+  padding: 4px;
+  background: transparent;
+  color: var(--danger);
+  font-size: 11px;
+  font-weight: 900;
+  text-decoration: underline;
+}
+
+.discovery-progress ol {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.discovery-progress li {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 5px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.discovery-progress li.running,
+.discovery-progress li.completed {
+  color: var(--ink);
+  font-weight: 850;
+}
+
+.discovery-progress li.failed {
+  color: var(--danger);
+}
+
+.discovery-progress > p,
+.discovery-video-missing {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.exercise-enrichment {
+  display: grid;
+  gap: 12px;
+  margin: 12px 0 4px;
+  padding: 12px;
+  border: 2px solid var(--ink);
+  background: var(--surface-soft);
+}
+
+.exercise-enrichment-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.exercise-enrichment-head p,
+.exercise-enrichment-preview > p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.exercise-enrichment-head > button {
+  border: 0;
+  padding: 3px;
+  background: transparent;
+  color: var(--danger);
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.exercise-enrichment .exercise-discovery {
+  margin: 0;
+}
+
+.exercise-enrichment-preview,
+.exercise-enrichment-preview dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.exercise-enrichment-preview dl > div {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.7fr) minmax(0, 1.3fr);
+  gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--ink);
+  font-size: 10px;
+}
+
+.exercise-enrichment-preview dt {
+  color: var(--muted);
+}
+
+.exercise-enrichment-preview dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-weight: 800;
+}
+
+.exercise-enrichment-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 8px;
+}
+
+.personal-exercise-actions .button.primary {
+  flex-basis: 100%;
+}
+
 .workout-history-actions .favorite-toggle {
   width: 34px;
   min-width: 34px;

@@ -1,35 +1,56 @@
 import { useEffect, useRef, useState } from 'react';
 
-import type { CurrentUser, Exercise, ExerciseDiscoveryCandidate } from '@mighty-cringe/contracts';
+import type {
+  CurrentUser,
+  Exercise,
+  ExerciseDiscoveryCandidate,
+  ExerciseDiscoveryJob,
+  ExerciseDiscoveryPhase,
+} from '@mighty-cringe/contracts';
 
-import { createPersonalExercise, discoverExercises } from '../lib/exercises';
+import {
+  cancelExerciseDiscovery,
+  createPersonalExercise,
+  getExerciseDiscovery,
+  startExerciseDiscovery,
+} from '../lib/exercises';
 
 export function ExerciseDiscoveryPanel({
   autoSearch = false,
   existingExercises = [],
+  exerciseId,
   initialQuery = '',
   locale,
+  onCandidateSelected,
   onExerciseSaved,
 }: {
   autoSearch?: boolean;
   existingExercises?: Exercise[];
+  exerciseId?: string;
   initialQuery?: string;
   locale: CurrentUser['locale'];
-  onExerciseSaved: (exercise: Exercise) => Promise<void>;
+  onCandidateSelected?: (candidate: ExerciseDiscoveryCandidate) => Promise<void>;
+  onExerciseSaved?: (exercise: Exercise) => Promise<void>;
 }) {
   const [query, setQuery] = useState(initialQuery);
   const [candidates, setCandidates] = useState<ExerciseDiscoveryCandidate[] | null>(null);
   const [searching, setSearching] = useState(false);
+  const [job, setJob] = useState<ExerciseDiscoveryJob | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [savingIndex, setSavingIndex] = useState<number | null>(null);
   const [savedName, setSavedName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const automaticSearch = useRef('');
+  const activeJobId = useRef<string | null>(null);
+  const refreshingJob = useRef(false);
 
   useEffect(() => {
     setQuery(initialQuery);
     setCandidates(null);
     setSavedName(null);
     setError(null);
+    setJob(null);
+    setElapsedSeconds(0);
     const normalizedInitialQuery = initialQuery.trim();
     if (
       autoSearch &&
@@ -41,6 +62,30 @@ export function ExerciseDiscoveryPanel({
     }
   }, [autoSearch, initialQuery]);
 
+  useEffect(() => {
+    if (!job || job.status !== 'running') return;
+    const updateElapsed = () => {
+      setElapsedSeconds(
+        Math.max(0, Math.floor((Date.now() - new Date(job.startedAt).getTime()) / 1_000)),
+      );
+    };
+    updateElapsed();
+    const timer = window.setInterval(updateElapsed, 1_000);
+    const poll = window.setInterval(() => void refreshJob(job.id), 500);
+    return () => {
+      window.clearInterval(timer);
+      window.clearInterval(poll);
+    };
+  }, [job?.id, job?.status]);
+
+  useEffect(
+    () => () => {
+      const jobId = activeJobId.current;
+      if (jobId) void cancelExerciseDiscovery(jobId).catch(() => undefined);
+    },
+    [],
+  );
+
   async function search(searchQuery = query) {
     if (searching || searchQuery.trim().length < 2) return;
     setSearching(true);
@@ -48,12 +93,60 @@ export function ExerciseDiscoveryPanel({
     setSavedName(null);
     setError(null);
     try {
-      const result = await discoverExercises(searchQuery.trim(), locale);
-      setCandidates(result.candidates);
+      const started = await startExerciseDiscovery(searchQuery.trim(), locale, exerciseId);
+      activeJobId.current = started.id;
+      setJob(started);
+      setElapsedSeconds(0);
     } catch (caught) {
       setError(discoveryError(caught, locale));
-    } finally {
       setSearching(false);
+    }
+  }
+
+  async function refreshJob(jobId: string) {
+    if (activeJobId.current !== jobId || refreshingJob.current) return;
+    refreshingJob.current = true;
+    try {
+      const current = await getExerciseDiscovery(jobId);
+      if (activeJobId.current !== jobId) return;
+      setJob(current);
+      if (current.status === 'completed') {
+        activeJobId.current = null;
+        setCandidates(current.result?.candidates ?? []);
+        setSearching(false);
+      } else if (current.status === 'failed') {
+        activeJobId.current = null;
+        setError(discoveryError(new Error('discovery_unavailable'), locale));
+        setSearching(false);
+      } else if (current.status === 'cancelled') {
+        activeJobId.current = null;
+        setSearching(false);
+      }
+    } catch (caught) {
+      activeJobId.current = null;
+      setError(discoveryError(caught, locale));
+      setSearching(false);
+    } finally {
+      refreshingJob.current = false;
+    }
+  }
+
+  async function cancelSearch() {
+    const jobId = activeJobId.current;
+    if (!jobId) return;
+    activeJobId.current = null;
+    setSearching(false);
+    setJob((current) => (current ? { ...current, status: 'cancelled' } : current));
+    try {
+      await cancelExerciseDiscovery(jobId);
+    } catch {
+      setError(
+        tr(
+          locale,
+          'Поиск закрыт здесь, но сервер не подтвердил отмену.',
+          'Search was closed here, but the server did not confirm cancellation.',
+        ),
+      );
     }
   }
 
@@ -62,6 +155,11 @@ export function ExerciseDiscoveryPanel({
     setSavingIndex(index);
     setError(null);
     try {
+      if (onCandidateSelected) {
+        await onCandidateSelected(candidate);
+        return;
+      }
+      if (!onExerciseSaved) throw new Error('Missing exercise save handler');
       const exercise = await createPersonalExercise(candidate);
       await onExerciseSaved(exercise);
       setSavedName(exerciseName(exercise, locale));
@@ -79,6 +177,7 @@ export function ExerciseDiscoveryPanel({
   }
 
   async function useExisting(exercise: Exercise) {
+    if (!onExerciseSaved) return;
     setError(null);
     await onExerciseSaved(exercise);
     setSavedName(exerciseName(exercise, locale));
@@ -95,6 +194,7 @@ export function ExerciseDiscoveryPanel({
       <div className="exercise-discovery-search">
         <input
           id="exercise-discovery-query"
+          disabled={searching}
           maxLength={200}
           onChange={(event) => {
             setQuery(event.target.value);
@@ -118,7 +218,9 @@ export function ExerciseDiscoveryPanel({
           onClick={() => void search()}
           type="button"
         >
-          {searching ? tr(locale, 'Ищу…', 'Searching…') : tr(locale, 'Найти', 'Find')}
+          {searching
+            ? tr(locale, `Ищу · ${elapsedSeconds} с`, `Searching · ${elapsedSeconds}s`)
+            : tr(locale, 'Найти', 'Find')}
         </button>
       </div>
       <p className="discovery-hint">
@@ -128,6 +230,49 @@ export function ExerciseDiscoveryPanel({
           'Search separately verifies sources and a direct technique video. The exercise is added only to your catalog and only after confirmation.',
         )}
       </p>
+
+      {job?.status === 'running' && (
+        <div className="discovery-progress" role="status">
+          <div className="discovery-progress-heading">
+            <strong>
+              {tr(
+                locale,
+                `Проверяю интернет · ${elapsedSeconds} с`,
+                `Checking online · ${elapsedSeconds}s`,
+              )}
+            </strong>
+            <button onClick={() => void cancelSearch()} type="button">
+              {tr(locale, 'Отменить', 'Cancel')}
+            </button>
+          </div>
+          <ol>
+            {job.phases.map((phase) => (
+              <li className={phase.status} key={phase.phase}>
+                <span aria-hidden="true">{phaseIcon(phase.status)}</span>
+                {phaseLabel(phase.phase, locale)}
+              </li>
+            ))}
+          </ol>
+          {elapsedSeconds >= 15 && (
+            <p>
+              {tr(
+                locale,
+                'Это дольше обычного. Можно отменить поиск и создать упражнение вручную.',
+                'This is taking longer than usual. You can cancel and create the exercise manually.',
+              )}
+            </p>
+          )}
+        </div>
+      )}
+      {job?.status === 'cancelled' && (
+        <p className="clarification compact" role="status">
+          {tr(
+            locale,
+            'Поиск отменён. Описание сохранено — его можно уточнить или повторить поиск.',
+            'Search cancelled. Your description is preserved so you can refine it or try again.',
+          )}
+        </p>
+      )}
 
       {error && (
         <p className="clarification compact" role="alert">
@@ -147,8 +292,8 @@ export function ExerciseDiscoveryPanel({
         <p className="clarification compact" role="status">
           {tr(
             locale,
-            'Надёжных совпадений с проверенным видео не найдено. Уточни название или опиши движение и оборудование.',
-            'No reliable match with a verified video was found. Refine the name or describe the movement and equipment.',
+            'Надёжных совпадений не найдено. Уточни название или опиши движение и оборудование — либо вернись и создай упражнение вручную.',
+            'No reliable match was found. Refine the name or describe the movement and equipment, or go back and create the exercise manually.',
           )}
         </p>
       )}
@@ -204,6 +349,15 @@ export function ExerciseDiscoveryPanel({
                 </a>
               );
             })}
+            {candidate.videos.length === 0 && (
+              <p className="discovery-video-missing">
+                {tr(
+                  locale,
+                  'Видео с подтверждённой ссылкой пока не найдено. Упражнение всё равно можно использовать.',
+                  'No verified video link was found yet. You can still use the exercise.',
+                )}
+              </p>
+            )}
             <div className="discovery-sources">
               <span>{tr(locale, 'Источники:', 'Sources:')}</span>
               {candidate.sources.map((source) => (
@@ -222,7 +376,9 @@ export function ExerciseDiscoveryPanel({
                 ? tr(locale, 'Уже в каталоге — использовать', 'Already in catalog — use')
                 : savingIndex === index
                   ? tr(locale, 'Добавляю…', 'Adding…')
-                  : tr(locale, 'Добавить и использовать', 'Add and use')}
+                  : onCandidateSelected
+                    ? tr(locale, 'Выбрать эти данные', 'Use these details')
+                    : tr(locale, 'Добавить и использовать', 'Add and use')}
             </button>
           </article>
         );
@@ -263,6 +419,24 @@ function confidenceLabel(
   if (confidence === 'high') return tr(locale, 'точное', 'strong');
   if (confidence === 'medium') return tr(locale, 'возможное', 'possible');
   return tr(locale, 'слабое', 'weak');
+}
+
+function phaseLabel(phase: ExerciseDiscoveryPhase, locale: 'ru' | 'en') {
+  const labels: Record<ExerciseDiscoveryPhase, [string, string]> = {
+    information: ['Ищу описание и варианты названия', 'Finding descriptions and name variants'],
+    video: ['Ищу видео с техникой', 'Finding technique videos'],
+    structuring: ['Собираю данные карточки', 'Building the exercise details'],
+    verification: ['Сверяю источники и ссылки', 'Verifying sources and links'],
+  };
+  return labels[phase][locale === 'en' ? 1 : 0];
+}
+
+function phaseIcon(status: ExerciseDiscoveryJob['phases'][number]['status']) {
+  if (status === 'completed') return '✓';
+  if (status === 'failed') return '!';
+  if (status === 'skipped') return '–';
+  if (status === 'running') return '●';
+  return '○';
 }
 
 function discoveryError(error: unknown, locale: 'ru' | 'en') {

@@ -31,6 +31,13 @@ commands index canonical RU/EN names and aliases together. Creation, editing and
 discovery share the same contract and reject known ambiguous standalone names, asking the athlete
 to add equipment, position, angle or grip.
 
+Fast manual creation is the deliberate exception to requiring two researched translations at entry
+time. It preserves the athlete's entered movement description in both locale fields so the exercise
+can be used offline immediately, while still applying the ambiguity guard. Later editing or
+web-grounded enrichment can replace that identical placeholder pair with distinct canonical RU/EN
+names after showing the proposed changes. If the athlete has already established different names,
+enrichment preserves them and only merges missing details.
+
 Global exercises keep their stable UUIDs when renamed. A legacy personal shorthand that exactly
 matches a global canonical name or alias is omitted from new catalog choices, so the global
 canonical card wins without deleting the personal record or changing historical workout and set
@@ -45,3 +52,5 @@ references.
   competing choice.
 - The exact-list validation catches high-risk ambiguous names; broader semantic ambiguity still
   requires human review of discovery candidates.
+- Offline manual entry can temporarily have the same text in both locale fields; this state is
+  explicit and safe to improve later without blocking workout recording.

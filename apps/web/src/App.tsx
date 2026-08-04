@@ -24,8 +24,10 @@ import { SetSheet } from './components/SetSheet';
 import { WorkoutTimingSheet } from './components/WorkoutTimingSheet';
 import { AutoFinishNotice, WorkoutInactivityBanner } from './components/WorkoutLifecycleNotices';
 import { ConfirmationSheet } from './components/ConfirmationSheet';
+import { ExerciseAddPanel } from './components/ExerciseAddPanel';
 import { ExerciseDiscoveryPanel } from './components/ExerciseDiscoveryPanel';
 import { ExerciseEditorView } from './components/ExerciseEditorView';
+import { ExerciseEnrichmentPanel } from './components/ExerciseEnrichmentPanel';
 import { FavoriteWorkoutsSection } from './components/FavoriteWorkoutsSection';
 import type { MeasurementDraft } from './components/BodyMeasurementsSection';
 import { ProgressView } from './components/ProgressView';
@@ -64,7 +66,7 @@ import {
   filterExerciseCatalog,
   groupExerciseChoicesByPrimaryMuscle,
 } from './lib/exerciseCatalog';
-import { softDeletePersonalExercise } from './lib/exercises';
+import { cacheExercise, softDeletePersonalExercise } from './lib/exercises';
 import { hasPendingRemoteLogout, requestRemoteLogout } from './lib/logout';
 import {
   buildNaturalSetExerciseContext,
@@ -433,9 +435,18 @@ function AuthenticatedAppContent({
         }
         if (!response.ok) throw new Error('Catalog is unavailable');
         const payload = (await response.json()) as { items: Exercise[] };
-        await db.transaction('rw', db.exercises, async () => {
+        await db.transaction('rw', db.exercises, db.outbox, async () => {
+          const pendingExerciseIds = new Set(
+            (await db.outbox.toArray()).flatMap((item) =>
+              item.mutation.type === 'exercise.create' ? [item.mutation.payload.id] : [],
+            ),
+          );
+          const pendingExercises = (await db.exercises.toArray()).filter((exercise) =>
+            pendingExerciseIds.has(exercise.id),
+          );
           await db.exercises.clear();
           await db.exercises.bulkPut(payload.items);
+          await db.exercises.bulkPut(pendingExercises);
         });
       } catch {
         await db.exercises.bulkPut(fallbackCatalog);
@@ -2383,7 +2394,11 @@ function ExerciseDetailView({
 }) {
   const { locale, unitSystem } = usePreferences();
   const [videoPlaying, setVideoPlaying] = useState(false);
-  useEffect(() => setVideoPlaying(false), [exercise.id]);
+  const [enriching, setEnriching] = useState(false);
+  useEffect(() => {
+    setVideoPlaying(false);
+    setEnriching(false);
+  }, [exercise.id]);
   const currentSets = activeWorkout
     ? sets
         .filter(
@@ -2444,6 +2459,17 @@ function ExerciseDetailView({
           ) : (
             <>
               <button
+                className="button primary small"
+                onClick={() => setEnriching((value) => !value)}
+                type="button"
+              >
+                {tr(
+                  locale,
+                  'Найти и заполнить информацией из интернета',
+                  'Find and fill details from the internet',
+                )}
+              </button>
+              <button
                 className="button ghost small"
                 onClick={() => onEditExercise(exercise)}
                 type="button"
@@ -2460,6 +2486,9 @@ function ExerciseDetailView({
             </>
           )}
         </div>
+      )}
+      {enriching && exercise.scope === 'user' && !exercise.deletedAt && (
+        <ExerciseEnrichmentPanel exercise={exercise} onClose={() => setEnriching(false)} />
       )}
 
       <section className="exercise-detail-section">
@@ -2679,9 +2708,7 @@ function CatalogView({
   onOpenExercise: (exercise: Exercise) => void;
 }) {
   const { locale } = usePreferences();
-  const [adding, setAdding] = useState(false);
-  const [topDiscoveryQuery, setTopDiscoveryQuery] = useState('');
-  const [discoveringFromEmptyResult, setDiscoveringFromEmptyResult] = useState(false);
+  const [showAddOptions, setShowAddOptions] = useState(false);
   const [query, setQuery] = useState('');
   const [selectedMuscle, setSelectedMuscle] = useState<Exercise['primaryMuscles'][number] | 'all'>(
     'all',
@@ -2712,38 +2739,15 @@ function CatalogView({
     <section className="screen">
       <p className="eyebrow">{tr(locale, 'Общий + личный', 'Shared + personal')}</p>
       <h1>{tr(locale, 'Каталог упражнений', 'Exercise catalog')}</h1>
-      <button
-        className="button primary"
-        onClick={() => {
-          const nextAdding = !adding;
-          setAdding(nextAdding);
-          if (nextAdding) setTopDiscoveryQuery(unresolvedCatalogQuery ?? '');
-          setDiscoveringFromEmptyResult(false);
-        }}
-        type="button"
-      >
-        {adding
-          ? tr(locale, 'Скрыть поиск', 'Hide search')
-          : tr(locale, '＋ Найти и добавить', '＋ Find and add')}
-      </button>
-      {adding && (
-        <ExerciseDiscoveryPanel
-          autoSearch={Boolean(topDiscoveryQuery)}
-          existingExercises={exercises}
-          initialQuery={topDiscoveryQuery}
-          locale={locale}
-          onExerciseSaved={async (exercise) => {
-            await db.exercises.put(exercise);
-          }}
-        />
-      )}
       <div className="catalog-filters">
         <label>
-          <span>{tr(locale, 'Поиск', 'Search')}</span>
+          <span>
+            {tr(locale, 'Название или описание движения', 'Name or movement description')}
+          </span>
           <input
             onChange={(event) => {
               setQuery(event.target.value);
-              setDiscoveringFromEmptyResult(false);
+              setShowAddOptions(false);
             }}
             placeholder={tr(
               locale,
@@ -2754,6 +2758,33 @@ function CatalogView({
             value={query}
           />
         </label>
+        {(unresolvedCatalogQuery || (showAddOptions && query.trim().length >= 2)) && (
+          <ExerciseAddPanel
+            existingExercises={exercises}
+            hasMatches={!unresolvedCatalogQuery}
+            locale={locale}
+            onExerciseSaved={async (exercise) => {
+              await cacheExercise(exercise);
+            }}
+            query={unresolvedCatalogQuery ?? query}
+          />
+        )}
+        {!unresolvedCatalogQuery &&
+          !showAddOptions &&
+          query.trim().length >= 2 &&
+          filteredExercises.length > 0 && (
+            <button
+              className="catalog-add-alternative"
+              onClick={() => setShowAddOptions(true)}
+              type="button"
+            >
+              {tr(
+                locale,
+                'Не то упражнение? Создать новое или найти в интернете',
+                'Not the right exercise? Create a new one or search online',
+              )}
+            </button>
+          )}
         <div
           aria-label={tr(locale, 'Характер упражнения', 'Exercise tag')}
           className="catalog-filter-chips"
@@ -2804,7 +2835,7 @@ function CatalogView({
                 setQuery('');
                 setSelectedMuscle('all');
                 setSelectedTag('all');
-                setDiscoveringFromEmptyResult(false);
+                setShowAddOptions(false);
               }}
               type="button"
             >
@@ -2842,46 +2873,18 @@ function CatalogView({
             </span>
           </button>
         ))}
-        {filteredExercises.length === 0 && unresolvedCatalogQuery && discoveringFromEmptyResult && (
-          <ExerciseDiscoveryPanel
-            autoSearch
-            existingExercises={exercises}
-            initialQuery={unresolvedCatalogQuery}
-            locale={locale}
-            onExerciseSaved={async (exercise) => {
-              await db.exercises.put(exercise);
-            }}
-          />
-        )}
-        {filteredExercises.length === 0 &&
-          !(unresolvedCatalogQuery && discoveringFromEmptyResult) && (
-            <div className="catalog-empty">
-              <strong>{tr(locale, 'Ничего не найдено', 'Nothing found')}</strong>
-              <p>
-                {tr(
-                  locale,
-                  `Активные условия: ${activeFilterDescription || 'нет'}. Попробуй другой синоним, мышцу или сбрось фильтры.`,
-                  `Active conditions: ${activeFilterDescription || 'none'}. Try another alias or muscle, or clear the filters.`,
-                )}
-              </p>
-              {unresolvedCatalogQuery && (
-                <button
-                  className="button primary full"
-                  onClick={() => {
-                    setAdding(false);
-                    setDiscoveringFromEmptyResult(true);
-                  }}
-                  type="button"
-                >
-                  {tr(
-                    locale,
-                    `Найти и добавить «${unresolvedCatalogQuery}»`,
-                    `Find and add “${unresolvedCatalogQuery}”`,
-                  )}
-                </button>
+        {filteredExercises.length === 0 && !unresolvedCatalogQuery && (
+          <div className="catalog-empty">
+            <strong>{tr(locale, 'Ничего не найдено', 'Nothing found')}</strong>
+            <p>
+              {tr(
+                locale,
+                `Активные условия: ${activeFilterDescription || 'нет'}. Попробуй другой синоним, мышцу или сбрось фильтры.`,
+                `Active conditions: ${activeFilterDescription || 'none'}. Try another alias or muscle, or clear the filters.`,
               )}
-            </div>
-          )}
+            </p>
+          </div>
+        )}
       </div>
     </section>
   );
@@ -2902,13 +2905,13 @@ function ExercisePickerSheet({
 }) {
   const { locale } = usePreferences();
   const [query, setQuery] = useState('');
-  const [discovering, setDiscovering] = useState(false);
+  const [showAddOptions, setShowAddOptions] = useState(false);
   const [choosingExerciseId, setChoosingExerciseId] = useState<string | null>(null);
   const choosingExercise = useRef(false);
 
   useEffect(() => {
     setQuery('');
-    setDiscovering(false);
+    setShowAddOptions(false);
     setChoosingExerciseId(null);
     choosingExercise.current = false;
   }, [mode]);
@@ -2924,14 +2927,14 @@ function ExercisePickerSheet({
       : null;
   const unavailableIds = new Set(currentPlan.map((item) => item.exerciseId));
   const normalizedQuery = query.trim().toLocaleLowerCase('ru-RU');
-  const options = catalog.filter(
+  const matchingCatalog = catalog.filter(
     (exercise) =>
-      !unavailableIds.has(exercise.id) &&
-      (!normalizedQuery ||
-        [exercise.nameRu, exercise.nameEn, ...exercise.aliases].some((name) =>
-          name.toLocaleLowerCase('ru-RU').includes(normalizedQuery),
-        )),
+      !normalizedQuery ||
+      [exercise.nameRu, exercise.nameEn, ...exercise.aliases].some((name) =>
+        name.toLocaleLowerCase('ru-RU').includes(normalizedQuery),
+      ),
   );
+  const options = matchingCatalog.filter((exercise) => !unavailableIds.has(exercise.id));
   const optionGroups = groupExerciseChoicesByPrimaryMuscle(
     options,
     replacedExercise?.primaryMuscles[0] ?? null,
@@ -2994,7 +2997,7 @@ function ExercisePickerSheet({
           className="exercise-search"
           onChange={(event) => {
             setQuery(event.target.value);
-            setDiscovering(false);
+            setShowAddOptions(false);
           }}
           placeholder={
             mode.mode === 'add'
@@ -3005,7 +3008,7 @@ function ExercisePickerSheet({
           value={query}
         />
         <div className="picker-list">
-          {!discovering && (
+          {!showAddOptions && (
             <>
               {optionGroups.map((group) => (
                 <section
@@ -3051,59 +3054,71 @@ function ExercisePickerSheet({
                   </div>
                 </section>
               ))}
-              {!options.length && (
-                <div className="picker-empty">
-                  <strong>{tr(locale, 'В каталоге ничего нет', 'Nothing in the catalog')}</strong>
-                  <span>
-                    {tr(
-                      locale,
-                      'Можно сразу проверить веб-источники, добавить личное упражнение и продолжить замену.',
-                      'Check web sources, add a personal exercise, and continue the replacement here.',
-                    )}
-                  </span>
-                  <button
-                    className="button primary full"
-                    disabled={normalizedQuery.length < 2}
-                    onClick={() => setDiscovering(true)}
-                    onPointerDown={(event) => {
-                      event.preventDefault();
-                      setDiscovering(true);
+              {!options.length &&
+                (normalizedQuery.length < 2 ? (
+                  <div className="picker-empty">
+                    <strong>{tr(locale, 'Начни вводить название', 'Start typing a name')}</strong>
+                    <span>
+                      {tr(
+                        locale,
+                        'Каталог ищется сразу. Если упражнения нет, его можно создать вручную или найти в интернете.',
+                        'The catalog searches instantly. If the exercise is missing, create it manually or find it online.',
+                      )}
+                    </span>
+                  </div>
+                ) : matchingCatalog.length > 0 ? (
+                  <div className="picker-empty">
+                    <strong>
+                      {tr(locale, 'Упражнение уже в плане', 'Exercise already in the plan')}
+                    </strong>
+                    <span>
+                      {tr(
+                        locale,
+                        'Найденное упражнение уже добавлено в текущую тренировку.',
+                        'The matching exercise is already in the current workout.',
+                      )}
+                    </span>
+                  </div>
+                ) : (
+                  <ExerciseAddPanel
+                    existingExercises={catalog}
+                    locale={locale}
+                    onExerciseSaved={async (exercise) => {
+                      await cacheExercise(exercise);
+                      await onChoose(exercise);
                     }}
-                    type="button"
-                  >
-                    {tr(locale, 'Найти и добавить', 'Find and add')}
-                  </button>
-                </div>
-              )}
+                    query={query}
+                  />
+                ))}
               {options.length > 0 && normalizedQuery.length >= 2 && (
                 <button
                   className="picker-discovery-link"
-                  onClick={() => setDiscovering(true)}
+                  onClick={() => setShowAddOptions(true)}
                   onPointerDown={(event) => {
                     event.preventDefault();
-                    setDiscovering(true);
+                    setShowAddOptions(true);
                   }}
                   type="button"
                 >
                   {tr(
                     locale,
-                    'Не то упражнение? Найти в вебе и добавить',
-                    'Not the right exercise? Find it online and add it',
+                    'Не то упражнение? Создать новое или найти в интернете',
+                    'Not the right exercise? Create a new one or search online',
                   )}
                 </button>
               )}
             </>
           )}
-          {discovering && (
-            <ExerciseDiscoveryPanel
-              autoSearch
+          {showAddOptions && (
+            <ExerciseAddPanel
               existingExercises={catalog}
-              initialQuery={query}
+              hasMatches
               locale={locale}
               onExerciseSaved={async (exercise) => {
-                await db.exercises.put(exercise);
+                await cacheExercise(exercise);
                 await onChoose(exercise);
               }}
+              query={query}
             />
           )}
         </div>
@@ -3510,7 +3525,7 @@ function ExplainSheet({
                       initialQuery={result.unresolvedPhrase}
                       locale={locale}
                       onExerciseSaved={async (exercise) => {
-                        await db.exercises.put(exercise);
+                        await cacheExercise(exercise);
                         const nextOverrides = { ...commandOverrides, target: exercise };
                         setCommandOverrides(nextOverrides);
                         setResult(
