@@ -166,6 +166,7 @@ Requirements: voice **or** text interchangeably; messy phrasing tolerated; exerc
 
 ### 5.5 Suggested workout on start
 - Built from the current superset scheme (§3.2, **synergist-avoiding**) + lagging-group-first ordering + recent sessions (rotation) + known equipment preferences. Always a starting point, never a lock.
+- Exercises personally marked **dislike** are excluded from automatic suggestions; changing a mark never rewrites an existing draft or active workout.
 
 ### 5.6 Exercise catalog
 A catalog of exercises, each with:
@@ -177,6 +178,8 @@ A catalog of exercises, each with:
 - Optional cues/notes.
 
 Filterable by muscle group and tag; searchable RU/EN. A **shared global catalog** (superadmin-maintained) plus **per-user custom exercises**. Reachable via the **Каталог** tab and from "+ Exercise" / "Replace" in a workout.
+
+Each athlete may independently mark an exercise **like** or **dislike**. Likes sort first within a replacement muscle group. Dislikes stay in the catalog and history but are hidden from default replacements; an explicit search or command may still choose one with a warning.
 
 ### 5.7 Body measurements (inside Progress)
 Tracked over time; surfaced within the **Прогресс** tab. Measurement set (from the owner's existing sheet):
@@ -243,6 +246,7 @@ Consoles: a **Superadmin console** (users, links, global catalog) and a **Traine
 - **TrainerAthleteLink:** id, trainer_id, athlete_id, status (active | pending), created_at. (One active trainer per athlete.)
 - **Invite:** id, trainer_id, email (optional), token, status, expires_at.
 - **Exercise (catalog):** id, scope (global | user), owner_id (if user), name_ru, name_en, aliases[], tag (mighty | normal | cringe), primary_muscles[], secondary_muscles[] (from the §3.1 taxonomy), equipment, video_links[], notes.
+- **ExercisePreference:** user_id, exercise_id, value (like | dislike | null), revision, updated_at. Personal and synchronized independently from the catalog card.
 - **Workout (session):** id, **user_id**, date, start_time, end_time, notes; performed exercises with superset grouping/order.
 - **Set:** id, workout_id, exercise_id, superset_group, order, weight, reps, rir, comment, timestamp.
 - **VoiceEntry (raw):** id, workout_id, audio_ref (retained long-term), transcript, parsed_result, status (confirmed | pending | failed), timestamp.

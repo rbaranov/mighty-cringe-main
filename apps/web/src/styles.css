@@ -4528,7 +4528,7 @@ body {
 
 .data-export-summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
   margin-top: 14px;
 }
@@ -6246,6 +6246,139 @@ body {
 .exercise-picker .picker-discovery-link,
 .exercise-picker .picker-list .exercise-discovery {
   align-self: start;
+}
+
+.catalog-exercise-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 46px;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.catalog-exercise-row > .catalog-exercise-link {
+  display: grid;
+  min-width: 0;
+  min-height: 88px;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+}
+
+.exercise-preference-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.exercise-preference-controls button {
+  display: inline-flex;
+  min-width: 44px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1.5px solid var(--ink);
+  border-radius: 2px;
+  padding: 8px 12px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 850;
+  touch-action: manipulation;
+}
+
+.exercise-preference-controls button.active.like {
+  border-color: #32663c;
+  background: #dff2df;
+  color: #194e28;
+}
+
+.exercise-preference-controls button.active.dislike {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+}
+
+.exercise-preference-controls.compact {
+  display: grid;
+  align-self: stretch;
+  gap: 0;
+  border-left: 1.5px solid var(--ink);
+}
+
+.exercise-preference-controls.compact button {
+  width: 46px;
+  min-width: 46px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+}
+
+.exercise-preference-controls.compact button + button {
+  border-top: 1px solid var(--ink);
+}
+
+.exercise-detail-screen > .exercise-detail-preferences {
+  order: 2;
+}
+
+.exercise-detail-preferences {
+  margin: -10px 0 18px;
+}
+
+.exercise-preference-badge {
+  display: inline-flex;
+  max-width: 110px;
+  align-items: center;
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  padding: 3px 6px;
+  overflow: hidden;
+  background: var(--surface-soft);
+  color: var(--ink);
+  font-size: 8px;
+  font-weight: 900;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.exercise-preference-badge.dislike {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+}
+
+.picker-option-tags {
+  display: grid;
+  max-width: 112px;
+  justify-items: end;
+  gap: 5px;
+}
+
+.picker-option-tags > .tag {
+  max-width: 82px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker-muscle-group.disliked-results {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.exercise-preference-warning {
+  border: 1px solid var(--accent);
+  padding: 8px 10px;
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .set-sheet .form-grid {

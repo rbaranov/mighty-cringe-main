@@ -19,6 +19,7 @@ export const muscleGroups = [
 ] as const;
 
 export const exerciseTags = ['mighty', 'normal', 'cringe'] as const;
+export const exercisePreferenceValues = ['like', 'dislike'] as const;
 export const userRoles = ['athlete', 'admin', 'trainer', 'superadmin'] as const;
 export const voiceStatuses = ['pending', 'processing', 'confirmed', 'failed'] as const;
 export const setEntrySources = ['manual', 'natural_text', 'voice_ai'] as const;
@@ -140,6 +141,20 @@ export const updateExerciseSchema = exerciseDetailsSchema
   })
   .superRefine(canonicalExerciseNamesRefinement);
 export const exerciseIdSchema = z.string().uuid();
+
+export const exercisePreferenceRecordSchema = z.object({
+  exerciseId: exerciseIdSchema,
+  value: z.enum(exercisePreferenceValues).nullable(),
+  revision: z.number().int().positive(),
+  updatedAt: z.string().datetime(),
+});
+
+export const setExercisePreferenceSchema = z.object({
+  clientMutationId: z.string().uuid(),
+  exerciseId: exerciseIdSchema,
+  value: z.enum(exercisePreferenceValues).nullable(),
+  baseRevision: z.number().int().nonnegative(),
+});
 
 export const exerciseDiscoveryQuerySchema = z.object({
   query: z.string().trim().min(2).max(200),
@@ -506,6 +521,10 @@ export const deleteSetSchema = z.object({
 
 export const syncMutationSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('exercise.create'), payload: createExerciseMutationSchema }),
+  z.object({
+    type: z.literal('exercise-preference.set'),
+    payload: setExercisePreferenceSchema,
+  }),
   z.object({ type: z.literal('workout.create'), payload: createWorkoutSchema }),
   z.object({ type: z.literal('workout.update'), payload: updateWorkoutSchema }),
   z.object({ type: z.literal('workout.touch'), payload: touchWorkoutSchema }),
@@ -536,6 +555,9 @@ export const workoutRecordSchema = z.object({
 });
 
 export type Exercise = z.infer<typeof exerciseSchema>;
+export type ExercisePreferenceValue = (typeof exercisePreferenceValues)[number];
+export type ExercisePreferenceRecord = z.infer<typeof exercisePreferenceRecordSchema>;
+export type SetExercisePreferenceInput = z.infer<typeof setExercisePreferenceSchema>;
 export type CreateExerciseInput = z.infer<typeof createExerciseSchema>;
 export type CreateExerciseMutationInput = z.infer<typeof createExerciseMutationSchema>;
 export type UpdateExerciseInput = z.infer<typeof updateExerciseSchema>;

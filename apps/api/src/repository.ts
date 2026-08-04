@@ -10,11 +10,13 @@ import type {
   DeleteSetInput,
   DeleteWorkoutInput,
   Exercise,
+  ExercisePreferenceRecord,
   MeasurementRecord,
   MeasurementValues,
   NotificationPreferences,
   PushSubscriptionInput,
   SetRecord,
+  SetExercisePreferenceInput,
   TrainerAthleteSummary,
   TrainerInviteRecord,
   TrainerSummary,
@@ -39,6 +41,7 @@ import {
   createDatabase,
   desc,
   eq,
+  exercisePreferences,
   exercises,
   gt,
   isNull,
@@ -112,8 +115,17 @@ export type MeasurementMutationResult = {
   duplicate: boolean;
 };
 
+export type ExercisePreferenceMutationResult = {
+  entityType: 'exercisePreference';
+  entity: ExercisePreferenceRecord;
+  duplicate: boolean;
+};
+
 export type EntityMutationResult =
-  WorkoutMutationResult | SetMutationResult | MeasurementMutationResult;
+  | WorkoutMutationResult
+  | SetMutationResult
+  | MeasurementMutationResult
+  | ExercisePreferenceMutationResult;
 
 export type DeleteMutationResult = {
   entityType: 'workout' | 'set' | 'measurement';
@@ -125,7 +137,10 @@ export type DeleteMutationResult = {
 export type MutationResult = EntityMutationResult | DeleteMutationResult;
 
 export class RepositoryConflictError extends Error {
-  constructor(readonly current: WorkoutRecord | SetRecord | MeasurementRecord | null) {
+  constructor(
+    readonly current:
+      WorkoutRecord | SetRecord | MeasurementRecord | ExercisePreferenceRecord | null,
+  ) {
     super('The record changed on another client');
   }
 }
@@ -150,6 +165,11 @@ export interface WorkoutRepository {
   createExercise(userId: string, input: CreateExerciseInput): Promise<Exercise>;
   updateExercise(userId: string, exerciseId: string, input: UpdateExerciseInput): Promise<Exercise>;
   deleteExercise(userId: string, exerciseId: string, now: Date): Promise<Exercise>;
+  listExercisePreferences(userId: string): Promise<ExercisePreferenceRecord[]>;
+  setExercisePreference(
+    userId: string,
+    input: SetExercisePreferenceInput,
+  ): Promise<ExercisePreferenceMutationResult>;
   listWorkouts(userId: string): Promise<WorkoutRecord[]>;
   createWorkout(userId: string, input: CreateWorkoutInput): Promise<WorkoutMutationResult>;
   updateWorkout(userId: string, input: UpdateWorkoutInput): Promise<WorkoutMutationResult>;
@@ -244,6 +264,7 @@ type MemoryTrainerLink = {
 };
 type MemoryPushSubscription = PushSubscriptionInput & { userId: string; updatedAt: Date };
 type MemoryExercise = Exercise & { userId: string };
+type MemoryExercisePreference = ExercisePreferenceRecord & { userId: string };
 
 export class MemoryRepository implements WorkoutRepository {
   private readonly workouts = new Map<string, MemoryWorkout>();
@@ -259,6 +280,7 @@ export class MemoryRepository implements WorkoutRepository {
   private readonly notificationPreferences = new Map<string, NotificationPreferences>();
   private readonly pushSubscriptions = new Map<string, MemoryPushSubscription>();
   private readonly personalExercises = new Map<string, MemoryExercise>();
+  private readonly exercisePreferences = new Map<string, MemoryExercisePreference>();
 
   async listExercises(userId: string) {
     return [
@@ -305,6 +327,60 @@ export class MemoryRepository implements WorkoutRepository {
     exercise.deletedAt ??= now.toISOString();
     const { userId: _userId, ...publicExercise } = exercise;
     return publicExercise;
+  }
+
+  async listExercisePreferences(userId: string): Promise<ExercisePreferenceRecord[]> {
+    return [...this.exercisePreferences.values()]
+      .filter((preference) => preference.userId === userId)
+      .map(({ userId: _userId, ...preference }) => preference);
+  }
+
+  async setExercisePreference(
+    userId: string,
+    input: SetExercisePreferenceInput,
+  ): Promise<ExercisePreferenceMutationResult> {
+    const mutationKey = this.mutationKey(userId, input.clientMutationId);
+    const key = exercisePreferenceKey(userId, input.exerciseId);
+    const existing = this.exercisePreferences.get(key);
+    if (this.mutations.has(mutationKey)) {
+      if (!existing) throw new RepositoryNotFoundError();
+      return {
+        entityType: 'exercisePreference',
+        entity: toPublicExercisePreference(existing),
+        duplicate: true,
+      };
+    }
+    const personalExercise = this.personalExercises.get(input.exerciseId);
+    const visibleExercise =
+      catalog.some((exercise) => exercise.id === input.exerciseId) ||
+      personalExercise?.userId === userId;
+    if (!visibleExercise) throw new RepositoryNotFoundError();
+    if (existing?.value === input.value) {
+      this.mutations.add(mutationKey);
+      return {
+        entityType: 'exercisePreference',
+        entity: toPublicExercisePreference(existing),
+        duplicate: true,
+      };
+    }
+    if (!existing && input.baseRevision !== 0) throw new RepositoryConflictError(null);
+    if (existing && existing.revision !== input.baseRevision) {
+      throw new RepositoryConflictError(toPublicExercisePreference(existing));
+    }
+    const preference: MemoryExercisePreference = {
+      userId,
+      exerciseId: input.exerciseId,
+      value: input.value,
+      revision: (existing?.revision ?? 0) + 1,
+      updatedAt: new Date().toISOString(),
+    };
+    this.exercisePreferences.set(key, preference);
+    this.mutations.add(mutationKey);
+    return {
+      entityType: 'exercisePreference',
+      entity: toPublicExercisePreference(preference),
+      duplicate: false,
+    };
   }
 
   async listWorkouts(userId: string) {
@@ -1117,6 +1193,133 @@ export class PostgresRepository implements WorkoutRepository {
       .where(eq(exercises.id, exerciseId))
       .returning();
     return toExercise(records[0]);
+  }
+
+  async listExercisePreferences(userId: string): Promise<ExercisePreferenceRecord[]> {
+    const records = await this.db
+      .select()
+      .from(exercisePreferences)
+      .where(eq(exercisePreferences.userId, userId));
+    return records.map(toExercisePreference);
+  }
+
+  async setExercisePreference(
+    userId: string,
+    input: SetExercisePreferenceInput,
+  ): Promise<ExercisePreferenceMutationResult> {
+    const duplicate = await this.db.transaction(async (transaction) => {
+      const alreadyApplied = await recordMutation(transaction, userId, input.clientMutationId);
+      if (alreadyApplied) return true;
+
+      const visibleExercises = await transaction
+        .select({ id: exercises.id })
+        .from(exercises)
+        .where(
+          and(
+            eq(exercises.id, input.exerciseId),
+            or(
+              eq(exercises.scope, 'global'),
+              and(eq(exercises.scope, 'user'), eq(exercises.ownerId, userId)),
+            ),
+          ),
+        )
+        .limit(1);
+      if (!visibleExercises[0]) throw new RepositoryNotFoundError();
+
+      const existingRows = await transaction
+        .select()
+        .from(exercisePreferences)
+        .where(
+          and(
+            eq(exercisePreferences.userId, userId),
+            eq(exercisePreferences.exerciseId, input.exerciseId),
+          ),
+        )
+        .limit(1);
+      const existing = existingRows[0];
+      if (existing?.value === input.value) return true;
+      if (!existing) {
+        if (input.baseRevision !== 0) throw new RepositoryConflictError(null);
+        const inserted = await transaction
+          .insert(exercisePreferences)
+          .values({
+            userId,
+            exerciseId: input.exerciseId,
+            value: input.value,
+          })
+          .onConflictDoNothing({
+            target: [exercisePreferences.userId, exercisePreferences.exerciseId],
+          })
+          .returning();
+        if (inserted[0]) return false;
+        const currentRows = await transaction
+          .select()
+          .from(exercisePreferences)
+          .where(
+            and(
+              eq(exercisePreferences.userId, userId),
+              eq(exercisePreferences.exerciseId, input.exerciseId),
+            ),
+          )
+          .limit(1);
+        if (currentRows[0]?.value === input.value) return true;
+        throw new RepositoryConflictError(
+          currentRows[0] ? toExercisePreference(currentRows[0]) : null,
+        );
+      }
+      if (existing.revision !== input.baseRevision) {
+        throw new RepositoryConflictError(toExercisePreference(existing));
+      }
+      const updated = await transaction
+        .update(exercisePreferences)
+        .set({
+          value: input.value,
+          revision: existing.revision + 1,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(exercisePreferences.userId, userId),
+            eq(exercisePreferences.exerciseId, input.exerciseId),
+            eq(exercisePreferences.revision, input.baseRevision),
+          ),
+        )
+        .returning();
+      if (!updated[0]) {
+        const currentRows = await transaction
+          .select()
+          .from(exercisePreferences)
+          .where(
+            and(
+              eq(exercisePreferences.userId, userId),
+              eq(exercisePreferences.exerciseId, input.exerciseId),
+            ),
+          )
+          .limit(1);
+        if (currentRows[0]?.value === input.value) return true;
+        throw new RepositoryConflictError(
+          currentRows[0] ? toExercisePreference(currentRows[0]) : null,
+        );
+      }
+      return false;
+    });
+
+    const records = await this.db
+      .select()
+      .from(exercisePreferences)
+      .where(
+        and(
+          eq(exercisePreferences.userId, userId),
+          eq(exercisePreferences.exerciseId, input.exerciseId),
+        ),
+      )
+      .limit(1);
+    if (!records[0]) throw new RepositoryNotFoundError();
+    return {
+      entityType: 'exercisePreference',
+      entity: toExercisePreference(records[0]),
+      duplicate,
+    };
   }
 
   async listWorkouts(userId: string): Promise<WorkoutRecord[]> {
@@ -2597,6 +2800,32 @@ function toExercise(record: typeof exercises.$inferSelect): Exercise {
     sources: record.sources,
     notes: record.notes,
   };
+}
+
+function toExercisePreference(
+  record: typeof exercisePreferences.$inferSelect,
+): ExercisePreferenceRecord {
+  return {
+    exerciseId: record.exerciseId,
+    value: record.value,
+    revision: record.revision,
+    updatedAt: record.updatedAt.toISOString(),
+  };
+}
+
+function toPublicExercisePreference(
+  preference: MemoryExercisePreference,
+): ExercisePreferenceRecord {
+  return {
+    exerciseId: preference.exerciseId,
+    value: preference.value,
+    revision: preference.revision,
+    updatedAt: preference.updatedAt,
+  };
+}
+
+function exercisePreferenceKey(userId: string, exerciseId: string) {
+  return `${userId}:${exerciseId}`;
 }
 
 function toTrainerSummary(user: {

@@ -7,6 +7,7 @@ import {
   collapseExerciseCatalogDuplicates,
   filterExerciseCatalog,
   groupExerciseChoicesByPrimaryMuscle,
+  replacementExerciseOptions,
 } from './exerciseCatalog';
 
 describe('filterExerciseCatalog', () => {
@@ -30,6 +31,37 @@ describe('filterExerciseCatalog', () => {
     });
 
     expect(result[0]?.nameRu).toBe('Тяга одной рукой в кроссовере сидя');
+  });
+
+  it('filters liked, disliked, and unmarked exercises independently from global tags', () => {
+    const [liked, disliked, unmarked] = globalExerciseCatalog.slice(0, 3);
+    const preferences = new Map([
+      [liked!.id, 'like' as const],
+      [disliked!.id, 'dislike' as const],
+    ]);
+    const input = [liked!, disliked!, unmarked!];
+
+    expect(
+      filterExerciseCatalog(
+        input,
+        { query: '', muscle: 'all', tag: 'all', preference: 'like' },
+        preferences,
+      ),
+    ).toEqual([liked]);
+    expect(
+      filterExerciseCatalog(
+        input,
+        { query: '', muscle: 'all', tag: 'all', preference: 'dislike' },
+        preferences,
+      ),
+    ).toEqual([disliked]);
+    expect(
+      filterExerciseCatalog(
+        input,
+        { query: '', muscle: 'all', tag: 'all', preference: 'unmarked' },
+        preferences,
+      ),
+    ).toEqual([unmarked]);
   });
 
   it('keeps the global canonical card instead of a legacy personal shorthand', () => {
@@ -82,6 +114,55 @@ describe('filterExerciseCatalog', () => {
           ),
       );
     }
+  });
+
+  it('puts liked replacements before neutral choices inside a muscle group', () => {
+    const choices = globalExerciseCatalog.filter(
+      (exercise) => exercise.primaryMuscles[0] === 'chest',
+    );
+    const liked = choices.at(-1)!;
+    const groups = groupExerciseChoicesByPrimaryMuscle(
+      choices,
+      'chest',
+      'ru',
+      new Map([[liked.id, 'like']]),
+    );
+
+    expect(groups[0]?.exercises[0]).toBe(liked);
+  });
+
+  it('hides disliked replacements by default but reveals explicit search matches', () => {
+    const disliked = globalExerciseCatalog.find((exercise) => exercise.aliases.length > 0)!;
+    const preferences = new Map([[disliked.id, 'dislike' as const]]);
+
+    const defaultOptions = replacementExerciseOptions({
+      exercises: globalExerciseCatalog,
+      mode: 'replace',
+      preferences,
+      query: '',
+      unavailableIds: new Set(),
+    });
+    expect(defaultOptions.options).not.toContain(disliked);
+    expect(defaultOptions.explicitDislikedOptions).toEqual([]);
+
+    const explicitOptions = replacementExerciseOptions({
+      exercises: globalExerciseCatalog,
+      mode: 'replace',
+      preferences,
+      query: disliked.aliases[0]!,
+      unavailableIds: new Set(),
+    });
+    expect(explicitOptions.options).not.toContain(disliked);
+    expect(explicitOptions.explicitDislikedOptions).toContain(disliked);
+
+    const addOptions = replacementExerciseOptions({
+      exercises: globalExerciseCatalog,
+      mode: 'add',
+      preferences,
+      query: disliked.aliases[0]!,
+      unavailableIds: new Set(),
+    });
+    expect(addOptions.options).toContain(disliked);
   });
 });
 

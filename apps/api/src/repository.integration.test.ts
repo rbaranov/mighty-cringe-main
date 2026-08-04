@@ -250,6 +250,66 @@ test(
     );
     assert.deepEqual(await repository.listMeasurements(otherUser.id), []);
 
+    const preferenceExerciseId = '10000000-0000-4000-8000-000000000001';
+    const createPreference = {
+      clientMutationId: randomUUID(),
+      exerciseId: preferenceExerciseId,
+      value: 'like' as const,
+      baseRevision: 0,
+    };
+    const concurrentPreferenceCreates = await Promise.all([
+      repository.setExercisePreference(user.id, createPreference),
+      repository.setExercisePreference(user.id, createPreference),
+    ]);
+    assert.equal(concurrentPreferenceCreates.filter((result) => result.duplicate).length, 1);
+    const conflictingPreferenceExerciseId = '10000000-0000-4000-8000-000000000002';
+    const conflictingPreferenceCreates = await Promise.allSettled([
+      repository.setExercisePreference(user.id, {
+        clientMutationId: randomUUID(),
+        exerciseId: conflictingPreferenceExerciseId,
+        value: 'like',
+        baseRevision: 0,
+      }),
+      repository.setExercisePreference(user.id, {
+        clientMutationId: randomUUID(),
+        exerciseId: conflictingPreferenceExerciseId,
+        value: 'dislike',
+        baseRevision: 0,
+      }),
+    ]);
+    assert.equal(
+      conflictingPreferenceCreates.filter((result) => result.status === 'fulfilled').length,
+      1,
+    );
+    const rejectedPreference = conflictingPreferenceCreates.find(
+      (result) => result.status === 'rejected',
+    );
+    assert.ok(rejectedPreference && rejectedPreference.status === 'rejected');
+    assert.ok(rejectedPreference.reason instanceof RepositoryConflictError);
+    const dislikedPreference = await repository.setExercisePreference(user.id, {
+      clientMutationId: randomUUID(),
+      exerciseId: preferenceExerciseId,
+      value: 'dislike',
+      baseRevision: 1,
+    });
+    assert.equal(dislikedPreference.entity.revision, 2);
+    await assert.rejects(
+      repository.setExercisePreference(user.id, {
+        clientMutationId: randomUUID(),
+        exerciseId: preferenceExerciseId,
+        value: 'like',
+        baseRevision: 1,
+      }),
+      RepositoryConflictError,
+    );
+    assert.deepEqual(await repository.listExercisePreferences(otherUser.id), []);
+    assert.deepEqual(
+      (await repository.listExercisePreferences(user.id))
+        .filter((preference) => preference.exerciseId === preferenceExerciseId)
+        .map(({ value, revision }) => ({ value, revision })),
+      [{ value: 'dislike', revision: 2 }],
+    );
+
     const deleteMeasurementId = randomUUID();
     await repository.createMeasurement(user.id, {
       ...createMeasurement,

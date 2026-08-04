@@ -110,6 +110,14 @@ const personalExercise: Exercise = {
   nameEn: 'Personal exercise',
 };
 
+const exercisePreference = {
+  exerciseId: usedExercise.id,
+  value: 'like' as const,
+  revision: 1,
+  updatedAt: '2026-08-03T12:00:00.000Z',
+  syncState: 'pending' as const,
+};
+
 const options = {
   exportedAt: '2026-08-03T19:12:34.567Z',
   locale: 'ru' as const,
@@ -127,13 +135,14 @@ describe('local training data export', () => {
         sets: [set, { ...set, id: '40000000-0000-4000-8000-000000000002', deleted: true }],
         measurements: [measurement],
         exercises: [unusedGlobalExercise, personalExercise, usedExercise],
+        exercisePreferences: [exercisePreference],
       },
       options,
     );
 
     expect(result).toMatchObject({
       format: 'mighty-cringe.local-data',
-      formatVersion: 1,
+      formatVersion: 2,
       exportedAt: options.exportedAt,
       source: {
         scope: 'this-device',
@@ -146,7 +155,8 @@ describe('local training data export', () => {
         sets: 1,
         measurements: 1,
         exercises: 2,
-        pendingRecords: 2,
+        exercisePreferences: 1,
+        pendingRecords: 3,
         conflictedRecords: 1,
       },
     });
@@ -155,6 +165,7 @@ describe('local training data export', () => {
       usedExercise.id,
       personalExercise.id,
     ]);
+    expect(result.data.exercisePreferences).toEqual([exercisePreference]);
   });
 
   it('reads the current device database without leaking metadata or the sync queue', async () => {
@@ -162,6 +173,7 @@ describe('local training data export', () => {
     await db.sets.put(set);
     await db.measurements.put(measurement);
     await db.exercises.bulkPut([usedExercise, personalExercise]);
+    await db.exercisePreferences.put(exercisePreference);
     await db.meta.bulkPut([
       { key: 'activeUserId', value: '60000000-0000-4000-8000-000000000001' },
       { key: 'offlineSessionAllowed', value: 'true' },
@@ -203,7 +215,13 @@ describe('local training data export', () => {
     const createFile = (contents: string, fileName: string) =>
       new File([contents], fileName, { type: 'application/json' });
     const data = buildLocalDataExport(
-      { workouts: [workout], sets: [set], measurements: [], exercises: [usedExercise] },
+      {
+        workouts: [workout],
+        sets: [set],
+        measurements: [],
+        exercises: [usedExercise],
+        exercisePreferences: [],
+      },
       options,
     );
 
@@ -224,7 +242,7 @@ describe('local training data export', () => {
     const createFile = (contents: string, fileName: string) =>
       new File([contents], fileName, { type: 'application/json' });
     const data = buildLocalDataExport(
-      { workouts: [], sets: [], measurements: [], exercises: [] },
+      { workouts: [], sets: [], measurements: [], exercises: [], exercisePreferences: [] },
       options,
     );
 
@@ -242,7 +260,7 @@ describe('local training data export', () => {
     const createFile = (contents: string, fileName: string) =>
       new File([contents], fileName, { type: 'application/json' });
     const data = buildLocalDataExport(
-      { workouts: [], sets: [], measurements: [], exercises: [] },
+      { workouts: [], sets: [], measurements: [], exercises: [], exercisePreferences: [] },
       options,
     );
 
@@ -264,7 +282,7 @@ describe('local training data export', () => {
     const createFile = (contents: string, fileName: string) =>
       new File([contents], fileName, { type: 'application/json' });
     const data = buildLocalDataExport(
-      { workouts: [], sets: [], measurements: [], exercises: [] },
+      { workouts: [], sets: [], measurements: [], exercises: [], exercisePreferences: [] },
       options,
     );
 

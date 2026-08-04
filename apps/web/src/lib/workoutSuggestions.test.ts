@@ -50,4 +50,46 @@ describe('workout suggestions', () => {
       next.filter((exercise) => !first.some((previous) => previous.id === exercise.id)),
     ).not.toHaveLength(0);
   });
+
+  it('never suggests disliked exercises or reintroduces them as fallback', () => {
+    const allowed = fallbackCatalog[0]!;
+    const preferences = new Map(
+      fallbackCatalog
+        .filter((exercise) => exercise.id !== allowed.id)
+        .map((exercise) => [exercise.id, 'dislike' as const]),
+    );
+
+    const result = buildSuggestedExercises({
+      catalog: fallbackCatalog,
+      workouts: [],
+      preferences,
+      today: new Date(2026, 7, 5, 10),
+    });
+
+    expect(result).toEqual([allowed]);
+  });
+
+  it('does not promote liked exercises in the automatic starting plan', () => {
+    const today = new Date(2026, 7, 5, 10);
+    const baseline = buildSuggestedExercises({
+      catalog: fallbackCatalog,
+      workouts: [],
+      today,
+    });
+    const liked = fallbackCatalog.find(
+      (exercise) => !baseline.some((suggested) => suggested.id === exercise.id),
+    );
+    expect(liked).toBeDefined();
+
+    const withLike = buildSuggestedExercises({
+      catalog: fallbackCatalog,
+      workouts: [],
+      preferences: new Map([[liked!.id, 'like']]),
+      today,
+    });
+
+    expect(withLike.map((exercise) => exercise.id)).toEqual(
+      baseline.map((exercise) => exercise.id),
+    );
+  });
 });

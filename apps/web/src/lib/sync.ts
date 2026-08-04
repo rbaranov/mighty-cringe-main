@@ -3,8 +3,10 @@ import type {
   DeleteSetInput,
   DeleteWorkoutInput,
   Exercise,
+  ExercisePreferenceRecord,
   MeasurementRecord,
   SetRecord,
+  SetExercisePreferenceInput,
   SyncMutation,
   UpdateMeasurementInput,
   UpdateSetInput,
@@ -17,6 +19,11 @@ import { flushVoiceQueue, refreshVoiceEntries } from './voice';
 
 type MutationResponse =
   | { entityType: 'exercise'; entity: Exercise; duplicate: boolean }
+  | {
+      entityType: 'exercisePreference';
+      entity: ExercisePreferenceRecord;
+      duplicate: boolean;
+    }
   | { entityType: 'workout'; entity: WorkoutRecord; duplicate: boolean }
   | { entityType: 'workout'; entity: null; entityId: string; duplicate: boolean }
   | { entityType: 'set'; entity: SetRecord; duplicate: boolean }
@@ -97,6 +104,7 @@ export async function refreshHistory(): Promise<SyncOutcome> {
   const outcomes = await Promise.all([
     refreshWorkoutHistory(),
     refreshMeasurementHistory(),
+    refreshExercisePreferences(),
     refreshVoiceEntries(),
   ]);
   return combineOutcomes(outcomes);
@@ -185,24 +193,69 @@ async function refreshMeasurementHistory(): Promise<SyncOutcome> {
   return 'success';
 }
 
+export async function refreshExercisePreferences(): Promise<SyncOutcome> {
+  let response: Response;
+  try {
+    response = await fetch('/api/v1/exercise-preferences', { credentials: 'same-origin' });
+  } catch {
+    return 'retry';
+  }
+  if (response.status === 401) {
+    window.dispatchEvent(new Event('mighty-cringe:unauthorized'));
+    return 'unauthorized';
+  }
+  if (!response.ok) return 'retry';
+
+  const payload = (await response.json()) as { items: ExercisePreferenceRecord[] };
+  await db.transaction('rw', db.exercisePreferences, async () => {
+    const serverIds = new Set(payload.items.map((preference) => preference.exerciseId));
+    for (const preference of payload.items) {
+      const local = await db.exercisePreferences.get(preference.exerciseId);
+      if (!local || local.syncState === 'synced') {
+        await db.exercisePreferences.put({ ...preference, syncState: 'synced' });
+      }
+    }
+    const localPreferences = await db.exercisePreferences.toArray();
+    await Promise.all(
+      localPreferences
+        .filter(
+          (preference) =>
+            preference.syncState === 'synced' && !serverIds.has(preference.exerciseId),
+        )
+        .map((preference) => db.exercisePreferences.delete(preference.exerciseId)),
+    );
+  });
+  return 'success';
+}
+
 export async function resolveConflict(conflictId: string, strategy: 'server' | 'mine') {
   const conflict = await db.conflicts.get(conflictId);
   if (!conflict) return;
 
   if (strategy === 'server') {
-    await db.transaction('rw', db.workouts, db.sets, db.measurements, db.conflicts, async () => {
-      if (conflict.current) {
-        await applyCurrent(conflict.current);
-      } else if (conflict.entityType === 'workout') {
-        await db.sets.where('workoutId').equals(conflict.entityId).delete();
-        await db.workouts.delete(conflict.entityId);
-      } else if (conflict.entityType === 'set') {
-        await db.sets.delete(conflict.entityId);
-      } else {
-        await db.measurements.delete(conflict.entityId);
-      }
-      await db.conflicts.delete(conflict.id);
-    });
+    await db.transaction(
+      'rw',
+      db.workouts,
+      db.sets,
+      db.measurements,
+      db.exercisePreferences,
+      db.conflicts,
+      async () => {
+        if (conflict.current) {
+          await applyCurrent(conflict.current);
+        } else if (conflict.entityType === 'workout') {
+          await db.sets.where('workoutId').equals(conflict.entityId).delete();
+          await db.workouts.delete(conflict.entityId);
+        } else if (conflict.entityType === 'set') {
+          await db.sets.delete(conflict.entityId);
+        } else if (conflict.entityType === 'measurement') {
+          await db.measurements.delete(conflict.entityId);
+        } else {
+          await db.exercisePreferences.delete(conflict.entityId);
+        }
+        await db.conflicts.delete(conflict.id);
+      },
+    );
     return;
   }
 
@@ -210,11 +263,7 @@ export async function resolveConflict(conflictId: string, strategy: 'server' | '
   if (!rebased) return;
   await db.transaction(
     'rw',
-    db.workouts,
-    db.sets,
-    db.measurements,
-    db.outbox,
-    db.conflicts,
+    [db.workouts, db.sets, db.measurements, db.exercisePreferences, db.outbox, db.conflicts],
     async () => {
       if (conflict.current) {
         if (isWorkoutRecord(conflict.current)) {
@@ -227,8 +276,13 @@ export async function resolveConflict(conflictId: string, strategy: 'server' | '
             revision: conflict.current.revision,
             updatedAt: conflict.current.updatedAt,
           });
-        } else {
+        } else if (isMeasurementRecord(conflict.current)) {
           await db.measurements.update(conflict.entityId, {
+            revision: conflict.current.revision,
+            updatedAt: conflict.current.updatedAt,
+          });
+        } else {
+          await db.exercisePreferences.update(conflict.entityId, {
             revision: conflict.current.revision,
             updatedAt: conflict.current.updatedAt,
           });
@@ -281,7 +335,7 @@ async function performFlush(): Promise<SyncOutcome> {
     if (response.status === 409 || response.status === 400 || response.status === 404) {
       const payload = (await response.json().catch(() => ({}))) as {
         error?: string;
-        current?: WorkoutRecord | SetRecord | MeasurementRecord | null;
+        current?: WorkoutRecord | SetRecord | MeasurementRecord | ExercisePreferenceRecord | null;
       };
       await storeConflict(
         prepared,
@@ -338,6 +392,14 @@ async function prepareMutation(queued: OutboxMutation) {
       await db.outbox.put(queued);
     }
   }
+  if (queued.mutation.type === 'exercise-preference.set') {
+    const preference = await db.exercisePreferences.get(queued.mutation.payload.exerciseId);
+    if (!preference) return null;
+    if (queued.mutation.payload.baseRevision !== preference.revision) {
+      queued.mutation.payload.baseRevision = preference.revision;
+      await db.outbox.put(queued);
+    }
+  }
   return queued;
 }
 
@@ -390,11 +452,7 @@ async function restoreMissingWorkoutCreate(
 async function applyMutationResult(queued: OutboxMutation, result: MutationResponse) {
   await db.transaction(
     'rw',
-    db.exercises,
-    db.workouts,
-    db.sets,
-    db.measurements,
-    db.outbox,
+    [db.exercises, db.exercisePreferences, db.workouts, db.sets, db.measurements, db.outbox],
     async () => {
       const remaining = (await db.outbox.toArray()).filter((item) => item.id !== queued.id);
       const hasNewerLocalChange = remaining.some(
@@ -416,6 +474,17 @@ async function applyMutationResult(queued: OutboxMutation, result: MutationRespo
 
       if (result.entityType === 'exercise') {
         await db.exercises.put({ ...result.entity, syncState: 'synced' });
+      } else if (result.entityType === 'exercisePreference') {
+        const local = await db.exercisePreferences.get(result.entity.exerciseId);
+        if (hasNewerLocalChange && local) {
+          await db.exercisePreferences.update(local.exerciseId, {
+            revision: result.entity.revision,
+            updatedAt: result.entity.updatedAt,
+            syncState: 'pending',
+          });
+        } else {
+          await db.exercisePreferences.put({ ...result.entity, syncState: 'synced' });
+        }
       } else if (result.entityType === 'workout') {
         const local = await db.workouts.get(result.entity.id);
         if (hasNewerLocalChange && local) {
@@ -471,7 +540,7 @@ async function applyMutationResult(queued: OutboxMutation, result: MutationRespo
 
 async function storeConflict(
   queued: OutboxMutation,
-  current: WorkoutRecord | SetRecord | MeasurementRecord | null,
+  current: WorkoutRecord | SetRecord | MeasurementRecord | ExercisePreferenceRecord | null,
   message: string,
 ) {
   if (queued.mutation.type === 'exercise.create') return;
@@ -479,11 +548,7 @@ async function storeConflict(
   if (entity.type === 'exercise') return;
   await db.transaction(
     'rw',
-    db.workouts,
-    db.sets,
-    db.measurements,
-    db.outbox,
-    db.conflicts,
+    [db.workouts, db.sets, db.measurements, db.exercisePreferences, db.outbox, db.conflicts],
     async () => {
       await markSyncState(queued.mutation, 'conflict');
       await db.conflicts.put({
@@ -508,12 +573,16 @@ async function markSyncState(mutation: SyncMutation, syncState: 'pending' | 'con
     await db.sets.update(entity.id, { syncState });
   } else if (entity.type === 'exercise') {
     await db.exercises.update(entity.id, { syncState });
+  } else if (entity.type === 'exercisePreference') {
+    await db.exercisePreferences.update(entity.id, { syncState });
   } else {
     await db.measurements.update(entity.id, { syncState });
   }
 }
 
-async function applyCurrent(current: WorkoutRecord | SetRecord | MeasurementRecord) {
+async function applyCurrent(
+  current: WorkoutRecord | SetRecord | MeasurementRecord | ExercisePreferenceRecord,
+) {
   if (isWorkoutRecord(current)) {
     await db.workouts.put({ ...withoutSets(current), syncState: 'synced' });
     for (const set of current.sets) {
@@ -521,8 +590,10 @@ async function applyCurrent(current: WorkoutRecord | SetRecord | MeasurementReco
     }
   } else if (isSetRecord(current)) {
     await db.sets.put({ ...current, deleted: false, syncState: 'synced' });
-  } else {
+  } else if (isMeasurementRecord(current)) {
     await db.measurements.put({ ...current, deleted: false, syncState: 'synced' });
+  } else {
+    await db.exercisePreferences.put({ ...current, syncState: 'synced' });
   }
 }
 
@@ -686,6 +757,20 @@ async function rebaseMutation(conflict: SyncConflict): Promise<SyncMutation | nu
     };
     return { type: 'measurement.delete', payload };
   }
+  if (conflict.mutation.type === 'exercise-preference.set') {
+    const local = await db.exercisePreferences.get(conflict.mutation.payload.exerciseId);
+    if (!local) return null;
+    const payload: SetExercisePreferenceInput = {
+      ...conflict.mutation.payload,
+      clientMutationId,
+      baseRevision:
+        conflict.current && isExercisePreferenceRecord(conflict.current)
+          ? conflict.current.revision
+          : 0,
+      value: local.value,
+    };
+    return { type: 'exercise-preference.set', payload };
+  }
   return null;
 }
 
@@ -696,6 +781,12 @@ function mutationEntity(mutation: SyncMutation) {
         type: 'exercise' as const,
         id: mutation.payload.id,
         key: `exercise:${mutation.payload.id}`,
+      };
+    case 'exercise-preference.set':
+      return {
+        type: 'exercisePreference' as const,
+        id: mutation.payload.exerciseId,
+        key: `exercisePreference:${mutation.payload.exerciseId}`,
       };
     case 'workout.create':
       return {
@@ -751,19 +842,27 @@ function mutationEntity(mutation: SyncMutation) {
 }
 
 function isWorkoutRecord(
-  current: WorkoutRecord | SetRecord | MeasurementRecord,
+  current: WorkoutRecord | SetRecord | MeasurementRecord | ExercisePreferenceRecord,
 ): current is WorkoutRecord {
   return 'sets' in current;
 }
 
-function isSetRecord(current: WorkoutRecord | SetRecord | MeasurementRecord): current is SetRecord {
+function isSetRecord(
+  current: WorkoutRecord | SetRecord | MeasurementRecord | ExercisePreferenceRecord,
+): current is SetRecord {
   return 'workoutId' in current;
 }
 
 function isMeasurementRecord(
-  current: WorkoutRecord | SetRecord | MeasurementRecord,
+  current: WorkoutRecord | SetRecord | MeasurementRecord | ExercisePreferenceRecord,
 ): current is MeasurementRecord {
-  return !isWorkoutRecord(current) && !isSetRecord(current);
+  return 'values' in current;
+}
+
+function isExercisePreferenceRecord(
+  current: WorkoutRecord | SetRecord | MeasurementRecord | ExercisePreferenceRecord,
+): current is ExercisePreferenceRecord {
+  return 'exerciseId' in current && !('workoutId' in current);
 }
 
 function withoutSets(workout: WorkoutRecord) {

@@ -367,6 +367,12 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
     return { items: await repository.listExercises(user.id) };
   });
 
+  app.get('/api/v1/exercise-preferences', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    return { items: await repository.listExercisePreferences(user.id) };
+  });
+
   app.post('/api/v1/exercises/discover', async (request, reply) => {
     const user = await getCurrentUser(request, repository, now());
     if (!user) return reply.status(401).send({ error: 'Authentication required' });
@@ -815,6 +821,9 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
           };
           break;
         }
+        case 'exercise-preference.set':
+          result = await repository.setExercisePreference(user.id, parsed.data.payload);
+          break;
         case 'workout.create':
           result = await repository.createWorkout(user.id, parsed.data.payload);
           break;
