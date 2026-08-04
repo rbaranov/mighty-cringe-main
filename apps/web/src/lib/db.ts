@@ -3,6 +3,7 @@ import Dexie, { type EntityTable } from 'dexie';
 import type {
   CurrentUser,
   Exercise,
+  ExercisePreferenceRecord,
   MeasurementRecord,
   SetRecord,
   SyncMutation,
@@ -32,6 +33,10 @@ export type LocalExercise = Exercise & {
   syncState?: SyncState;
 };
 
+export type LocalExercisePreference = ExercisePreferenceRecord & {
+  syncState: SyncState;
+};
+
 export type LocalVoiceStatus = VoiceEntryRecord['status'] | 'queued' | 'uploading' | 'deleting';
 
 export type LocalVoiceEntry = Omit<VoiceEntryRecord, 'status'> & {
@@ -54,12 +59,12 @@ export type OutboxMutation = {
 
 export type SyncConflict = {
   id: string;
-  entityType: 'workout' | 'set' | 'measurement';
+  entityType: 'workout' | 'set' | 'measurement' | 'exercisePreference';
   entityId: string;
   createdAt: string;
   message: string;
   mutation: SyncMutation;
-  current: WorkoutRecord | SetRecord | MeasurementRecord | null;
+  current: WorkoutRecord | SetRecord | MeasurementRecord | ExercisePreferenceRecord | null;
 };
 
 type LocalMeta = {
@@ -71,6 +76,7 @@ export class MightyCringeDatabase extends Dexie {
   workouts!: EntityTable<LocalWorkout, 'id'>;
   sets!: EntityTable<LocalSet, 'id'>;
   exercises!: EntityTable<LocalExercise, 'id'>;
+  exercisePreferences!: EntityTable<LocalExercisePreference, 'exerciseId'>;
   measurements!: EntityTable<LocalMeasurement, 'id'>;
   voiceEntries!: EntityTable<LocalVoiceEntry, 'id'>;
   outbox!: EntityTable<OutboxMutation, 'id'>;
@@ -281,6 +287,17 @@ export class MightyCringeDatabase extends Dexie {
             workout.isFavorite ??= false;
           });
       });
+    this.version(11).stores({
+      workouts: 'id, startedAt, syncState',
+      sets: 'id, workoutId, exerciseId, performedAt, position, syncState, deleted',
+      exercises: 'id, *primaryMuscles',
+      exercisePreferences: 'exerciseId, value, syncState',
+      measurements: 'id, measuredOn, syncState, deleted',
+      voiceEntries: 'id, workoutId, status, createdAt, nextAttemptAt',
+      outbox: 'id, sequence, createdAt',
+      conflicts: 'id, entityType, entityId, createdAt',
+      meta: 'key',
+    });
   }
 }
 
@@ -296,6 +313,7 @@ export async function activateLocalUser(userId: string) {
       db.workouts,
       db.sets,
       db.exercises,
+      db.exercisePreferences,
       db.measurements,
       db.voiceEntries,
       db.outbox,
@@ -307,6 +325,7 @@ export async function activateLocalUser(userId: string) {
         db.workouts.clear(),
         db.sets.clear(),
         db.exercises.clear(),
+        db.exercisePreferences.clear(),
         db.measurements.clear(),
         db.voiceEntries.clear(),
         db.outbox.clear(),
@@ -353,6 +372,7 @@ export async function clearLocalUserData() {
       db.workouts,
       db.sets,
       db.exercises,
+      db.exercisePreferences,
       db.measurements,
       db.voiceEntries,
       db.outbox,
@@ -364,6 +384,7 @@ export async function clearLocalUserData() {
         db.workouts.clear(),
         db.sets.clear(),
         db.exercises.clear(),
+        db.exercisePreferences.clear(),
         db.measurements.clear(),
         db.voiceEntries.clear(),
         db.outbox.clear(),

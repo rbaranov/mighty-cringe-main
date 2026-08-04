@@ -62,12 +62,20 @@ describe('local user boundary', () => {
       secondaryMuscles: [],
       equipment: [],
     });
+    await db.exercisePreferences.put({
+      exerciseId: '70000000-0000-4000-8000-000000000001',
+      value: 'like',
+      revision: 1,
+      updatedAt: '2026-08-05T08:00:00.000Z',
+      syncState: 'synced',
+    });
 
     await activateLocalUser('20000000-0000-4000-8000-000000000002');
 
     expect(await getCachedCurrentUser()).toBeNull();
     expect(await db.meta.get('lastSuccessfulSyncAt')).toBeUndefined();
     expect(await db.exercises.count()).toBe(0);
+    expect(await db.exercisePreferences.count()).toBe(0);
   });
 
   it('keeps an unfinished workout and confirmed profile across a PWA restart', async () => {

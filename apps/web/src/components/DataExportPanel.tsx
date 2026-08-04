@@ -67,8 +67,8 @@ export function DataExportPanel() {
       <p>
         {tr(
           locale,
-          'В файл попадут тренировки, подходы, замеры и используемые упражнения — включая записи, которые ещё не синхронизировались.',
-          'The file includes workouts, sets, measurements, and used exercises — including records that have not synced yet.',
+          'В файл попадут тренировки, подходы, замеры, используемые упражнения и личные отметки — включая записи, которые ещё не синхронизировались.',
+          'The file includes workouts, sets, measurements, used exercises, and personal preferences — including records that have not synced yet.',
         )}
       </p>
 
@@ -87,6 +87,11 @@ export function DataExportPanel() {
           label={tr(locale, 'Замеры', 'Measurements')}
           loading={!data}
           value={data?.summary.measurements ?? 0}
+        />
+        <ExportCount
+          label={tr(locale, 'Отметки', 'Preferences')}
+          loading={!data}
+          value={data?.summary.exercisePreferences ?? 0}
         />
       </div>
 

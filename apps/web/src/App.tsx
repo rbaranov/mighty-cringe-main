@@ -14,6 +14,7 @@ import {
   workoutPlanSchema,
   type CurrentUser,
   type Exercise,
+  type ExercisePreferenceValue,
   type SetEntrySource,
   type SetInput,
   type WorkoutExercise,
@@ -65,8 +66,10 @@ import {
   collapseExerciseCatalogDuplicates,
   filterExerciseCatalog,
   groupExerciseChoicesByPrimaryMuscle,
+  replacementExerciseOptions,
 } from './lib/exerciseCatalog';
 import { cacheExercise, softDeletePersonalExercise } from './lib/exercises';
+import { toggleExercisePreference } from './lib/exercisePreferences';
 import { hasPendingRemoteLogout, requestRemoteLogout } from './lib/logout';
 import {
   buildNaturalSetExerciseContext,
@@ -238,8 +241,10 @@ function AuthenticatedAppContent({
   const finishingWorkoutId = useRef<string | null>(null);
   const resumingWorkoutId = useRef<string | null>(null);
   const savingSet = useRef(false);
+  const initialSyncPromise = useRef<ReturnType<typeof syncAll> | null>(null);
   const [inviteNotice, setInviteNotice] = useState<string | null>(null);
   const [relationshipRefreshKey, setRelationshipRefreshKey] = useState(0);
+  const [initialSyncCompleted, setInitialSyncCompleted] = useState(false);
   const inviteHandled = useRef(false);
   const syncStatusRef = useRef<HTMLDetailsElement>(null);
   const syncStatus = useSyncExternalStore(subscribeSyncStatus, getSyncStatus, getSyncStatus);
@@ -251,6 +256,16 @@ function AuthenticatedAppContent({
   const workouts = storedWorkouts ?? [];
   const sets = useLiveQuery(() => db.sets.toArray(), [], []);
   const exercises = useLiveQuery(() => db.exercises.toArray(), [], []);
+  const exercisePreferences = useLiveQuery(() => db.exercisePreferences.toArray(), []);
+  const preferenceByExerciseId = useMemo(
+    () =>
+      new Map(
+        (exercisePreferences ?? []).map(
+          (preference) => [preference.exerciseId, preference.value] as const,
+        ),
+      ),
+    [exercisePreferences],
+  );
   const availableExercises = useMemo(
     () =>
       exercises.filter(
@@ -344,17 +359,20 @@ function AuthenticatedAppContent({
     ? workouts.find((workout) => workout.id === editingWorkoutId && workout.endedAt !== null)
     : undefined;
   const workoutContext = editingWorkout ?? activeWorkout;
-  const suggested = useMemo(
-    () => buildSuggestedExercises({ catalog: catalogChoices, workouts }),
-    [catalogChoices, workouts],
-  );
   const favoriteWorkouts = useMemo(
     () => workouts.filter((workout) => workout.endedAt !== null && workout.isFavorite),
     [workouts],
   );
 
   useEffect(() => {
-    if (activeWorkout || draftPlan !== null || storedDraftPlan === undefined) return;
+    if (
+      activeWorkout ||
+      draftPlan !== null ||
+      storedDraftPlan === undefined ||
+      exercisePreferences === undefined ||
+      !initialSyncCompleted
+    )
+      return;
     const saved = parseDraftWorkoutPlan(storedDraftPlan.value);
     if (saved) {
       setDraftPlan(saved);
@@ -362,8 +380,32 @@ function AuthenticatedAppContent({
     }
     if (!catalogChoices.length) return;
     if (storedDraftPlan.value !== null) void db.meta.delete('draftWorkoutPlan');
-    setDraftPlan(createWorkoutPlanFromExercises(suggested));
-  }, [activeWorkout?.id, catalogChoices.length, draftPlan, storedDraftPlan, suggested]);
+    let disposed = false;
+    void Promise.all([db.exercisePreferences.toArray(), db.workouts.toArray()]).then(
+      ([latestPreferences, latestWorkouts]) => {
+        if (disposed || latestWorkouts.some((workout) => workout.endedAt === null)) return;
+        const latestPreferenceLookup = new Map(
+          latestPreferences.map((preference) => [preference.exerciseId, preference.value] as const),
+        );
+        const latestSuggestions = buildSuggestedExercises({
+          catalog: catalogChoices,
+          workouts: latestWorkouts,
+          preferences: latestPreferenceLookup,
+        });
+        setDraftPlan((current) => current ?? createWorkoutPlanFromExercises(latestSuggestions));
+      },
+    );
+    return () => {
+      disposed = true;
+    };
+  }, [
+    activeWorkout?.id,
+    catalogChoices,
+    draftPlan,
+    exercisePreferences,
+    initialSyncCompleted,
+    storedDraftPlan,
+  ]);
   const setDefaults = useMemo(() => {
     if (!sheet || sheet.set) return null;
     const candidates = sets.filter((set) => set.exerciseId === sheet.exercise.id && !set.deleted);
@@ -456,13 +498,19 @@ function AuthenticatedAppContent({
   }, []);
 
   useEffect(() => {
+    let disposed = false;
     const sync = () => {
       void syncAll();
     };
     window.addEventListener('online', sync);
     window.addEventListener('offline', sync);
-    void syncAll();
+    const firstSync = syncAll();
+    initialSyncPromise.current = firstSync;
+    void firstSync.finally(() => {
+      if (!disposed) setInitialSyncCompleted(true);
+    });
     return () => {
+      disposed = true;
       window.removeEventListener('online', sync);
       window.removeEventListener('offline', sync);
     };
@@ -544,7 +592,26 @@ function AuthenticatedAppContent({
   }
 
   async function startWorkout() {
-    await createWorkoutWithPlan(draftPlan ?? createWorkoutPlanFromExercises(suggested));
+    if (draftPlan !== null) {
+      await createWorkoutWithPlan(draftPlan);
+      await clearDraftPlan();
+      return;
+    }
+    await (initialSyncPromise.current ?? syncAll());
+    const [latestPreferences, latestWorkouts] = await Promise.all([
+      db.exercisePreferences.toArray(),
+      db.workouts.toArray(),
+    ]);
+    if (latestWorkouts.some((workout) => workout.endedAt === null)) return;
+    const latestPreferenceLookup = new Map(
+      latestPreferences.map((preference) => [preference.exerciseId, preference.value] as const),
+    );
+    const latestSuggestions = buildSuggestedExercises({
+      catalog: catalogChoices,
+      workouts: latestWorkouts,
+      preferences: latestPreferenceLookup,
+    });
+    await createWorkoutWithPlan(createWorkoutPlanFromExercises(latestSuggestions));
     await clearDraftPlan();
   }
 
@@ -1404,6 +1471,7 @@ function AuthenticatedAppContent({
           <ExerciseDetailView
             activeWorkout={workoutContext}
             exercise={exerciseDetail}
+            preference={preferenceByExerciseId.get(exerciseDetail.id) ?? null}
             onAddSet={(exercise) => setSheet({ exercise, set: null })}
             onBack={() => setExerciseDetailId(null)}
             onDeleteSet={requestDeleteSet}
@@ -1411,6 +1479,7 @@ function AuthenticatedAppContent({
             onEditExercise={setExerciseEditor}
             onEditSet={(exercise, set) => setSheet({ exercise, set })}
             onMoveSet={moveSet}
+            onTogglePreference={(value) => toggleExercisePreference(exerciseDetail.id, value)}
             onReplaceExercise={() => {
               const target = workoutContext ? 'current' : 'draft';
               const item = (workoutContext?.exercises ?? draftPlan ?? []).find(
@@ -1484,6 +1553,8 @@ function AuthenticatedAppContent({
               <CatalogView
                 exercises={catalogChoices}
                 onOpenExercise={(exercise) => setExerciseDetailId(exercise.id)}
+                onTogglePreference={toggleExercisePreference}
+                preferences={preferenceByExerciseId}
               />
             )}
             {view === 'progress' && (
@@ -1618,6 +1689,7 @@ function AuthenticatedAppContent({
         mode={exercisePicker}
         onChoose={chooseExercise}
         onClose={() => setExercisePicker(null)}
+        preferences={preferenceByExerciseId}
       />
       <ConfirmationSheet
         confirmation={confirmation}
@@ -1639,6 +1711,7 @@ function AuthenticatedAppContent({
           }}
           scopedExercise={explainContext.exercise}
           sets={sets}
+          preferences={preferenceByExerciseId}
         />
       )}
     </main>
@@ -2378,6 +2451,8 @@ function ExerciseDetailView({
   onDeleteExercise,
   onEditExercise,
   onReplaceExercise,
+  onTogglePreference,
+  preference,
 }: {
   exercise: Exercise;
   activeWorkout: LocalWorkout | undefined;
@@ -2391,6 +2466,8 @@ function ExerciseDetailView({
   onDeleteExercise: (exercise: Exercise) => void;
   onEditExercise: (exercise: Exercise) => void;
   onReplaceExercise: () => void;
+  onTogglePreference: (value: ExercisePreferenceValue) => Promise<void>;
+  preference: ExercisePreferenceValue | null;
 }) {
   const { locale, unitSystem } = usePreferences();
   const [videoPlaying, setVideoPlaying] = useState(false);
@@ -2450,6 +2527,11 @@ function ExerciseDetailView({
         </span>
         <span>{exercise.equipment.join(', ')}</span>
       </div>
+      <ExercisePreferenceControls
+        className="exercise-detail-preferences"
+        onToggle={onTogglePreference}
+        value={preference}
+      />
       {exercise.scope === 'user' && (
         <div className="personal-exercise-actions">
           {exercise.deletedAt ? (
@@ -2703,9 +2785,13 @@ function ExerciseDetailView({
 function CatalogView({
   exercises,
   onOpenExercise,
+  onTogglePreference,
+  preferences,
 }: {
   exercises: Exercise[];
   onOpenExercise: (exercise: Exercise) => void;
+  onTogglePreference: (exerciseId: string, value: ExercisePreferenceValue) => Promise<void>;
+  preferences: ReadonlyMap<string, ExercisePreferenceValue | null>;
 }) {
   const { locale } = usePreferences();
   const [showAddOptions, setShowAddOptions] = useState(false);
@@ -2714,13 +2800,25 @@ function CatalogView({
     'all',
   );
   const [selectedTag, setSelectedTag] = useState<Exercise['tag'] | 'all'>('all');
-  const filteredExercises = filterExerciseCatalog(exercises, {
-    query,
-    muscle: selectedMuscle,
-    tag: selectedTag,
-  });
+  const [selectedPreference, setSelectedPreference] = useState<
+    ExercisePreferenceValue | 'unmarked' | 'all'
+  >('all');
+  const filteredExercises = filterExerciseCatalog(
+    exercises,
+    {
+      query,
+      muscle: selectedMuscle,
+      tag: selectedTag,
+      preference: selectedPreference,
+    },
+    preferences,
+  );
   const unresolvedCatalogQuery = catalogDiscoveryQuery(exercises, query);
-  const hasFilters = query.trim() !== '' || selectedMuscle !== 'all' || selectedTag !== 'all';
+  const hasFilters =
+    query.trim() !== '' ||
+    selectedMuscle !== 'all' ||
+    selectedTag !== 'all' ||
+    selectedPreference !== 'all';
   const activeFilterDescription = [
     query.trim() ? tr(locale, `поиск «${query.trim()}»`, `search “${query.trim()}”`) : null,
     selectedMuscle !== 'all'
@@ -2731,6 +2829,13 @@ function CatalogView({
         )
       : null,
     selectedTag !== 'all' ? `tag “${selectedTag}”` : null,
+    selectedPreference !== 'all'
+      ? tr(
+          locale,
+          `отношение «${preferenceFilterLabel(selectedPreference, locale)}»`,
+          `preference “${preferenceFilterLabel(selectedPreference, locale)}”`,
+        )
+      : null,
   ]
     .filter(Boolean)
     .join(', ');
@@ -2786,6 +2891,19 @@ function CatalogView({
             </button>
           )}
         <div
+          aria-label={tr(locale, 'Личное отношение', 'Personal preference')}
+          className="catalog-filter-chips"
+        >
+          {(['all', 'like', 'dislike', 'unmarked'] as const).map((value) => (
+            <CatalogFilterChip
+              active={selectedPreference === value}
+              key={value}
+              label={preferenceFilterLabel(value, locale)}
+              onClick={() => setSelectedPreference(value)}
+            />
+          ))}
+        </div>
+        <div
           aria-label={tr(locale, 'Характер упражнения', 'Exercise tag')}
           className="catalog-filter-chips"
         >
@@ -2835,6 +2953,7 @@ function CatalogView({
                 setQuery('');
                 setSelectedMuscle('all');
                 setSelectedTag('all');
+                setSelectedPreference('all');
                 setShowAddOptions(false);
               }}
               type="button"
@@ -2846,32 +2965,38 @@ function CatalogView({
       </div>
       <div className="exercise-list catalog-list">
         {filteredExercises.map((exercise) => (
-          <button
-            className="exercise-row catalog catalog-exercise-link"
-            key={exercise.id}
-            onClick={() => onOpenExercise(exercise)}
-            type="button"
-          >
-            <span className="catalog-symbol">
-              {exercise.tag === 'mighty' ? '⚡' : exercise.tag === 'cringe' ? '😬' : '•'}
-            </span>
-            <div>
-              <strong title={exerciseName(exercise, locale)}>
-                {exerciseName(exercise, locale)}
-              </strong>
-              <small>
-                {locale === 'en' ? exercise.nameRu : exercise.nameEn} ·{' '}
-                {muscleLabel(exercise.primaryMuscles[0], locale)}
-                {exercise.scope === 'user' ? ` · ${tr(locale, 'личное', 'personal')}` : ''}
-              </small>
-            </div>
-            <span className="catalog-row-end">
-              <Tag tag={exercise.tag} />
-              <span aria-hidden="true" className="catalog-chevron">
-                →
+          <article className="exercise-row catalog catalog-exercise-row" key={exercise.id}>
+            <button
+              className="catalog-exercise-link"
+              onClick={() => onOpenExercise(exercise)}
+              type="button"
+            >
+              <span className="catalog-symbol">
+                {exercise.tag === 'mighty' ? '⚡' : exercise.tag === 'cringe' ? '😬' : '•'}
               </span>
-            </span>
-          </button>
+              <div>
+                <strong title={exerciseName(exercise, locale)}>
+                  {exerciseName(exercise, locale)}
+                </strong>
+                <small>
+                  {locale === 'en' ? exercise.nameRu : exercise.nameEn} ·{' '}
+                  {muscleLabel(exercise.primaryMuscles[0], locale)}
+                  {exercise.scope === 'user' ? ` · ${tr(locale, 'личное', 'personal')}` : ''}
+                </small>
+              </div>
+              <span className="catalog-row-end">
+                <Tag tag={exercise.tag} />
+                <span aria-hidden="true" className="catalog-chevron">
+                  →
+                </span>
+              </span>
+            </button>
+            <ExercisePreferenceControls
+              compact
+              onToggle={(value) => onTogglePreference(exercise.id, value)}
+              value={preferences.get(exercise.id) ?? null}
+            />
+          </article>
         ))}
         {filteredExercises.length === 0 && !unresolvedCatalogQuery && (
           <div className="catalog-empty">
@@ -2896,12 +3021,14 @@ function ExercisePickerSheet({
   mode,
   onChoose,
   onClose,
+  preferences,
 }: {
   catalog: Exercise[];
   currentPlan: WorkoutExercise[];
   mode: ExercisePickerMode | null;
   onChoose: (exercise: Exercise) => Promise<void>;
   onClose: () => void;
+  preferences: ReadonlyMap<string, ExercisePreferenceValue | null>;
 }) {
   const { locale } = usePreferences();
   const [query, setQuery] = useState('');
@@ -2927,18 +3054,21 @@ function ExercisePickerSheet({
       : null;
   const unavailableIds = new Set(currentPlan.map((item) => item.exerciseId));
   const normalizedQuery = query.trim().toLocaleLowerCase('ru-RU');
-  const matchingCatalog = catalog.filter(
-    (exercise) =>
-      !normalizedQuery ||
-      [exercise.nameRu, exercise.nameEn, ...exercise.aliases].some((name) =>
-        name.toLocaleLowerCase('ru-RU').includes(normalizedQuery),
-      ),
-  );
-  const options = matchingCatalog.filter((exercise) => !unavailableIds.has(exercise.id));
+  const { explicitDislikedOptions, matchingCatalog, options } = replacementExerciseOptions({
+    exercises: catalog,
+    mode: mode.mode,
+    preferences,
+    query,
+    unavailableIds,
+  });
+  const hiddenDislikedCount = catalog.filter(
+    (exercise) => !unavailableIds.has(exercise.id) && preferences.get(exercise.id) === 'dislike',
+  ).length;
   const optionGroups = groupExerciseChoicesByPrimaryMuscle(
     options,
     replacedExercise?.primaryMuscles[0] ?? null,
     locale,
+    mode.mode === 'replace' ? preferences : new Map(),
   );
 
   function chooseOnce(exercise: Exercise) {
@@ -3047,23 +3177,77 @@ function ExercisePickerSheet({
                               {muscleLabel(exercise.primaryMuscles[0], locale)}
                             </span>
                           </span>
-                          <Tag tag={exercise.tag} />
+                          <span className="picker-option-tags">
+                            <ExercisePreferenceBadge value={preferences.get(exercise.id) ?? null} />
+                            <Tag tag={exercise.tag} />
+                          </span>
                         </button>
                       );
                     })}
                   </div>
                 </section>
               ))}
+              {explicitDislikedOptions.length > 0 && (
+                <section className="picker-muscle-group disliked-results">
+                  <div className="picker-muscle-heading">
+                    <strong>{tr(locale, 'Вы сами нашли', 'You searched for these')}</strong>
+                    <span>{tr(locale, 'Отмечено: не нравится', 'Marked: dislike')}</span>
+                  </div>
+                  <div className="picker-muscle-options">
+                    {explicitDislikedOptions.map((exercise) => {
+                      const choosing = choosingExerciseId === exercise.id;
+                      return (
+                        <button
+                          aria-busy={choosing || undefined}
+                          className={choosing ? 'picker-option choosing' : 'picker-option'}
+                          disabled={choosingExerciseId !== null}
+                          key={exercise.id}
+                          onClick={() => chooseOnce(exercise)}
+                          onMouseDown={(event) => event.preventDefault()}
+                          type="button"
+                        >
+                          <span className="picker-option-copy">
+                            <strong>{exerciseName(exercise, locale)}</strong>
+                            <small>{locale === 'en' ? exercise.nameRu : exercise.nameEn}</small>
+                            <span className="picker-option-muscle">
+                              {muscleLabel(exercise.primaryMuscles[0], locale)}
+                            </span>
+                          </span>
+                          <span className="picker-option-tags">
+                            <ExercisePreferenceBadge value="dislike" />
+                            <Tag tag={exercise.tag} />
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
               {!options.length &&
+                !explicitDislikedOptions.length &&
                 (normalizedQuery.length < 2 ? (
                   <div className="picker-empty">
-                    <strong>{tr(locale, 'Начни вводить название', 'Start typing a name')}</strong>
+                    <strong>
+                      {mode.mode === 'replace' && hiddenDislikedCount > 0
+                        ? tr(
+                            locale,
+                            'Отмеченные «Не нравится» варианты скрыты',
+                            'Disliked choices are hidden',
+                          )
+                        : tr(locale, 'Начни вводить название', 'Start typing a name')}
+                    </strong>
                     <span>
-                      {tr(
-                        locale,
-                        'Каталог ищется сразу. Если упражнения нет, его можно создать вручную или найти в интернете.',
-                        'The catalog searches instantly. If the exercise is missing, create it manually or find it online.',
-                      )}
+                      {mode.mode === 'replace' && hiddenDislikedCount > 0
+                        ? tr(
+                            locale,
+                            'Введи конкретное название, чтобы при необходимости выбрать такое упражнение один раз.',
+                            'Enter a specific name if you want to choose one of them once.',
+                          )
+                        : tr(
+                            locale,
+                            'Каталог ищется сразу. Если упражнения нет, его можно создать вручную или найти в интернете.',
+                            'The catalog searches instantly. If the exercise is missing, create it manually or find it online.',
+                          )}
                     </span>
                   </div>
                 ) : matchingCatalog.length > 0 ? (
@@ -3090,23 +3274,24 @@ function ExercisePickerSheet({
                     query={query}
                   />
                 ))}
-              {options.length > 0 && normalizedQuery.length >= 2 && (
-                <button
-                  className="picker-discovery-link"
-                  onClick={() => setShowAddOptions(true)}
-                  onPointerDown={(event) => {
-                    event.preventDefault();
-                    setShowAddOptions(true);
-                  }}
-                  type="button"
-                >
-                  {tr(
-                    locale,
-                    'Не то упражнение? Создать новое или найти в интернете',
-                    'Not the right exercise? Create a new one or search online',
-                  )}
-                </button>
-              )}
+              {(options.length > 0 || explicitDislikedOptions.length > 0) &&
+                normalizedQuery.length >= 2 && (
+                  <button
+                    className="picker-discovery-link"
+                    onClick={() => setShowAddOptions(true)}
+                    onPointerDown={(event) => {
+                      event.preventDefault();
+                      setShowAddOptions(true);
+                    }}
+                    type="button"
+                  >
+                    {tr(
+                      locale,
+                      'Не то упражнение? Создать новое или найти в интернете',
+                      'Not the right exercise? Create a new one or search online',
+                    )}
+                  </button>
+                )}
             </>
           )}
           {showAddOptions && (
@@ -3130,6 +3315,86 @@ function ExercisePickerSheet({
   );
 }
 
+function ExercisePreferenceControls({
+  className = '',
+  compact = false,
+  onToggle,
+  value,
+}: {
+  className?: string;
+  compact?: boolean;
+  onToggle: (value: ExercisePreferenceValue) => Promise<void>;
+  value: ExercisePreferenceValue | null;
+}) {
+  const { locale } = usePreferences();
+  const [saving, setSaving] = useState(false);
+
+  async function toggle(next: ExercisePreferenceValue) {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await onToggle(next);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      aria-label={tr(locale, 'Личное отношение к упражнению', 'Personal exercise preference')}
+      className={`exercise-preference-controls ${compact ? 'compact' : ''} ${className}`.trim()}
+      role="group"
+    >
+      <button
+        aria-label={tr(locale, 'Нравится', 'Like')}
+        aria-pressed={value === 'like'}
+        className={value === 'like' ? 'active like' : 'like'}
+        disabled={saving}
+        onClick={() => void toggle('like')}
+        title={tr(locale, 'Нравится', 'Like')}
+        type="button"
+      >
+        <span aria-hidden="true">👍</span>
+        {!compact && <span>{tr(locale, 'Нравится', 'Like')}</span>}
+      </button>
+      <button
+        aria-label={tr(locale, 'Не нравится — не предлагать', 'Dislike — do not suggest')}
+        aria-pressed={value === 'dislike'}
+        className={value === 'dislike' ? 'active dislike' : 'dislike'}
+        disabled={saving}
+        onClick={() => void toggle('dislike')}
+        title={tr(locale, 'Не нравится — не предлагать', 'Dislike — do not suggest')}
+        type="button"
+      >
+        <span aria-hidden="true">👎</span>
+        {!compact && <span>{tr(locale, 'Не нравится', 'Dislike')}</span>}
+      </button>
+    </div>
+  );
+}
+
+function ExercisePreferenceBadge({ value }: { value: ExercisePreferenceValue | null }) {
+  const { locale } = usePreferences();
+  if (!value) return null;
+  return (
+    <span className={`exercise-preference-badge ${value}`}>
+      {value === 'like'
+        ? tr(locale, '👍 Нравится', '👍 Liked')
+        : tr(locale, '👎 Не нравится', '👎 Disliked')}
+    </span>
+  );
+}
+
+function preferenceFilterLabel(
+  value: ExercisePreferenceValue | 'unmarked' | 'all',
+  locale: CurrentUser['locale'],
+) {
+  if (value === 'like') return tr(locale, '👍 Нравятся', '👍 Liked');
+  if (value === 'dislike') return tr(locale, '👎 Не нравятся', '👎 Disliked');
+  if (value === 'unmarked') return tr(locale, 'Без отметки', 'Unmarked');
+  return tr(locale, 'Все', 'All');
+}
+
 function ExplainSheet({
   activeWorkout,
   catalog,
@@ -3139,6 +3404,7 @@ function ExplainSheet({
   onApplyCommand,
   onSave,
   onStartWorkout,
+  preferences,
 }: {
   activeWorkout: LocalWorkout | undefined;
   catalog: Exercise[];
@@ -3147,6 +3413,7 @@ function ExplainSheet({
   onClose: () => void;
   onApplyCommand: (command: NaturalWorkoutCommand) => Promise<void>;
   onStartWorkout: () => Promise<void>;
+  preferences: ReadonlyMap<string, ExercisePreferenceValue | null>;
   onSave: (
     exercise: Exercise,
     input: NaturalSetDraft,
@@ -3399,7 +3666,14 @@ function ExplainSheet({
             <strong>
               {tr(locale, 'Понял команду — выполнить?', 'I understood the command — apply it?')}
             </strong>
-            <WorkoutCommandPreview command={result.command} locale={locale} />
+            <WorkoutCommandPreview
+              command={result.command}
+              disliked={
+                result.command.type === 'replace' &&
+                preferences.get(result.command.replacement.id) === 'dislike'
+              }
+              locale={locale}
+            />
             {saveError && (
               <p className="clarification compact" role="alert">
                 {saveError}
@@ -3583,9 +3857,11 @@ function ExplainSheet({
 
 function WorkoutCommandPreview({
   command,
+  disliked,
   locale,
 }: {
   command: NaturalWorkoutCommand;
+  disliked: boolean;
   locale: CurrentUser['locale'];
 }) {
   if (command.type !== 'replace') {
@@ -3608,6 +3884,15 @@ function WorkoutCommandPreview({
         {exerciseName(command.source.exercise, locale)} →{' '}
         {exerciseName(command.replacement, locale)}
       </p>
+      {disliked && (
+        <p className="exercise-preference-warning">
+          {tr(
+            locale,
+            'Вы отметили это упражнение «Не нравится». Команда всё равно может выбрать его один раз.',
+            'You marked this exercise as disliked. This command can still choose it once.',
+          )}
+        </p>
+      )}
     </div>
   );
 }

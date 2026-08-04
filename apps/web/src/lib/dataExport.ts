@@ -1,9 +1,16 @@
 import type { CurrentUser, Exercise, UnitSystem } from '@mighty-cringe/contracts';
 
-import { db, type LocalMeasurement, type LocalSet, type LocalWorkout, type SyncState } from './db';
+import {
+  db,
+  type LocalExercisePreference,
+  type LocalMeasurement,
+  type LocalSet,
+  type LocalWorkout,
+  type SyncState,
+} from './db';
 
 export const localDataExportFormat = 'mighty-cringe.local-data';
-export const localDataExportVersion = 1;
+export const localDataExportVersion = 2;
 
 type ExportedSet = Omit<LocalSet, 'deleted'>;
 type ExportedMeasurement = Omit<LocalMeasurement, 'deleted'>;
@@ -26,6 +33,7 @@ export type LocalDataExport = {
     sets: number;
     measurements: number;
     exercises: number;
+    exercisePreferences: number;
     pendingRecords: number;
     conflictedRecords: number;
   };
@@ -34,6 +42,7 @@ export type LocalDataExport = {
     sets: ExportedSet[];
     measurements: ExportedMeasurement[];
     exercises: Exercise[];
+    exercisePreferences: LocalExercisePreference[];
   };
 };
 
@@ -42,6 +51,7 @@ type LocalDataExportInput = {
   sets: LocalSet[];
   measurements: LocalMeasurement[];
   exercises: Exercise[];
+  exercisePreferences: LocalExercisePreference[];
 };
 
 type LocalDataExportOptions = {
@@ -55,15 +65,16 @@ export async function loadLocalDataExport(
 ): Promise<LocalDataExport> {
   const input = await db.transaction(
     'r',
-    [db.workouts, db.sets, db.measurements, db.exercises],
+    [db.workouts, db.sets, db.measurements, db.exercises, db.exercisePreferences],
     async () => {
-      const [workouts, sets, measurements, exercises] = await Promise.all([
+      const [workouts, sets, measurements, exercises, exercisePreferences] = await Promise.all([
         db.workouts.toArray(),
         db.sets.toArray(),
         db.measurements.toArray(),
         db.exercises.toArray(),
+        db.exercisePreferences.toArray(),
       ]);
-      return { workouts, sets, measurements, exercises };
+      return { workouts, sets, measurements, exercises, exercisePreferences };
     },
   );
 
@@ -102,10 +113,14 @@ export function buildLocalDataExport(
         (exercise) => exercise.id,
       ),
     );
+  const exercisePreferences = [...input.exercisePreferences].sort(
+    compareBy((preference) => preference.exerciseId),
+  );
   const syncStates = [
     ...workouts.map((workout) => workout.syncState),
     ...sets.map((set) => set.syncState),
     ...measurements.map((measurement) => measurement.syncState),
+    ...exercisePreferences.map((preference) => preference.syncState),
   ];
 
   return {
@@ -126,10 +141,11 @@ export function buildLocalDataExport(
       sets: sets.length,
       measurements: measurements.length,
       exercises: exercises.length,
+      exercisePreferences: exercisePreferences.length,
       pendingRecords: countSyncState(syncStates, 'pending'),
       conflictedRecords: countSyncState(syncStates, 'conflict'),
     },
-    data: { workouts, sets, measurements, exercises },
+    data: { workouts, sets, measurements, exercises, exercisePreferences },
   };
 }
 

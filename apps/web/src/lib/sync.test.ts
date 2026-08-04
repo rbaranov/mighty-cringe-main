@@ -6,7 +6,14 @@ import type { SyncMutation } from '@mighty-cringe/contracts';
 
 import { db } from './db';
 import { createManualExercise } from './exercises';
-import { flushOutbox, getSyncStatus, queueMutation } from './sync';
+import { toggleExercisePreference } from './exercisePreferences';
+import {
+  flushOutbox,
+  getSyncStatus,
+  queueMutation,
+  refreshExercisePreferences,
+  resolveConflict,
+} from './sync';
 
 const measuredOn = '2026-07-22T06:00:00.000Z';
 const measurementId = '60000000-0000-4000-8000-000000000001';
@@ -307,7 +314,352 @@ describe('durable sync status', () => {
     const sent = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as SyncMutation;
     expect(sent.type).toBe('exercise.create');
   });
+
+  it('keeps preference toggles durable offline and replays newer changes in order', async () => {
+    const exerciseId = '10000000-0000-4000-8000-000000000001';
+    vi.stubGlobal('navigator', { onLine: false });
+
+    await toggleExercisePreference(exerciseId, 'like');
+    await expect(flushOutbox()).resolves.toBe('offline');
+    await toggleExercisePreference(exerciseId, 'dislike');
+    await expect(flushOutbox()).resolves.toBe('offline');
+
+    expect(await db.exercisePreferences.get(exerciseId)).toMatchObject({
+      value: 'dislike',
+      revision: 0,
+      syncState: 'pending',
+    });
+    expect(await db.outbox.count()).toBe(2);
+
+    db.close();
+    await db.open();
+    expect(await db.exercisePreferences.get(exerciseId)).toMatchObject({ value: 'dislike' });
+
+    vi.stubGlobal('navigator', { onLine: true });
+    let revision = 0;
+    const fetchMock = vi.fn<typeof fetch>(async (_input, init) => {
+      const sent = JSON.parse(String(init?.body)) as SyncMutation;
+      assertPreferenceMutation(sent);
+      expect(sent.payload.baseRevision).toBe(revision);
+      revision += 1;
+      return Response.json({
+        entityType: 'exercisePreference',
+        entity: {
+          exerciseId,
+          value: sent.payload.value,
+          revision,
+          updatedAt: `2026-08-05T08:0${revision}:00.000Z`,
+        },
+        duplicate: false,
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(flushOutbox()).resolves.toBe('success');
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(await db.outbox.count()).toBe(0);
+    expect(await db.exercisePreferences.get(exerciseId)).toMatchObject({
+      value: 'dislike',
+      revision: 2,
+      syncState: 'synced',
+    });
+  });
+
+  it('removes an active preference when the same control is pressed again', async () => {
+    const exerciseId = '10000000-0000-4000-8000-000000000003';
+    vi.stubGlobal('navigator', { onLine: false });
+
+    await toggleExercisePreference(exerciseId, 'like');
+    await expect(flushOutbox()).resolves.toBe('offline');
+    await toggleExercisePreference(exerciseId, 'like');
+    await expect(flushOutbox()).resolves.toBe('offline');
+
+    expect(await db.exercisePreferences.get(exerciseId)).toMatchObject({
+      value: null,
+      syncState: 'pending',
+    });
+  });
+
+  it('does not rewrite an existing workout or saved draft when a preference changes', async () => {
+    const exerciseId = '10000000-0000-4000-8000-000000000010';
+    const workoutId = '60000000-0000-4000-8000-000000000010';
+    const plan = [
+      {
+        id: '20000000-0000-4000-8000-000000000010',
+        exerciseId,
+        position: 0,
+        supersetGroup: null,
+      },
+    ];
+    const workout = {
+      id: workoutId,
+      startedAt: '2026-08-05T08:00:00.000Z',
+      endedAt: null,
+      durationSeconds: 0,
+      activeSegmentStartedAt: '2026-08-05T08:00:00.000Z',
+      lastActivityAt: '2026-08-05T08:00:00.000Z',
+      completionReason: null,
+      isFavorite: false,
+      notes: null,
+      locale: 'ru' as const,
+      exercises: plan,
+      revision: 1,
+      updatedAt: '2026-08-05T08:00:00.000Z',
+      syncState: 'synced' as const,
+    };
+    const savedDraft = JSON.stringify(plan);
+    await db.workouts.put(workout);
+    await db.meta.put({ key: 'draftWorkoutPlan', value: savedDraft });
+    vi.stubGlobal('navigator', { onLine: false });
+
+    await toggleExercisePreference(exerciseId, 'dislike');
+    await expect(flushOutbox()).resolves.toBe('offline');
+
+    expect(await db.workouts.get(workoutId)).toEqual(workout);
+    expect((await db.meta.get('draftWorkoutPlan'))?.value).toBe(savedDraft);
+    expect((await db.outbox.toArray()).map((item) => item.mutation.type)).toEqual([
+      'exercise-preference.set',
+    ]);
+  });
+
+  it('refreshes server preferences while preserving local pending and conflicted choices', async () => {
+    const syncedId = '10000000-0000-4000-8000-000000000005';
+    const pendingId = '10000000-0000-4000-8000-000000000006';
+    const conflictId = '10000000-0000-4000-8000-000000000007';
+    const missingId = '10000000-0000-4000-8000-000000000008';
+    const newId = '10000000-0000-4000-8000-000000000009';
+    await db.exercisePreferences.bulkPut([
+      {
+        exerciseId: syncedId,
+        value: 'like',
+        revision: 1,
+        updatedAt: '2026-08-05T08:00:00.000Z',
+        syncState: 'synced',
+      },
+      {
+        exerciseId: pendingId,
+        value: 'like',
+        revision: 1,
+        updatedAt: '2026-08-05T08:00:00.000Z',
+        syncState: 'pending',
+      },
+      {
+        exerciseId: conflictId,
+        value: 'dislike',
+        revision: 1,
+        updatedAt: '2026-08-05T08:00:00.000Z',
+        syncState: 'conflict',
+      },
+      {
+        exerciseId: missingId,
+        value: 'like',
+        revision: 1,
+        updatedAt: '2026-08-05T08:00:00.000Z',
+        syncState: 'synced',
+      },
+    ]);
+    vi.stubGlobal('navigator', { onLine: true });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>().mockResolvedValue(
+        Response.json({
+          items: [
+            {
+              exerciseId: syncedId,
+              value: 'dislike',
+              revision: 2,
+              updatedAt: '2026-08-05T08:01:00.000Z',
+            },
+            {
+              exerciseId: pendingId,
+              value: 'dislike',
+              revision: 2,
+              updatedAt: '2026-08-05T08:01:00.000Z',
+            },
+            {
+              exerciseId: conflictId,
+              value: 'like',
+              revision: 2,
+              updatedAt: '2026-08-05T08:01:00.000Z',
+            },
+            {
+              exerciseId: newId,
+              value: 'like',
+              revision: 1,
+              updatedAt: '2026-08-05T08:01:00.000Z',
+            },
+          ],
+        }),
+      ),
+    );
+
+    await expect(refreshExercisePreferences()).resolves.toBe('success');
+
+    expect(await db.exercisePreferences.get(syncedId)).toMatchObject({
+      value: 'dislike',
+      revision: 2,
+      syncState: 'synced',
+    });
+    expect(await db.exercisePreferences.get(pendingId)).toMatchObject({
+      value: 'like',
+      revision: 1,
+      syncState: 'pending',
+    });
+    expect(await db.exercisePreferences.get(conflictId)).toMatchObject({
+      value: 'dislike',
+      revision: 1,
+      syncState: 'conflict',
+    });
+    expect(await db.exercisePreferences.get(newId)).toMatchObject({
+      value: 'like',
+      revision: 1,
+      syncState: 'synced',
+    });
+    expect(await db.exercisePreferences.get(missingId)).toBeUndefined();
+  });
+
+  it('stores a preference conflict and can explicitly keep the server version', async () => {
+    const exerciseId = '10000000-0000-4000-8000-000000000002';
+    const mutationId = '94000000-0000-4000-8000-000000000001';
+    await db.exercisePreferences.put({
+      exerciseId,
+      value: 'like',
+      revision: 1,
+      updatedAt: '2026-08-05T08:00:00.000Z',
+      syncState: 'pending',
+    });
+    await db.outbox.put({
+      id: mutationId,
+      sequence: 1,
+      createdAt: '2026-08-05T08:00:00.000Z',
+      mutation: {
+        type: 'exercise-preference.set',
+        payload: {
+          clientMutationId: mutationId,
+          exerciseId,
+          value: 'like',
+          baseRevision: 1,
+        },
+      },
+    });
+    vi.stubGlobal('navigator', { onLine: true });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>().mockResolvedValue(
+        Response.json(
+          {
+            code: 'revision_conflict',
+            error: 'The record changed on another client',
+            current: {
+              exerciseId,
+              value: 'dislike',
+              revision: 2,
+              updatedAt: '2026-08-05T08:01:00.000Z',
+            },
+          },
+          { status: 409 },
+        ),
+      ),
+    );
+
+    await expect(flushOutbox()).resolves.toBe('success');
+
+    expect(await db.exercisePreferences.get(exerciseId)).toMatchObject({ syncState: 'conflict' });
+    expect(await db.conflicts.get(mutationId)).toMatchObject({
+      entityType: 'exercisePreference',
+      entityId: exerciseId,
+      current: { value: 'dislike', revision: 2 },
+    });
+
+    await resolveConflict(mutationId, 'server');
+
+    expect(await db.conflicts.count()).toBe(0);
+    expect(await db.exercisePreferences.get(exerciseId)).toMatchObject({
+      value: 'dislike',
+      revision: 2,
+      syncState: 'synced',
+    });
+  });
+
+  it('rebases a preference conflict when the athlete keeps the local version', async () => {
+    const exerciseId = '10000000-0000-4000-8000-000000000004';
+    const mutationId = '94000000-0000-4000-8000-000000000002';
+    await db.exercisePreferences.put({
+      exerciseId,
+      value: 'like',
+      revision: 1,
+      updatedAt: '2026-08-05T08:00:00.000Z',
+      syncState: 'pending',
+    });
+    await db.outbox.put({
+      id: mutationId,
+      sequence: 1,
+      createdAt: '2026-08-05T08:00:00.000Z',
+      mutation: {
+        type: 'exercise-preference.set',
+        payload: {
+          clientMutationId: mutationId,
+          exerciseId,
+          value: 'like',
+          baseRevision: 1,
+        },
+      },
+    });
+    vi.stubGlobal('navigator', { onLine: true });
+    let requestCount = 0;
+    const fetchMock = vi.fn<typeof fetch>(async (_input, init) => {
+      requestCount += 1;
+      if (requestCount === 1) {
+        return Response.json(
+          {
+            code: 'revision_conflict',
+            error: 'The record changed on another client',
+            current: {
+              exerciseId,
+              value: 'dislike',
+              revision: 2,
+              updatedAt: '2026-08-05T08:01:00.000Z',
+            },
+          },
+          { status: 409 },
+        );
+      }
+      const sent = JSON.parse(String(init?.body)) as SyncMutation;
+      assertPreferenceMutation(sent);
+      expect(sent.payload).toMatchObject({ exerciseId, value: 'like', baseRevision: 2 });
+      return Response.json({
+        entityType: 'exercisePreference',
+        entity: {
+          exerciseId,
+          value: 'like',
+          revision: 3,
+          updatedAt: '2026-08-05T08:02:00.000Z',
+        },
+        duplicate: false,
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(flushOutbox()).resolves.toBe('success');
+    await resolveConflict(mutationId, 'mine');
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(await db.conflicts.count()).toBe(0);
+    expect(await db.outbox.count()).toBe(0);
+    expect(await db.exercisePreferences.get(exerciseId)).toMatchObject({
+      value: 'like',
+      revision: 3,
+      syncState: 'synced',
+    });
+  });
 });
+
+function assertPreferenceMutation(
+  mutation: SyncMutation,
+): asserts mutation is Extract<SyncMutation, { type: 'exercise-preference.set' }> {
+  expect(mutation.type).toBe('exercise-preference.set');
+}
 
 async function queueLocalMeasurement() {
   await db.measurements.put({

@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 
-import type { CurrentUser } from '@mighty-cringe/contracts';
+import type { CurrentUser, Exercise, ExercisePreferenceValue } from '@mighty-cringe/contracts';
 import { useLiveQuery } from 'dexie-react-hooks';
 
 import { db, type SyncConflict } from '../lib/db';
 import { getNotificationSettings } from '../lib/notifications';
-import { tr, updateProfilePreferences, usePreferences } from '../lib/preferences';
+import { exerciseName, tr, updateProfilePreferences, usePreferences } from '../lib/preferences';
 import { getTrainerRelationship } from '../lib/trainer';
 import { hasAcceptedVoiceConsent, loadVoiceConfig } from '../lib/voice';
 import { DataExportPanel } from './DataExportPanel';
@@ -516,6 +516,8 @@ function ConflictSettings({
   onResolveConflict: (conflict: SyncConflict, strategy: 'server' | 'mine') => void;
 }) {
   const { locale } = usePreferences();
+  const exercises = useLiveQuery(() => db.exercises.toArray(), [], []);
+  const preferences = useLiveQuery(() => db.exercisePreferences.toArray(), [], []);
   return (
     <section className="conflict-panel" aria-live="polite">
       <p className="eyebrow">{tr(locale, 'Нужен выбор', 'Choose a version')}</p>
@@ -534,8 +536,11 @@ function ConflictSettings({
       )}
       {conflicts.map((conflict) => (
         <article className="conflict-card" key={conflict.id}>
-          <strong>{conflictLabel(conflict, locale)}</strong>
+          <strong>{conflictLabel(conflict, exercises, locale)}</strong>
           <small>{conflict.message}</small>
+          {conflict.entityType === 'exercisePreference' && (
+            <small>{preferenceConflictSummary(conflict, preferences, locale)}</small>
+          )}
           <div>
             <button
               className="button ghost small"
@@ -561,10 +566,48 @@ function ConflictSettings({
   );
 }
 
-function conflictLabel(conflict: SyncConflict, locale: CurrentUser['locale']) {
+function conflictLabel(
+  conflict: SyncConflict,
+  exercises: Exercise[],
+  locale: CurrentUser['locale'],
+) {
   if (conflict.entityType === 'workout') return tr(locale, 'Тренировка', 'Workout');
   if (conflict.entityType === 'set') return tr(locale, 'Подход', 'Set');
-  return tr(locale, 'Замер тела', 'Body measurement');
+  if (conflict.entityType === 'measurement') return tr(locale, 'Замер тела', 'Body measurement');
+  const exercise = exercises.find((item) => item.id === conflict.entityId);
+  return exercise
+    ? tr(
+        locale,
+        `Отношение: ${exerciseName(exercise, locale)}`,
+        `Preference: ${exerciseName(exercise, locale)}`,
+      )
+    : tr(locale, 'Отношение к упражнению', 'Exercise preference');
+}
+
+function preferenceConflictSummary(
+  conflict: SyncConflict,
+  preferences: Array<{ exerciseId: string; value: ExercisePreferenceValue | null }>,
+  locale: CurrentUser['locale'],
+) {
+  const local = preferences.find((item) => item.exerciseId === conflict.entityId)?.value ?? null;
+  const server =
+    conflict.current && 'exerciseId' in conflict.current && !('workoutId' in conflict.current)
+      ? conflict.current.value
+      : null;
+  return tr(
+    locale,
+    `На устройстве: ${preferenceValueLabel(local, locale)} · На сервере: ${preferenceValueLabel(server, locale)}`,
+    `On device: ${preferenceValueLabel(local, locale)} · On server: ${preferenceValueLabel(server, locale)}`,
+  );
+}
+
+function preferenceValueLabel(
+  value: ExercisePreferenceValue | null,
+  locale: CurrentUser['locale'],
+) {
+  if (value === 'like') return tr(locale, 'Нравится', 'Like');
+  if (value === 'dislike') return tr(locale, 'Не нравится', 'Dislike');
+  return tr(locale, 'Без отметки', 'Unmarked');
 }
 
 function roleLabel(role: CurrentUser['role'], locale: CurrentUser['locale']) {
@@ -580,6 +623,7 @@ function canKeepMine(conflict: SyncConflict) {
     conflict.mutation.type === 'workout.delete' ||
     conflict.mutation.type === 'set.update' ||
     conflict.mutation.type === 'measurement.update' ||
+    conflict.mutation.type === 'exercise-preference.set' ||
     (conflict.mutation.type === 'set.delete' && conflict.current !== null) ||
     (conflict.mutation.type === 'measurement.delete' && conflict.current !== null)
   );

@@ -18,6 +18,7 @@ import { sql } from 'drizzle-orm';
 export const roleEnum = pgEnum('role', ['athlete', 'admin', 'trainer', 'superadmin']);
 export const exerciseScopeEnum = pgEnum('exercise_scope', ['global', 'user']);
 export const exerciseTagEnum = pgEnum('exercise_tag', ['mighty', 'normal', 'cringe']);
+export const exercisePreferenceValueEnum = pgEnum('exercise_preference_value', ['like', 'dislike']);
 export const setEntrySourceEnum = pgEnum('set_entry_source', [
   'manual',
   'natural_text',
@@ -160,6 +161,22 @@ export const exercises = pgTable(
     ...timestamps,
   },
   (table) => [index('exercise_scope_owner_idx').on(table.scope, table.ownerId)],
+);
+
+export const exercisePreferences = pgTable(
+  'exercise_preferences',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    exerciseId: uuid('exercise_id')
+      .notNull()
+      .references(() => exercises.id, { onDelete: 'cascade' }),
+    value: exercisePreferenceValueEnum('value'),
+    revision: integer('revision').notNull().default(1),
+    ...timestamps,
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.exerciseId] })],
 );
 
 export const workouts = pgTable(
