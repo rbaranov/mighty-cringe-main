@@ -9,6 +9,7 @@ import {
 
 import { createManualExercise } from '../lib/exercises';
 import { ExerciseDiscoveryPanel } from './ExerciseDiscoveryPanel';
+import { KeyboardSafeButton } from './KeyboardSafeButton';
 
 type Muscle = Exercise['primaryMuscles'][number];
 
@@ -86,9 +87,13 @@ export function ExerciseAddPanel({
   if (mode === 'online') {
     return (
       <div className="exercise-add-panel">
-        <button className="exercise-add-back" onClick={() => setMode('choice')} type="button">
+        <KeyboardSafeButton
+          className="exercise-add-back"
+          onPress={() => setMode('choice')}
+          type="button"
+        >
           ← {tr(locale, 'К вариантам добавления', 'Back to add options')}
-        </button>
+        </KeyboardSafeButton>
         <ExerciseDiscoveryPanel
           autoSearch
           existingExercises={existingExercises}
@@ -106,9 +111,13 @@ export function ExerciseAddPanel({
         className="exercise-add-panel manual"
         aria-label={tr(locale, 'Создать упражнение', 'Create exercise')}
       >
-        <button className="exercise-add-back" onClick={() => setMode('choice')} type="button">
+        <KeyboardSafeButton
+          className="exercise-add-back"
+          onPress={() => setMode('choice')}
+          type="button"
+        >
           ← {tr(locale, 'К вариантам добавления', 'Back to add options')}
-        </button>
+        </KeyboardSafeButton>
         <strong>{tr(locale, 'Быстро создать своё', 'Quickly create your own')}</strong>
         <p>
           {tr(
@@ -132,18 +141,18 @@ export function ExerciseAddPanel({
           <legend>{tr(locale, 'Основная мышца', 'Primary muscle')}</legend>
           <div className="manual-muscle-grid">
             {muscleGroups.map((item) => (
-              <button
+              <KeyboardSafeButton
                 aria-pressed={muscle === item}
                 className={muscle === item ? 'active' : ''}
                 key={item}
-                onClick={() => {
+                onPress={() => {
                   setMuscle(item);
                   setError(null);
                 }}
                 type="button"
               >
                 {muscleName(item, locale)}
-              </button>
+              </KeyboardSafeButton>
             ))}
           </div>
         </fieldset>
@@ -152,16 +161,16 @@ export function ExerciseAddPanel({
             {error}
           </p>
         )}
-        <button
+        <KeyboardSafeButton
           className="button primary full"
           disabled={saving || !name.trim() || !muscle}
-          onClick={() => void saveManualExercise()}
+          onPress={() => void saveManualExercise()}
           type="button"
         >
           {saving
             ? tr(locale, 'Сохраняю…', 'Saving…')
             : tr(locale, 'Создать и использовать', 'Create and use')}
-        </button>
+        </KeyboardSafeButton>
       </section>
     );
   }
@@ -183,19 +192,23 @@ export function ExerciseAddPanel({
           'Create it now or ask the app to check online sources.',
         )}
       </p>
-      <button className="button primary full" onClick={() => setMode('manual')} type="button">
+      <KeyboardSafeButton
+        className="button primary full"
+        onPress={() => setMode('manual')}
+        type="button"
+      >
         {tr(locale, `Создать «${query.trim()}»`, `Create “${query.trim()}”`)}
-      </button>
-      <button
+      </KeyboardSafeButton>
+      <KeyboardSafeButton
         className="button ghost full"
         disabled={!online}
-        onClick={() => setMode('online')}
+        onPress={() => setMode('online')}
         type="button"
       >
         {online
           ? tr(locale, 'Найти информацию в интернете', 'Find information online')
           : tr(locale, 'Интернет-поиск недоступен офлайн', 'Online search is unavailable offline')}
-      </button>
+      </KeyboardSafeButton>
     </section>
   );
 }

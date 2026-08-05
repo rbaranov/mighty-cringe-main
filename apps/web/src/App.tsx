@@ -26,6 +26,7 @@ import { WorkoutTimingSheet } from './components/WorkoutTimingSheet';
 import { AutoFinishNotice, WorkoutInactivityBanner } from './components/WorkoutLifecycleNotices';
 import { ConfirmationSheet } from './components/ConfirmationSheet';
 import { ExerciseAddPanel } from './components/ExerciseAddPanel';
+import { KeyboardSafeButton } from './components/KeyboardSafeButton';
 import { ExerciseDiscoveryPanel } from './components/ExerciseDiscoveryPanel';
 import { ExerciseEditorView } from './components/ExerciseEditorView';
 import { ExerciseEnrichmentPanel } from './components/ExerciseEnrichmentPanel';
@@ -119,6 +120,7 @@ import {
   displayedWorkoutDurationSeconds,
   editWorkoutTimingChanges,
   finishWorkoutChanges,
+  formatLiveWorkoutDurationSeconds,
   formatWorkoutDurationSeconds,
   resumeWorkoutChanges,
   workoutAutoFinishAfterMs,
@@ -1851,9 +1853,21 @@ function WorkoutView({
 
   useEffect(() => {
     if (!activeWorkout || editingHistory) return;
-    setElapsedAt(Date.now());
-    const interval = window.setInterval(() => setElapsedAt(Date.now()), 30_000);
-    return () => window.clearInterval(interval);
+    const refreshElapsedAt = () => setElapsedAt(Date.now());
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') refreshElapsedAt();
+    };
+    refreshElapsedAt();
+    const interval = window.setInterval(refreshElapsedAt, 30_000);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    window.addEventListener('focus', refreshElapsedAt);
+    window.addEventListener('pageshow', refreshElapsedAt);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+      window.removeEventListener('focus', refreshElapsedAt);
+      window.removeEventListener('pageshow', refreshElapsedAt);
+    };
   }, [activeWorkout?.id, editingHistory]);
 
   if (!activeWorkout) {
@@ -2132,7 +2146,7 @@ function WorkoutView({
                   hour: '2-digit',
                   minute: '2-digit',
                 }).format(new Date(activeWorkout.startedAt))
-              : formatWorkoutDurationSeconds(
+              : formatLiveWorkoutDurationSeconds(
                   displayedWorkoutDurationSeconds(activeWorkout, elapsedAt),
                   locale,
                 )}
@@ -2878,9 +2892,9 @@ function CatalogView({
           !showAddOptions &&
           query.trim().length >= 2 &&
           filteredExercises.length > 0 && (
-            <button
+            <KeyboardSafeButton
               className="catalog-add-alternative"
-              onClick={() => setShowAddOptions(true)}
+              onPress={() => setShowAddOptions(true)}
               type="button"
             >
               {tr(
@@ -2888,7 +2902,7 @@ function CatalogView({
                 'Не то упражнение? Создать новое или найти в интернете',
                 'Not the right exercise? Create a new one or search online',
               )}
-            </button>
+            </KeyboardSafeButton>
           )}
         <div
           aria-label={tr(locale, 'Личное отношение', 'Personal preference')}
@@ -3276,13 +3290,9 @@ function ExercisePickerSheet({
                 ))}
               {(options.length > 0 || explicitDislikedOptions.length > 0) &&
                 normalizedQuery.length >= 2 && (
-                  <button
+                  <KeyboardSafeButton
                     className="picker-discovery-link"
-                    onClick={() => setShowAddOptions(true)}
-                    onPointerDown={(event) => {
-                      event.preventDefault();
-                      setShowAddOptions(true);
-                    }}
+                    onPress={() => setShowAddOptions(true)}
                     type="button"
                   >
                     {tr(
@@ -3290,7 +3300,7 @@ function ExercisePickerSheet({
                       'Не то упражнение? Создать новое или найти в интернете',
                       'Not the right exercise? Create a new one or search online',
                     )}
-                  </button>
+                  </KeyboardSafeButton>
                 )}
             </>
           )}

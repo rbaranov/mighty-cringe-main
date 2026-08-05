@@ -105,3 +105,9 @@ export function formatWorkoutDurationSeconds(totalSeconds: number, locale: 'ru' 
   if (!minutes) return locale === 'en' ? `${hours} hr` : `${hours} ч`;
   return locale === 'en' ? `${hours} hr ${minutes} min` : `${hours} ч ${minutes} мин`;
 }
+
+export function formatLiveWorkoutDurationSeconds(totalSeconds: number, locale: 'ru' | 'en') {
+  const formatted = formatWorkoutDurationSeconds(totalSeconds, locale);
+  if (!formatted.includes(' ')) return formatted;
+  return formatted.replace(locale === 'en' ? ' hr ' : ' ч ', locale === 'en' ? ' hr · ' : ' ч · ');
+}

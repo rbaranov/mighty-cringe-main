@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { Exercise } from '@mighty-cringe/contracts';
 
 import type { LocalSet } from '../lib/db';
-import { SetSheet, setWeightStep } from './SetSheet';
+import { keyboardViewportStyle, SetSheet, setWeightStep } from './SetSheet';
 import { parseDecimalInput, stepNumericInput } from './setSheetNumbers';
 
 const exercise: Exercise = {
@@ -85,5 +85,32 @@ describe('SetSheet', () => {
     expect(stepNumericInput('17,5', -1, setWeightStep, 0, 1000, 'ru')).toBe('16,5');
     expect(stepNumericInput('99', 1, 1, 1, 100, 'en')).toBe('100');
     expect(stepNumericInput('100', 1, 1, 1, 100, 'en')).toBe('100');
+  });
+
+  it('uses the visual viewport only while the software keyboard covers the focused form', () => {
+    expect(
+      keyboardViewportStyle({
+        focusedInput: true,
+        layoutHeight: 844,
+        viewportHeight: 510,
+        viewportOffsetTop: 0,
+      }),
+    ).toEqual({ top: '0px', bottom: 'auto', height: '510px' });
+    expect(
+      keyboardViewportStyle({
+        focusedInput: false,
+        layoutHeight: 844,
+        viewportHeight: 510,
+        viewportOffsetTop: 0,
+      }),
+    ).toBeUndefined();
+    expect(
+      keyboardViewportStyle({
+        focusedInput: true,
+        layoutHeight: 844,
+        viewportHeight: 800,
+        viewportOffsetTop: 0,
+      }),
+    ).toBeUndefined();
   });
 });

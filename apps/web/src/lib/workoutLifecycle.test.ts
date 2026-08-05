@@ -5,6 +5,7 @@ import {
   displayedWorkoutDurationSeconds,
   editWorkoutTimingChanges,
   finishWorkoutChanges,
+  formatLiveWorkoutDurationSeconds,
   formatWorkoutDurationSeconds,
   resumeWorkoutChanges,
   workoutInactivityState,
@@ -68,6 +69,12 @@ describe('workout lifecycle', () => {
   it('shows the same nearest minute that the timing editor opens with', () => {
     expect(formatWorkoutDurationSeconds(17_159, 'ru')).toBe('4 ч 46 мин');
     expect(formatWorkoutDurationSeconds(17_159, 'en')).toBe('4 hr 46 min');
+  });
+
+  it('keeps hours and minutes visually distinct in the condensed live timer', () => {
+    expect(formatLiveWorkoutDurationSeconds(3_720, 'ru')).toBe('1 ч · 2 мин');
+    expect(formatLiveWorkoutDurationSeconds(3_720, 'en')).toBe('1 hr · 2 min');
+    expect(formatLiveWorkoutDurationSeconds(2_520, 'ru')).toBe('42 мин');
   });
 });
 

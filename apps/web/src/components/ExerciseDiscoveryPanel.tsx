@@ -14,6 +14,7 @@ import {
   getExerciseDiscovery,
   startExerciseDiscovery,
 } from '../lib/exercises';
+import { KeyboardSafeButton } from './KeyboardSafeButton';
 
 export function ExerciseDiscoveryPanel({
   autoSearch = false,
@@ -212,16 +213,16 @@ export function ExerciseDiscoveryPanel({
           type="search"
           value={query}
         />
-        <button
+        <KeyboardSafeButton
           className="button primary"
           disabled={searching || query.trim().length < 2}
-          onClick={() => void search()}
+          onPress={() => void search()}
           type="button"
         >
           {searching
             ? tr(locale, `Ищу · ${elapsedSeconds} с`, `Searching · ${elapsedSeconds}s`)
             : tr(locale, 'Найти', 'Find')}
-        </button>
+        </KeyboardSafeButton>
       </div>
       <p className="discovery-hint">
         {tr(

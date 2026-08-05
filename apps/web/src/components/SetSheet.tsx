@@ -42,6 +42,7 @@ type Props = {
 };
 
 export const setWeightStep = 1;
+const softwareKeyboardThreshold = 80;
 
 export function SetSheet({
   exercise,
@@ -370,27 +371,70 @@ function useKeyboardViewport(
       return;
     }
     const viewport = window.visualViewport;
+    let deferredSync = 0;
     const sync = () => {
-      setStyle({
-        top: `${viewport.offsetTop}px`,
-        bottom: 'auto',
-        height: `${viewport.height}px`,
+      const focused = document.activeElement;
+      const focusedInput =
+        focused instanceof HTMLInputElement && Boolean(sheetRef.current?.contains(focused));
+      const nextStyle = keyboardViewportStyle({
+        focusedInput,
+        layoutHeight: window.innerHeight,
+        viewportHeight: viewport.height,
+        viewportOffsetTop: viewport.offsetTop,
       });
+      setStyle(nextStyle);
+      if (!nextStyle) return;
       window.requestAnimationFrame(() => {
-        const focused = document.activeElement;
         if (focused instanceof HTMLElement && sheetRef.current?.contains(focused)) {
           focused.scrollIntoView({ block: 'center' });
         }
       });
     };
+    const syncAfterFocusChange = () => window.requestAnimationFrame(sync);
+    const syncAfterOrientationChange = () => {
+      setStyle(undefined);
+      window.clearTimeout(deferredSync);
+      deferredSync = window.setTimeout(sync, 250);
+    };
     sync();
     viewport.addEventListener('resize', sync);
     viewport.addEventListener('scroll', sync);
+    window.addEventListener('resize', sync);
+    window.addEventListener('orientationchange', syncAfterOrientationChange);
+    window.addEventListener('pageshow', sync);
+    document.addEventListener('focusin', syncAfterFocusChange);
+    document.addEventListener('focusout', syncAfterFocusChange);
     return () => {
+      window.clearTimeout(deferredSync);
       viewport.removeEventListener('resize', sync);
       viewport.removeEventListener('scroll', sync);
+      window.removeEventListener('resize', sync);
+      window.removeEventListener('orientationchange', syncAfterOrientationChange);
+      window.removeEventListener('pageshow', sync);
+      document.removeEventListener('focusin', syncAfterFocusChange);
+      document.removeEventListener('focusout', syncAfterFocusChange);
     };
   }, [active, sheetRef]);
 
   return style;
+}
+
+export function keyboardViewportStyle({
+  focusedInput,
+  layoutHeight,
+  viewportHeight,
+  viewportOffsetTop,
+}: {
+  focusedInput: boolean;
+  layoutHeight: number;
+  viewportHeight: number;
+  viewportOffsetTop: number;
+}): CSSProperties | undefined {
+  const occludedHeight = layoutHeight - viewportHeight - viewportOffsetTop;
+  if (!focusedInput || occludedHeight < softwareKeyboardThreshold) return undefined;
+  return {
+    top: `${viewportOffsetTop}px`,
+    bottom: 'auto',
+    height: `${viewportHeight}px`,
+  };
 }
