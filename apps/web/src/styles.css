@@ -4379,11 +4379,16 @@ body {
 }
 
 .settings-about-link {
+  display: inline-flex;
   flex: none;
-  margin-bottom: 12px;
+  min-height: 44px;
+  align-items: center;
+  margin-bottom: 2px;
   color: var(--accent);
-  font-size: 10px;
+  font-size: 14px;
   font-weight: 900;
+  line-height: 1.2;
+  text-decoration-thickness: 2px;
   text-underline-offset: 3px;
 }
 
@@ -7080,4 +7085,488 @@ body {
   min-width: 34px;
   height: 34px;
   margin-left: auto;
+}
+
+/* Quieter editorial hierarchy: fills and spacing group routine content; strong outlines are
+   reserved for focus, selection, warnings, conflicts and the few deliberate brand landmarks. */
+:root {
+  --line: #d8cbb4;
+  --line-strong: #b5a58a;
+}
+
+/* Everyday actions read as filled touch targets instead of another outlined rectangle. */
+.button {
+  border: 0;
+}
+
+.button.ghost,
+.plan-controls button,
+.set-controls button,
+.month-controls button,
+.measurement-actions button,
+.trainer-console-link {
+  border: 0;
+  background: var(--surface-soft);
+}
+
+.button.primary,
+.button.danger,
+.explain-entry {
+  border: 0;
+}
+
+.button:focus-visible,
+.favorite-toggle:focus-visible,
+.exercise-options-trigger:focus-visible,
+.add-set:focus-visible,
+.set-chip:focus-visible,
+.picker-option:focus-visible,
+.settings-menu-item:focus-visible,
+.catalog-exercise-link:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Tiny metadata uses color and fill; repeated miniature frames made dense workout rows shimmer. */
+.tag,
+.tag.mighty,
+.tag.cringe,
+.superset-label,
+.exercise-preference-badge,
+.picker-option-muscle,
+.exercise-detail-meta span,
+.previous-workouts article span,
+.profile-card > span,
+.self-measured,
+.read-only-badge,
+.confidence,
+.confidence.high,
+.confidence.low {
+  border: 0;
+}
+
+/* Workout planning and logging keep compact cards, but no longer box every card, control and set. */
+.draft-plan-list .exercise-card,
+.workout-live .exercise-card,
+.favorite-workout-card {
+  border: 0;
+  background: var(--surface);
+  box-shadow: inset 0 -1px 0 var(--line);
+}
+
+.workout-live .exercise-card.superset-member,
+.draft-plan-list .exercise-card.superset-member {
+  border-left: 0;
+}
+
+.exercise-options-trigger,
+.workout-live .exercise-options-trigger {
+  border: 0;
+  background: var(--surface-soft);
+}
+
+.add-set,
+.workout-live .add-set {
+  border: 0;
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+}
+
+.set-chip,
+.workout-live .compact-set-list .set-chip {
+  border: 0;
+  background: var(--surface-soft);
+}
+
+.set-chip.conflict {
+  border: 1px solid var(--danger);
+}
+
+.add-exercise,
+.workout-live .add-exercise,
+.empty-plan,
+.removed-sets {
+  border: 0;
+  background: var(--surface-soft);
+}
+
+.add-exercise,
+.workout-live .add-exercise {
+  box-shadow: inset 0 1px 0 var(--line);
+}
+
+.favorite-toggle,
+.favorite-toggle.active {
+  border: 0;
+  background: var(--accent-soft);
+}
+
+/* Catalog and settings become calm rows on paper, separated by whitespace and a hairline. */
+.catalog-filters,
+.catalog,
+.catalog-exercise-row,
+.settings-menu-item,
+.profile-card,
+.setting,
+.trainer-console-link,
+.data-export-card,
+.trainer-invite-card,
+.pending-invites,
+.athlete-read-only-details > section,
+.trainer-roster > button {
+  border: 0;
+  background: var(--surface);
+  box-shadow: inset 0 -1px 0 var(--line);
+}
+
+.catalog-filters {
+  background: var(--surface-soft);
+  box-shadow: none;
+}
+
+.catalog-symbol,
+.settings-menu-icon,
+.data-export-heading > span,
+.data-export-card > .data-export-status,
+.voice-config-facts > div {
+  border: 0;
+  background: var(--surface-soft);
+}
+
+.catalog-filter-chips button,
+.exercise-preference-controls button,
+.manual-muscle-grid button,
+.muscle-choice-grid button {
+  border: 0;
+  background: var(--surface);
+}
+
+.catalog-filter-chips button.active,
+.exercise-preference-controls button.active,
+.manual-muscle-grid button.active,
+.muscle-choice-grid button.active {
+  border: 0;
+}
+
+.exercise-preference-controls.compact {
+  border-left: 0;
+  box-shadow: inset 1px 0 0 var(--line);
+}
+
+.exercise-preference-controls.compact button + button {
+  border-top-color: var(--line);
+}
+
+/* Progress sections no longer stack an outer frame around already structured content. */
+.progress-summary-card {
+  border: 0;
+  background: var(--surface-soft);
+}
+
+.progress-summary-card.active {
+  border: 0;
+  box-shadow: inset 4px 0 0 var(--accent);
+}
+
+.progress-section,
+.body-progress {
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.progress-section + .progress-section,
+.progress-section + .body-progress {
+  margin-top: 32px;
+}
+
+.training-volume-card,
+.calendar-details article,
+.strength-history article,
+.measurement-trends > article,
+.measurement-history-toggle,
+.measurement-history button,
+.measurement-detail,
+.measurement-values > div,
+.self-measured-toggle,
+.measurement-form-grid > label {
+  border: 0;
+  background: var(--surface-soft);
+}
+
+.calendar-details article,
+.measurement-detail {
+  background: var(--surface);
+  box-shadow: inset 0 -1px 0 var(--line);
+}
+
+.one-rep-explainer {
+  border: 0;
+}
+
+.month-controls button,
+.muscle-filters button {
+  border: 0;
+  background: var(--surface-soft);
+}
+
+.calendar-day {
+  border-color: transparent;
+}
+
+.calendar-day.today,
+.calendar-day.selected {
+  border-color: var(--accent);
+}
+
+/* Form fields keep a clear editable baseline and an explicit focus state without a full box. */
+.catalog-filters input,
+.exercise-add-panel input,
+.exercise-editor-fields input,
+.exercise-editor-notes textarea,
+.exercise-search,
+.natural-input textarea,
+.exercise-discovery-search input,
+.form-grid input,
+.progress-select select,
+.measurement-import-sheet textarea,
+.measurement-date input,
+.measurement-form-grid input,
+.push-settings-grid input,
+.push-settings-grid select,
+.trainer-invite-card input,
+.share-link input {
+  border: 0;
+  border-bottom: 2px solid var(--line-strong);
+  border-radius: 0;
+  background: var(--surface);
+}
+
+.catalog-filters input:focus,
+.exercise-add-panel input:focus,
+.exercise-editor-fields input:focus,
+.exercise-editor-notes textarea:focus,
+.exercise-search:focus,
+.natural-input textarea:focus,
+.exercise-discovery-search input:focus,
+.form-grid input:focus,
+.progress-select select:focus,
+.measurement-import-sheet textarea:focus,
+.measurement-date input:focus,
+.measurement-form-grid input:focus,
+.push-settings-grid input:focus,
+.push-settings-grid select:focus,
+.trainer-invite-card input:focus,
+.share-link input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 3px 0 rgb(227 38 38 / 12%);
+  outline: 0;
+}
+
+.input-modes,
+.segmented-control {
+  border: 0;
+  background: var(--surface-soft);
+}
+
+.segmented-control button,
+.input-modes button,
+.input-modes button.active {
+  border: 0;
+}
+
+.set-stepper-control button {
+  border: 0;
+  background: var(--surface-soft);
+}
+
+.rir-help > button {
+  border-color: var(--line-strong);
+}
+
+/* Sheets retain their red editorial edge, while the navy container outline disappears. */
+.sheet {
+  border: 0;
+  box-shadow:
+    0 -4px 0 var(--accent),
+    0 -18px 42px rgb(7 29 45 / 16%);
+}
+
+.sheet-handle {
+  width: 52px;
+  height: 4px;
+}
+
+.replacement-field,
+.parsed-set,
+.exercise-add-panel,
+.exercise-discovery,
+.discovery-candidate,
+.discovery-progress,
+.exercise-enrichment,
+.picker-empty,
+.picker-discovery-link,
+.exercise-actions-grid button,
+.exercise-detail-actions,
+.exercise-detail-section {
+  border: 0;
+  background: var(--surface);
+}
+
+.replacement-field {
+  border-left: 4px solid var(--accent);
+  background: var(--surface);
+}
+
+.replacement-command-preview .replacement-target {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.picker-option,
+.exercise-picker .picker-option {
+  border: 0;
+  background: var(--surface);
+  box-shadow: inset 0 -1px 0 var(--line);
+}
+
+.picker-muscle-heading {
+  border-bottom-color: var(--line);
+}
+
+.exercise-actions-grid button {
+  background: var(--surface-soft);
+}
+
+.exercise-actions-grid .danger-action {
+  border: 0;
+}
+
+.parsed-set dl > div,
+.discovery-facts > div {
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+}
+
+.exercise-detail-actions {
+  background: var(--surface-soft);
+  box-shadow: none;
+}
+
+.progress-empty,
+.catalog-empty {
+  border: 0;
+  background: var(--surface-soft);
+}
+
+.set-sheet-actions,
+.exercise-enrichment-preview dl > div {
+  border-color: var(--line);
+}
+
+/* State and safety surfaces intentionally keep a visible boundary. */
+.conflict-panel,
+.inline-confirmation,
+.connectivity-notice.error,
+.auth-error,
+.import-result.error,
+.exercise-preference-warning {
+  border-width: 1.5px;
+  border-style: solid;
+}
+
+/* Acceptance follow-up: keep compact workout metadata and catalog actions proportionate. */
+.live-help {
+  margin-bottom: 8px;
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.live-help summary {
+  font-weight: 850;
+}
+
+.workout-live .compact-set-list {
+  grid-template-columns: repeat(3, minmax(82px, 130px));
+  justify-content: start;
+}
+
+.catalog-exercise-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.catalog-exercise-row > .catalog-exercise-link {
+  padding-right: 4px;
+}
+
+.catalog-exercise-row .catalog-exercise-link strong {
+  white-space: normal;
+}
+
+.exercise-preference-controls.compact {
+  display: flex;
+  align-self: center;
+  gap: 4px;
+  padding: 0 8px 0 4px;
+  box-shadow: none;
+}
+
+.exercise-preference-controls.compact button {
+  width: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 2px;
+  background: var(--surface-soft);
+}
+
+.exercise-preference-controls.compact button + button {
+  border-top: 0;
+}
+
+@media (max-width: 600px) {
+  .workout-timing-summary {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 8px;
+    border: 0;
+    margin: 8px 0;
+    padding: 10px 12px;
+    background: var(--surface-soft);
+    box-shadow: none;
+  }
+
+  .workout-timing-summary > div {
+    min-width: 0;
+  }
+
+  .workout-timing-summary span {
+    font-size: 10px;
+  }
+
+  .workout-timing-summary strong {
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .workout-timing-summary .button {
+    width: auto;
+    min-height: 44px;
+    margin-left: 0;
+    padding-inline: 9px;
+    font-size: 10px;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 360px) {
+  .workout-timing-summary {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .workout-timing-summary .button {
+    width: 100%;
+    grid-column: 1 / -1;
+  }
 }
