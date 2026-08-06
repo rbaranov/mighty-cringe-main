@@ -561,6 +561,12 @@ function DayDetails({
                 <em>{tr(locale, 'синхронизируется', 'syncing')}</em>
               )}
             </div>
+            {workout?.notes && (
+              <div className="workout-history-note">
+                <strong>{tr(locale, 'Комментарий', 'Note')}</strong>
+                <span>{workout.notes}</span>
+              </div>
+            )}
             {workout && (
               <div className="workout-history-actions">
                 <button

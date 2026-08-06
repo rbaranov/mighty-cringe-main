@@ -23,6 +23,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 
 import { SetSheet } from './components/SetSheet';
 import { WorkoutTimingSheet } from './components/WorkoutTimingSheet';
+import { WorkoutNotesSheet } from './components/WorkoutNotesSheet';
 import { AutoFinishNotice, WorkoutInactivityBanner } from './components/WorkoutLifecycleNotices';
 import { ConfirmationSheet } from './components/ConfirmationSheet';
 import { ExerciseAddPanel } from './components/ExerciseAddPanel';
@@ -116,6 +117,7 @@ import {
 } from './lib/workoutPlan';
 import { buildSuggestedExercises } from './lib/workoutSuggestions';
 import { saveWorkoutFavorite } from './lib/workoutFavorites';
+import { saveWorkoutNotes } from './lib/workoutNotes';
 import {
   displayedWorkoutDurationSeconds,
   editWorkoutTimingChanges,
@@ -627,6 +629,11 @@ function AuthenticatedAppContent({
 
   async function updateWorkoutFavorite(workout: LocalWorkout, isFavorite: boolean) {
     await saveWorkoutFavorite(workout, isFavorite);
+  }
+
+  async function updateWorkoutNotes(workout: LocalWorkout, notes: string) {
+    await saveWorkoutNotes(workout, notes);
+    if (workout.endedAt === null) setLifecycleNow(Date.now());
   }
 
   function requestToggleWorkoutFavorite(workout: LocalWorkout) {
@@ -1541,6 +1548,7 @@ function AuthenticatedAppContent({
                 onResumeAutoFinished={() => {
                   if (autoFinishedWorkout) requestResumeWorkout(autoFinishedWorkout);
                 }}
+                onSaveNotes={updateWorkoutNotes}
                 onStart={startWorkout}
                 onStillTraining={() => void touchActiveWorkout()}
                 onToggleSuperset={(itemId) =>
@@ -1811,6 +1819,7 @@ function WorkoutView({
   onRepeatFavorite,
   onReplaceExercise,
   onResumeAutoFinished,
+  onSaveNotes,
   onStillTraining,
   onToggleSuperset,
   recovered,
@@ -1842,6 +1851,7 @@ function WorkoutView({
   onRepeatFavorite: (workout: LocalWorkout) => void;
   onReplaceExercise: (itemId: string) => void;
   onResumeAutoFinished: () => void;
+  onSaveNotes: (workout: LocalWorkout, notes: string) => Promise<void>;
   onStillTraining: () => void;
   onToggleSuperset: (itemId: string) => void;
   recovered: boolean;
@@ -1849,6 +1859,7 @@ function WorkoutView({
 }) {
   const { locale, unitSystem } = usePreferences();
   const [elapsedAt, setElapsedAt] = useState(() => Date.now());
+  const [notesOpen, setNotesOpen] = useState(false);
   const [optionsItemId, setOptionsItemId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -2260,8 +2271,25 @@ function WorkoutView({
             </span>
           </div>
         )}
-        <button className="button ghost full add-exercise" onClick={onAddExercise} type="button">
-          ＋ {tr(locale, 'Добавить упражнение', 'Add exercise')}
+        <button
+          className="button ghost full add-exercise workout-list-action"
+          onClick={onAddExercise}
+          type="button"
+        >
+          <span aria-hidden="true" className="workout-list-action-icon">
+            ＋
+          </span>
+          <span>{tr(locale, 'Добавить упражнение', 'Add exercise')}</span>
+        </button>
+        <button
+          className="button ghost full workout-list-action workout-notes-trigger"
+          onClick={() => setNotesOpen(true)}
+          type="button"
+        >
+          <span aria-hidden="true" className="workout-list-action-icon">
+            ✎
+          </span>
+          <span>{tr(locale, 'Комментарий по тренировке', 'Workout note')}</span>
         </button>
         {removedExerciseIds.length > 0 && (
           <div className="removed-sets">
@@ -2359,6 +2387,11 @@ function WorkoutView({
           onReplaceExercise(optionsSelection.item.id);
         }}
         planLength={plan.length}
+      />
+      <WorkoutNotesSheet
+        onClose={() => setNotesOpen(false)}
+        onSave={onSaveNotes}
+        workout={notesOpen ? activeWorkout : null}
       />
     </section>
   );
@@ -2861,18 +2894,14 @@ function CatalogView({
       <div className="catalog-filters">
         <label>
           <span>
-            {tr(locale, 'Название или описание движения', 'Name or movement description')}
+            {tr(locale, 'Название, синоним или группа мышц', 'Name, alias, or muscle group')}
           </span>
           <input
             onChange={(event) => {
               setQuery(event.target.value);
               setShowAddOptions(false);
             }}
-            placeholder={tr(
-              locale,
-              'Название, синоним или оборудование',
-              'Name, alias or equipment',
-            )}
+            placeholder={tr(locale, 'Например: задняя дельта', 'For example: rear delt')}
             type="search"
             value={query}
           />
@@ -3083,6 +3112,7 @@ function ExercisePickerSheet({
     replacedExercise?.primaryMuscles[0] ?? null,
     locale,
     mode.mode === 'replace' ? preferences : new Map(),
+    query,
   );
 
   function chooseOnce(exercise: Exercise) {
@@ -3145,8 +3175,8 @@ function ExercisePickerSheet({
           }}
           placeholder={
             mode.mode === 'add'
-              ? tr(locale, 'Название или синоним', 'Name or alias')
-              : tr(locale, 'На что заменить?', 'Replace with…')
+              ? tr(locale, 'Название, синоним или мышца', 'Name, alias, or muscle')
+              : tr(locale, 'Название или мышца', 'Name or muscle')
           }
           type="search"
           value={query}

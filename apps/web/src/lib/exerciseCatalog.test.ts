@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { globalExerciseCatalog } from '@mighty-cringe/contracts';
+import { globalExerciseCatalog, type Exercise } from '@mighty-cringe/contracts';
 
 import {
   catalogDiscoveryQuery,
@@ -31,6 +31,52 @@ describe('filterExerciseCatalog', () => {
     });
 
     expect(result[0]?.nameRu).toBe('Тяга одной рукой в кроссовере сидя');
+  });
+
+  it('finds primary and secondary muscles through Russian forms and gym synonyms', () => {
+    const rearDeltResults = filterExerciseCatalog(globalExerciseCatalog, {
+      query: 'задней дельты',
+      muscle: 'all',
+      tag: 'all',
+    });
+
+    expect(rearDeltResults.length).toBeGreaterThan(1);
+    expect(
+      rearDeltResults.every(
+        (exercise) =>
+          exercise.primaryMuscles.includes('rear_delt') ||
+          exercise.secondaryMuscles.includes('rear_delt'),
+      ),
+    ).toBe(true);
+
+    const hamstringResults = filterExerciseCatalog(globalExerciseCatalog, {
+      query: 'задняя поверхность бедра',
+      muscle: 'all',
+      tag: 'all',
+    });
+    expect(
+      hamstringResults.some((exercise) => exercise.primaryMuscles.includes('hamstrings')),
+    ).toBe(true);
+  });
+
+  it('ranks a name match above less precise muscle matches', () => {
+    const muscleMatch = {
+      ...globalExerciseCatalog[0],
+      primaryMuscles: ['chest'] as Exercise['primaryMuscles'],
+    };
+    const nameMatch = {
+      ...globalExerciseCatalog[1],
+      nameRu: 'Грудь в кроссовере',
+      primaryMuscles: ['back'] as Exercise['primaryMuscles'],
+    };
+
+    const result = filterExerciseCatalog([muscleMatch, nameMatch], {
+      query: 'грудь',
+      muscle: 'all',
+      tag: 'all',
+    });
+
+    expect(result).toEqual([nameMatch, muscleMatch]);
   });
 
   it('filters liked, disliked, and unmarked exercises independently from global tags', () => {
@@ -163,6 +209,45 @@ describe('filterExerciseCatalog', () => {
       unavailableIds: new Set(),
     });
     expect(addOptions.options).toContain(disliked);
+  });
+
+  it('uses the same muscle-aware ranking while choosing a workout exercise', () => {
+    const muscleMatch = {
+      ...globalExerciseCatalog[0],
+      primaryMuscles: ['rear_delt'] as Exercise['primaryMuscles'],
+    };
+    const secondaryMatch = {
+      ...globalExerciseCatalog[1],
+      primaryMuscles: ['back'] as Exercise['primaryMuscles'],
+      secondaryMuscles: ['rear_delt'] as Exercise['secondaryMuscles'],
+    };
+    const nameMatch = {
+      ...globalExerciseCatalog[2],
+      nameRu: 'Задняя дельта в тренажёре',
+      primaryMuscles: ['chest'] as Exercise['primaryMuscles'],
+    };
+
+    const result = replacementExerciseOptions({
+      exercises: [muscleMatch, secondaryMatch, nameMatch],
+      mode: 'add',
+      preferences: new Map(),
+      query: 'задняя дельта',
+      unavailableIds: new Set(),
+    });
+    const groups = groupExerciseChoicesByPrimaryMuscle(
+      result.options,
+      null,
+      'ru',
+      new Map(),
+      'задняя дельта',
+    );
+
+    expect(result.options).toEqual([nameMatch, muscleMatch, secondaryMatch]);
+    expect(groups.flatMap((group) => group.exercises)).toEqual([
+      nameMatch,
+      muscleMatch,
+      secondaryMatch,
+    ]);
   });
 });
 
