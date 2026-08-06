@@ -34,7 +34,7 @@ describe('ProgressView', () => {
       lastActivityAt: '2026-07-21T17:45:00.000Z',
       completionReason: 'automatic',
       isFavorite: true,
-      notes: null,
+      notes: 'Мало спал, но рабочие веса шли уверенно.',
       locale: 'ru',
       revision: 1,
       updatedAt: '2026-07-21T18:00:00.000Z',
@@ -80,6 +80,7 @@ describe('ProgressView', () => {
     expect(html).toContain('Личный расчётный рекорд');
     expect(html).toContain('80 кг×8');
     expect(html).toContain('завершена автоматически');
+    expect(html).toContain('Мало спал, но рабочие веса шли уверенно.');
     expect(html).toContain('Epley');
     expect(html).toContain('AI: голос');
     expect(html).toContain('Редактировать');

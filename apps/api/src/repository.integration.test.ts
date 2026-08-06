@@ -80,10 +80,14 @@ test(
       clientMutationId: randomUUID(),
       workoutId,
       baseRevision: 2,
-      changes: { isFavorite: true },
+      changes: {
+        isFavorite: true,
+        notes: 'Мало спал, но рабочие веса шли уверенно.',
+      },
     });
     assert.equal(favoriteWorkout.entity.revision, 3);
     assert.equal(favoriteWorkout.entity.isFavorite, true);
+    assert.equal(favoriteWorkout.entity.notes, 'Мало спал, но рабочие веса шли уверенно.');
 
     const setId = randomUUID();
     const createdSet = await repository.createSet(user.id, {
@@ -164,6 +168,7 @@ test(
     assert.equal(history[0].sets[0].revision, 3);
     assert.equal(history[0].revision, 3);
     assert.equal(history[0].isFavorite, true);
+    assert.equal(history[0].notes, 'Мало спал, но рабочие веса шли уверенно.');
     assert.equal(history[0].exercises[0].id, secondPlanItemId);
 
     await assert.rejects(

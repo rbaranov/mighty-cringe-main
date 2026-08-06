@@ -359,7 +359,7 @@ function revealInput(input: HTMLElement) {
   });
 }
 
-function useKeyboardViewport(
+export function useKeyboardViewport(
   active: boolean,
   sheetRef: RefObject<HTMLElement | null>,
 ): CSSProperties | undefined {
@@ -375,7 +375,8 @@ function useKeyboardViewport(
     const sync = () => {
       const focused = document.activeElement;
       const focusedInput =
-        focused instanceof HTMLInputElement && Boolean(sheetRef.current?.contains(focused));
+        (focused instanceof HTMLInputElement || focused instanceof HTMLTextAreaElement) &&
+        Boolean(sheetRef.current?.contains(focused));
       const nextStyle = keyboardViewportStyle({
         focusedInput,
         layoutHeight: window.innerHeight,
