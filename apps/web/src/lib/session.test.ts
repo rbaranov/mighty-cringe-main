@@ -58,6 +58,7 @@ describe('offline session resolution', () => {
       status: 'anonymous',
       googleEnabled: true,
       serverRejected: true,
+      serverUnavailable: false,
     });
     expect(getCachedUser).not.toHaveBeenCalled();
   });
@@ -69,6 +70,93 @@ describe('offline session resolution', () => {
       status: 'anonymous',
       googleEnabled: false,
       serverRejected: false,
+      serverUnavailable: true,
     });
+  });
+
+  it('restores the confirmed user when an Android resume leaves the session request pending', async () => {
+    vi.useFakeTimers();
+    try {
+      const request = vi.fn<typeof fetch>().mockImplementation(
+        (_input, init) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted')));
+          }),
+      );
+      const resolution = resolveSession({
+        request,
+        getCachedUser: async () => user,
+        timeoutMs: 250,
+      });
+
+      await vi.advanceTimersByTimeAsync(250);
+
+      await expect(resolution).resolves.toEqual({
+        status: 'authenticated',
+        user,
+        source: 'cache',
+      });
+      expect(request).toHaveBeenCalledWith(
+        '/api/v1/me',
+        expect.objectContaining({ credentials: 'same-origin', signal: expect.any(AbortSignal) }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('finishes signed-out startup when the optional auth config request stalls', async () => {
+    vi.useFakeTimers();
+    try {
+      const request = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(new Response(null, { status: 401 }))
+        .mockImplementationOnce(
+          (_input, init) =>
+            new Promise<Response>((_resolve, reject) => {
+              init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted')));
+            }),
+        );
+      const resolution = resolveSession({
+        request,
+        getCachedUser: async () => null,
+        timeoutMs: 250,
+      });
+
+      await vi.advanceTimersByTimeAsync(250);
+
+      await expect(resolution).resolves.toEqual({
+        status: 'anonymous',
+        googleEnabled: false,
+        serverRejected: true,
+        serverUnavailable: true,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not wait forever when the session response body stalls', async () => {
+    vi.useFakeTimers();
+    try {
+      const stalledResponse = new Response(null, { status: 200 });
+      vi.spyOn(stalledResponse, 'json').mockImplementation(() => new Promise<never>(() => {}));
+      const request = vi.fn<typeof fetch>().mockResolvedValue(stalledResponse);
+      const resolution = resolveSession({
+        request,
+        getCachedUser: async () => user,
+        timeoutMs: 250,
+      });
+
+      await vi.advanceTimersByTimeAsync(250);
+
+      await expect(resolution).resolves.toEqual({
+        status: 'authenticated',
+        user,
+        source: 'cache',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

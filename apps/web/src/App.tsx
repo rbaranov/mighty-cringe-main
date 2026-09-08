@@ -135,7 +135,8 @@ type View = 'workout' | 'progress' | 'catalog' | 'settings' | 'trainer';
 
 type AuthState =
   | { status: 'loading' }
-  | { status: 'anonymous'; googleEnabled: boolean }
+  | { status: 'anonymous'; googleEnabled: boolean; serverUnavailable: boolean }
+  | { status: 'unavailable' }
   | { status: 'authenticated'; user: CurrentUser; restoredFromCache: boolean };
 
 type ExercisePickerMode =
@@ -149,44 +150,60 @@ export default function App() {
   const [auth, setAuth] = useState<AuthState>({ status: 'loading' });
 
   const loadSession = useCallback(async () => {
-    if (hasPendingRemoteLogout()) {
-      const logoutCompleted = await requestRemoteLogout();
-      if (!logoutCompleted) {
-        setAuth({ status: 'anonymous', googleEnabled: true });
+    try {
+      if (hasPendingRemoteLogout()) {
+        const logoutCompleted = await requestRemoteLogout();
+        if (!logoutCompleted) {
+          setAuth({ status: 'anonymous', googleEnabled: false, serverUnavailable: true });
+          return;
+        }
+      }
+      const session = await resolveSession({ request: fetch, getCachedUser: getCachedCurrentUser });
+      if (session.status === 'authenticated') {
+        if (session.source === 'server') {
+          await activateLocalUser(session.user.id);
+          await cacheCurrentUser(session.user);
+        }
+        setAuth({
+          status: 'authenticated',
+          user: session.user,
+          restoredFromCache: session.source === 'cache',
+        });
         return;
       }
-    }
-    const session = await resolveSession({ request: fetch, getCachedUser: getCachedCurrentUser });
-    if (session.status === 'authenticated') {
-      if (session.source === 'server') {
-        await activateLocalUser(session.user.id);
-        await cacheCurrentUser(session.user);
-      }
+      if (session.serverRejected) await disableOfflineSession();
       setAuth({
-        status: 'authenticated',
-        user: session.user,
-        restoredFromCache: session.source === 'cache',
+        status: 'anonymous',
+        googleEnabled: session.googleEnabled,
+        serverUnavailable: session.serverUnavailable,
       });
-      return;
+    } catch (error) {
+      console.error('MightyCringe could not initialize the local session', error);
+      setAuth({ status: 'unavailable' });
     }
-    if (session.serverRejected) await disableOfflineSession();
-    setAuth({ status: 'anonymous', googleEnabled: session.googleEnabled });
   }, []);
 
   useEffect(() => {
     void loadSession();
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') void loadSession();
+    };
     window.addEventListener('mighty-cringe:unauthorized', loadSession);
     window.addEventListener('online', loadSession);
+    window.addEventListener('pageshow', refreshWhenVisible);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
     return () => {
       window.removeEventListener('mighty-cringe:unauthorized', loadSession);
       window.removeEventListener('online', loadSession);
+      window.removeEventListener('pageshow', refreshWhenVisible);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
     };
   }, [loadSession]);
 
   async function logout() {
     await requestRemoteLogout();
     await clearLocalUserData();
-    setAuth({ status: 'anonymous', googleEnabled: true });
+    setAuth({ status: 'anonymous', googleEnabled: true, serverUnavailable: false });
   }
 
   async function updateUser(user: CurrentUser) {
@@ -195,7 +212,28 @@ export default function App() {
   }
 
   if (auth.status === 'loading') return <AuthLoading />;
-  if (auth.status === 'anonymous') return <LoginScreen googleEnabled={auth.googleEnabled} />;
+  if (auth.status === 'unavailable') {
+    return (
+      <SessionUnavailable
+        onRetry={() => {
+          setAuth({ status: 'loading' });
+          void loadSession();
+        }}
+      />
+    );
+  }
+  if (auth.status === 'anonymous') {
+    return (
+      <LoginScreen
+        googleEnabled={auth.googleEnabled}
+        onRetry={() => {
+          setAuth({ status: 'loading' });
+          void loadSession();
+        }}
+        serverUnavailable={auth.serverUnavailable}
+      />
+    );
+  }
   return (
     <AuthenticatedApp
       onLogout={logout}
@@ -1741,7 +1779,38 @@ function AuthLoading() {
   );
 }
 
-function LoginScreen({ googleEnabled }: { googleEnabled: boolean }) {
+function SessionUnavailable({ onRetry }: { onRetry: () => void }) {
+  const locale = publicLocale();
+  return (
+    <main className="auth-shell">
+      <p className="brand">MightyCringe</p>
+      <section className="auth-card" aria-live="assertive">
+        <p className="eyebrow">{tr(locale, 'Безопасный запуск', 'Safe startup')}</p>
+        <h1>{tr(locale, 'Не удалось открыть приложение', 'The app could not open')}</h1>
+        <p className="intro">
+          {tr(
+            locale,
+            'Локальные тренировки не удалялись. Закрой другие вкладки MightyCringe и попробуй ещё раз.',
+            'Your local workouts were not deleted. Close other MightyCringe tabs and try again.',
+          )}
+        </p>
+        <button className="button primary action" onClick={onRetry} type="button">
+          {tr(locale, 'Повторить безопасно', 'Retry safely')}
+        </button>
+      </section>
+    </main>
+  );
+}
+
+function LoginScreen({
+  googleEnabled,
+  serverUnavailable,
+  onRetry,
+}: {
+  googleEnabled: boolean;
+  serverUnavailable: boolean;
+  onRetry: () => void;
+}) {
   const locale = publicLocale();
   const authError = new URLSearchParams(window.location.search).get('authError');
   const loginHref = `/api/v1/auth/google?returnTo=${encodeURIComponent(currentLoginReturnTo(window.location))}`;
@@ -1767,7 +1836,20 @@ function LoginScreen({ googleEnabled }: { googleEnabled: boolean }) {
             )}
           </p>
         )}
-        {googleEnabled ? (
+        {serverUnavailable ? (
+          <>
+            <p className="auth-error">
+              {tr(
+                locale,
+                'Сервер не ответил вовремя. Локальные данные сохранены; проверь интернет и повтори подключение.',
+                'The server did not respond in time. Your local data is safe; check your connection and retry.',
+              )}
+            </p>
+            <button className="button primary action" onClick={onRetry} type="button">
+              {tr(locale, 'Повторить подключение', 'Retry connection')}
+            </button>
+          </>
+        ) : googleEnabled ? (
           <a className="button primary action login-button" href={loginHref}>
             {tr(locale, 'Войти через Google', 'Sign in with Google')}
           </a>
