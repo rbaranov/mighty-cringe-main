@@ -59,6 +59,7 @@ export function SetSheet({
   const [rir, setRir] = useState('');
   const [comment, setComment] = useState('');
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const sheetRef = useRef<HTMLElement>(null);
   const weightRef = useRef<HTMLInputElement>(null);
   const repsRef = useRef<HTMLInputElement>(null);
@@ -86,6 +87,7 @@ export function SetSheet({
     setReps(source ? String(source.reps) : '');
     setRir(source?.rir === null || source?.rir === undefined ? '' : String(source.rir));
     setComment(initial?.comment ?? '');
+    savingRef.current = false;
     setSaving(false);
   }, [
     exercise?.id,
@@ -110,7 +112,14 @@ export function SetSheet({
   if (!exercise) return null;
 
   function save() {
-    if (saving || !canSave || canonicalWeightValue === null || repsValue === null) return;
+    if (
+      !canSave ||
+      canonicalWeightValue === null ||
+      repsValue === null ||
+      !claimSetSubmission(savingRef)
+    ) {
+      return;
+    }
     setSaving(true);
     void Promise.resolve(
       onSave({
@@ -119,7 +128,10 @@ export function SetSheet({
         rir: rirValue,
         comment: comment.trim() || null,
       }),
-    ).catch(() => setSaving(false));
+    ).catch(() => {
+      savingRef.current = false;
+      setSaving(false);
+    });
   }
 
   return (
@@ -167,9 +179,10 @@ export function SetSheet({
             maximum={maximumDisplayWeight}
             minimum={0}
             onChange={setWeight}
-            onEnter={() => focusAndReveal(repsRef)}
+            onEnter={() => focusAndReveal(sheetRef, repsRef)}
             placeholder="40"
             inputRef={weightRef}
+            sheetRef={sheetRef}
             step={setWeightStep}
             value={weight}
           />
@@ -182,9 +195,10 @@ export function SetSheet({
             maximum={100}
             minimum={1}
             onChange={setReps}
-            onEnter={() => focusAndReveal(rirRef)}
+            onEnter={() => focusAndReveal(sheetRef, rirRef)}
             placeholder="12"
             inputRef={repsRef}
+            sheetRef={sheetRef}
             step={1}
             value={reps}
           />
@@ -217,9 +231,10 @@ export function SetSheet({
             maximum={20}
             minimum={0}
             onChange={setRir}
-            onEnter={() => focusAndReveal(commentRef)}
+            onEnter={() => focusAndReveal(sheetRef, commentRef)}
             placeholder="1"
             inputRef={rirRef}
+            sheetRef={sheetRef}
             step={1}
             value={rir}
           />
@@ -229,7 +244,7 @@ export function SetSheet({
               enterKeyHint="done"
               maxLength={1000}
               onChange={(event) => setComment(event.target.value)}
-              onFocus={(event) => revealInput(event.currentTarget)}
+              onFocus={(event) => revealInput(sheetRef, event.currentTarget)}
               onKeyDown={(event) => {
                 if (event.key !== 'Enter') return;
                 event.preventDefault();
@@ -286,6 +301,7 @@ function NumericStepper({
   onEnter,
   placeholder,
   inputRef,
+  sheetRef,
   step,
   value,
 }: {
@@ -301,6 +317,7 @@ function NumericStepper({
   onEnter: () => void;
   placeholder: string;
   inputRef: Ref<HTMLInputElement>;
+  sheetRef: RefObject<HTMLElement | null>;
   step: number;
   value: string;
 }) {
@@ -321,7 +338,7 @@ function NumericStepper({
           enterKeyHint="next"
           inputMode={allowDecimal ? 'decimal' : 'numeric'}
           onChange={(event) => onChange(event.target.value)}
-          onFocus={(event) => revealInput(event.currentTarget)}
+          onFocus={(event) => revealInput(sheetRef, event.currentTarget)}
           onKeyDown={(event) => {
             if (event.key !== 'Enter') return;
             event.preventDefault();
@@ -346,16 +363,32 @@ function NumericStepper({
   );
 }
 
-function focusAndReveal(ref: RefObject<HTMLInputElement | null>) {
+function focusAndReveal(
+  sheetRef: RefObject<HTMLElement | null>,
+  ref: RefObject<HTMLInputElement | null>,
+) {
   const input = ref.current;
   if (!input) return;
   input.focus({ preventScroll: true });
-  revealInput(input);
+  revealInput(sheetRef, input);
 }
 
-function revealInput(input: HTMLElement) {
+function revealInput(sheetRef: RefObject<HTMLElement | null>, input: HTMLElement) {
   window.requestAnimationFrame(() => {
-    input.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const sheet = sheetRef.current;
+    if (!sheet || !sheet.contains(input)) return;
+    const sheetRect = sheet.getBoundingClientRect();
+    const actionsRect = sheet
+      .querySelector<HTMLElement>('.set-sheet-actions')
+      ?.getBoundingClientRect();
+    const inputRect = input.getBoundingClientRect();
+    const delta = revealScrollDelta({
+      fieldBottom: inputRect.bottom,
+      fieldTop: inputRect.top,
+      visibleBottom: Math.min(sheetRect.bottom, actionsRect?.top ?? sheetRect.bottom) - 16,
+      visibleTop: sheetRect.top + 16,
+    });
+    if (delta !== 0) sheet.scrollTop += delta;
   });
 }
 
@@ -385,11 +418,7 @@ export function useKeyboardViewport(
       });
       setStyle(nextStyle);
       if (!nextStyle) return;
-      window.requestAnimationFrame(() => {
-        if (focused instanceof HTMLElement && sheetRef.current?.contains(focused)) {
-          focused.scrollIntoView({ block: 'center' });
-        }
-      });
+      if (focused instanceof HTMLElement) revealInput(sheetRef, focused);
     };
     const syncAfterFocusChange = () => window.requestAnimationFrame(sync);
     const syncAfterOrientationChange = () => {
@@ -431,11 +460,33 @@ export function keyboardViewportStyle({
   viewportHeight: number;
   viewportOffsetTop: number;
 }): CSSProperties | undefined {
-  const occludedHeight = layoutHeight - viewportHeight - viewportOffsetTop;
+  const occludedHeight = layoutHeight - viewportHeight;
   if (!focusedInput || occludedHeight < softwareKeyboardThreshold) return undefined;
   return {
     top: `${viewportOffsetTop}px`,
     bottom: 'auto',
     height: `${viewportHeight}px`,
   };
+}
+
+export function claimSetSubmission(lock: { current: boolean }) {
+  if (lock.current) return false;
+  lock.current = true;
+  return true;
+}
+
+export function revealScrollDelta({
+  fieldBottom,
+  fieldTop,
+  visibleBottom,
+  visibleTop,
+}: {
+  fieldBottom: number;
+  fieldTop: number;
+  visibleBottom: number;
+  visibleTop: number;
+}) {
+  if (fieldTop < visibleTop) return fieldTop - visibleTop;
+  if (fieldBottom > visibleBottom) return fieldBottom - visibleBottom;
+  return 0;
 }

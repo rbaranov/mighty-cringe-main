@@ -6499,6 +6499,7 @@ body {
 
 .keyboard-aware-sheet-backdrop {
   max-height: 100dvh;
+  overflow: hidden;
 }
 
 .keyboard-aware-sheet-backdrop .set-sheet {
@@ -7567,6 +7568,19 @@ body {
 .set-sheet-actions,
 .exercise-enrichment-preview dl > div {
   border-color: var(--line);
+}
+
+.set-sheet .form-grid input,
+.set-sheet .set-stepper-control input {
+  background-color: var(--surface);
+  color: var(--ink);
+  opacity: 1;
+  -webkit-text-fill-color: var(--ink);
+}
+
+.set-sheet-actions {
+  isolation: isolate;
+  background-color: var(--canvas);
 }
 
 /* State and safety surfaces intentionally keep a visible boundary. */
