@@ -4,7 +4,13 @@ import { describe, expect, it } from 'vitest';
 import type { Exercise } from '@mighty-cringe/contracts';
 
 import type { LocalSet } from '../lib/db';
-import { keyboardViewportStyle, SetSheet, setWeightStep } from './SetSheet';
+import {
+  claimSetSubmission,
+  keyboardViewportStyle,
+  revealScrollDelta,
+  SetSheet,
+  setWeightStep,
+} from './SetSheet';
 import { parseDecimalInput, stepNumericInput } from './setSheetNumbers';
 
 const exercise: Exercise = {
@@ -112,5 +118,50 @@ describe('SetSheet', () => {
         viewportOffsetTop: 0,
       }),
     ).toBeUndefined();
+    expect(
+      keyboardViewportStyle({
+        focusedInput: true,
+        layoutHeight: 844,
+        viewportHeight: 510,
+        viewportOffsetTop: 300,
+      }),
+    ).toEqual({ top: '300px', bottom: 'auto', height: '510px' });
+  });
+
+  it('keeps field reveal scrolling inside the sheet and above sticky actions', () => {
+    expect(
+      revealScrollDelta({
+        fieldTop: 180,
+        fieldBottom: 232,
+        visibleTop: 16,
+        visibleBottom: 350,
+      }),
+    ).toBe(0);
+    expect(
+      revealScrollDelta({
+        fieldTop: -12,
+        fieldBottom: 40,
+        visibleTop: 16,
+        visibleBottom: 350,
+      }),
+    ).toBe(-28);
+    expect(
+      revealScrollDelta({
+        fieldTop: 326,
+        fieldBottom: 378,
+        visibleTop: 16,
+        visibleBottom: 350,
+      }),
+    ).toBe(28);
+  });
+
+  it('claims a save synchronously and allows a deliberate retry after failure', () => {
+    const lock = { current: false };
+
+    expect(claimSetSubmission(lock)).toBe(true);
+    expect(claimSetSubmission(lock)).toBe(false);
+
+    lock.current = false;
+    expect(claimSetSubmission(lock)).toBe(true);
   });
 });

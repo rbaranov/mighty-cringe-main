@@ -94,6 +94,7 @@ import {
   usePreferences,
 } from './lib/preferences';
 import { setEntrySourceSuffix } from './lib/setEntrySource';
+import { nextSetPosition } from './lib/setPosition';
 import { resolveSession } from './lib/session';
 import { acceptTrainerInviteFromUrl, currentLoginReturnTo } from './lib/trainer';
 import {
@@ -282,7 +283,6 @@ function AuthenticatedAppContent({
   const [lifecycleNow, setLifecycleNow] = useState(() => Date.now());
   const finishingWorkoutId = useRef<string | null>(null);
   const resumingWorkoutId = useRef<string | null>(null);
-  const savingSet = useRef(false);
   const initialSyncPromise = useRef<ReturnType<typeof syncAll> | null>(null);
   const [inviteNotice, setInviteNotice] = useState<string | null>(null);
   const [relationshipRefreshKey, setRelationshipRefreshKey] = useState(0);
@@ -720,11 +720,9 @@ function AuthenticatedAppContent({
     comment: string | null;
   }) {
     if (!workoutContext || !sheet) return;
-    if (savingSet.current) return;
     const activeSheet = sheet;
     const activeWorkout = workoutContext;
     const activityAt = new Date().toISOString();
-    savingSet.current = true;
     setSheet(null);
     try {
       if (activeSheet.set) {
@@ -741,7 +739,6 @@ function AuthenticatedAppContent({
             activityAt,
           },
         });
-        await flushOutbox();
         return;
       }
 
@@ -749,8 +746,6 @@ function AuthenticatedAppContent({
     } catch (error) {
       setSheet(activeSheet);
       throw error;
-    } finally {
-      savingSet.current = false;
     }
   }
 
@@ -762,40 +757,32 @@ function AuthenticatedAppContent({
     if (!workoutContext) return;
     const activityAt = new Date().toISOString();
     const performedAt = editingWorkout?.endedAt ?? activityAt;
-    const set: SetInput = {
-      id: crypto.randomUUID(),
-      exerciseId: exercise.id,
-      ...input,
-      entrySource,
-      performedAt,
-      position:
-        Math.max(
-          -1,
-          ...sets
-            .filter(
-              (item) =>
-                item.workoutId === workoutContext.id &&
-                item.exerciseId === exercise.id &&
-                !item.deleted,
-            )
-            .map((item) => item.position),
-        ) + 1,
-    };
-    const clientMutationId = crypto.randomUUID();
-    await db.sets.put({
-      ...set,
-      workoutId: workoutContext.id,
-      revision: 0,
-      updatedAt: set.performedAt,
-      syncState: 'pending',
-      deleted: false,
+    const set = await db.transaction('rw', db.sets, async () => {
+      const existingSets = await db.sets.where('workoutId').equals(workoutContext.id).toArray();
+      const nextSet: SetInput = {
+        id: crypto.randomUUID(),
+        exerciseId: exercise.id,
+        ...input,
+        entrySource,
+        performedAt,
+        position: nextSetPosition(existingSets, exercise.id),
+      };
+      await db.sets.put({
+        ...nextSet,
+        workoutId: workoutContext.id,
+        revision: 0,
+        updatedAt: nextSet.performedAt,
+        syncState: 'pending',
+        deleted: false,
+      });
+      return nextSet;
     });
+    const clientMutationId = crypto.randomUUID();
     await recordLocalWorkoutActivity(workoutContext.id, activityAt);
     await queueMutation({
       type: 'set.create',
       payload: { clientMutationId, workoutId: workoutContext.id, set, activityAt },
     });
-    await flushOutbox();
   }
 
   async function saveNaturalSet(
