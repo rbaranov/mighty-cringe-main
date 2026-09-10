@@ -9,6 +9,7 @@ import {
   displayMeasurementNumber,
   displayWeight,
   exerciseName,
+  formatExerciseCount,
   measurementUnit,
   tr,
 } from './preferences';
@@ -28,6 +29,16 @@ describe('profile preferences', () => {
     expect(exerciseName(exercise, 'ru')).toBe('Жим лёжа');
     expect(exerciseName(exercise, 'en')).toBe('Bench press');
     expect(tr('en', 'Настройки', 'Settings')).toBe('Settings');
+  });
+
+  it('formats localized exercise counts', () => {
+    expect(formatExerciseCount(1, 'ru')).toBe('1 упражнение');
+    expect(formatExerciseCount(2, 'ru')).toBe('2 упражнения');
+    expect(formatExerciseCount(5, 'ru')).toBe('5 упражнений');
+    expect(formatExerciseCount(11, 'ru')).toBe('11 упражнений');
+    expect(formatExerciseCount(21, 'ru')).toBe('21 упражнение');
+    expect(formatExerciseCount(1, 'en')).toBe('1 exercise');
+    expect(formatExerciseCount(3, 'en')).toBe('3 exercises');
   });
 
   it('round-trips canonical metric values through imperial display', () => {

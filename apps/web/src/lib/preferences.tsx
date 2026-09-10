@@ -43,6 +43,21 @@ export function exerciseName(exercise: Exercise, locale: Locale) {
   return locale === 'en' ? exercise.nameEn : exercise.nameRu;
 }
 
+export function formatExerciseCount(value: number, locale: Locale) {
+  if (locale === 'en') return `${value} ${value === 1 ? 'exercise' : 'exercises'}`;
+  const mod100 = value % 100;
+  const mod10 = value % 10;
+  const noun =
+    mod100 >= 11 && mod100 <= 14
+      ? 'упражнений'
+      : mod10 === 1
+        ? 'упражнение'
+        : mod10 >= 2 && mod10 <= 4
+          ? 'упражнения'
+          : 'упражнений';
+  return `${value} ${noun}`;
+}
+
 export function weightUnit(unitSystem: UnitSystem, locale: Locale = 'ru') {
   return unitSystem === 'imperial' ? 'lb' : tr(locale, 'кг', 'kg');
 }

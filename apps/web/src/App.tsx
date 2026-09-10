@@ -89,6 +89,7 @@ import {
 } from './lib/naturalWorkoutCommand';
 import {
   exerciseName,
+  formatExerciseCount,
   formatWeight,
   PreferencesProvider,
   tr,
@@ -2046,28 +2047,25 @@ function WorkoutView({
             workout={autoFinishedWorkout}
           />
         )}
-        <p className="eyebrow">{tr(locale, 'Сегодня', 'Today')}</p>
-        <h1>{tr(locale, 'Готов к сильному дню?', 'Ready for a strong day?')}</h1>
-        <p className="intro">
+        <div className="workout-plan-heading">
+          <p className="eyebrow">{tr(locale, 'Сегодня', 'Today')}</p>
+          <h1>{tr(locale, 'План на сегодня', "Today's plan")}</h1>
+          <p>{formatExerciseCount(plan.length, locale)}</p>
+        </div>
+        <p className="intro workout-plan-intro">
           {tr(
             locale,
-            'Настрой упражнения и связки заранее или начни сразу — таймер запустится только после старта.',
-            'Adjust exercises and groups now or start right away — the timer begins only after you start.',
+            'Проверь упражнения и связки. Таймер запустится только после старта.',
+            'Review the exercises and groups. The timer begins only after you start.',
           )}
         </p>
-        <button className="button primary action" onClick={onStart} type="button">
+        <button
+          className="button primary action workout-plan-start"
+          onClick={onStart}
+          type="button"
+        >
           {tr(locale, 'Начать тренировку', 'Start workout')}
         </button>
-        <FavoriteWorkoutsSection
-          exercises={catalog}
-          onRemove={onRemoveFavorite}
-          onRename={onRenameFavorite}
-          onRepeat={onRepeatFavorite}
-          workouts={favoriteWorkouts}
-        />
-        <div className="section-head">
-          <h2>{tr(locale, 'План на сегодня', "Today's plan")}</h2>
-        </div>
         <div className="exercise-list draft-plan-list">
           {displayGroups.map((group) => {
             if (group.supersetGroup === null) return renderDraftEntry(group.entries[0]);
@@ -2097,6 +2095,13 @@ function WorkoutView({
             ＋ {tr(locale, 'Добавить упражнение', 'Add exercise')}
           </button>
         </div>
+        <FavoriteWorkoutsSection
+          exercises={catalog}
+          onRemove={onRemoveFavorite}
+          onRename={onRenameFavorite}
+          onRepeat={onRepeatFavorite}
+          workouts={favoriteWorkouts}
+        />
         <ExerciseOptionsSheet
           exercise={optionsSelection?.exercise ?? null}
           hasLoggedSets={false}
