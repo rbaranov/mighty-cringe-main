@@ -34,6 +34,7 @@ describe('ProgressView', () => {
       lastActivityAt: '2026-07-21T17:45:00.000Z',
       completionReason: 'automatic',
       isFavorite: true,
+      favoriteName: 'Силовая грудь',
       notes: 'Мало спал, но рабочие веса шли уверенно.',
       locale: 'ru',
       revision: 1,
@@ -64,6 +65,7 @@ describe('ProgressView', () => {
         measurements={[]}
         onDeleteMeasurement={() => {}}
         onDeleteWorkout={() => {}}
+        onEditFavoriteName={() => {}}
         onEditWorkout={() => {}}
         onImportMeasurements={async () => {}}
         onRepeatWorkout={() => {}}
@@ -81,6 +83,7 @@ describe('ProgressView', () => {
     expect(html).toContain('80 кг×8');
     expect(html).toContain('завершена автоматически');
     expect(html).toContain('Мало спал, но рабочие веса шли уверенно.');
+    expect(html).toContain('Силовая грудь');
     expect(html).toContain('Epley');
     expect(html).toContain('AI: голос');
     expect(html).toContain('Редактировать');
@@ -114,6 +117,7 @@ describe('ProgressView', () => {
       lastActivityAt: '2026-07-21T17:45:00.000Z',
       completionReason: 'manual' as const,
       isFavorite: false,
+      favoriteName: null,
       notes: null,
       locale: 'en' as const,
       revision: 1,
@@ -145,6 +149,7 @@ describe('ProgressView', () => {
           measurements={[]}
           onDeleteMeasurement={() => {}}
           onDeleteWorkout={() => {}}
+          onEditFavoriteName={() => {}}
           onEditWorkout={() => {}}
           onImportMeasurements={async () => {}}
           onRepeatWorkout={() => {}}
@@ -174,6 +179,7 @@ describe('ProgressView', () => {
       lastActivityAt: '2026-07-21T17:45:00.000Z',
       completionReason: 'manual',
       isFavorite: false,
+      favoriteName: null,
       notes: null,
       locale: 'ru',
       revision: 1,
@@ -188,6 +194,7 @@ describe('ProgressView', () => {
         measurements={[]}
         onDeleteMeasurement={() => {}}
         onDeleteWorkout={() => {}}
+        onEditFavoriteName={() => {}}
         onEditWorkout={() => {}}
         onImportMeasurements={async () => {}}
         onRepeatWorkout={() => {}}

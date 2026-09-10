@@ -14,6 +14,7 @@ describe('FavoriteWorkoutsSection', () => {
         <FavoriteWorkoutsSection
           exercises={[exercise]}
           onRemove={() => {}}
+          onRename={() => {}}
           onRepeat={() => {}}
           workouts={[workout]}
         />
@@ -21,10 +22,29 @@ describe('FavoriteWorkoutsSection', () => {
     );
 
     expect(html).toContain('Избранные тренировки');
+    expect(html).toContain('Грудь и трицепс');
     expect(html).toContain('Жим лёжа');
+    expect(html).toContain('>Название<');
     expect(html).toContain('>Повторить<');
     expect(html).toContain('aria-label="Убрать тренировку из избранного"');
     expect(html).toContain('data-icon="favorite-star"');
+  });
+
+  it('keeps the date as a clear fallback for an existing unnamed favorite', () => {
+    const html = renderToStaticMarkup(
+      <PreferencesProvider locale="ru" unitSystem="metric">
+        <FavoriteWorkoutsSection
+          exercises={[exercise]}
+          onRemove={() => {}}
+          onRename={() => {}}
+          onRepeat={() => {}}
+          workouts={[{ ...workout, favoriteName: null }]}
+        />
+      </PreferencesProvider>,
+    );
+
+    expect(html).toContain('2026');
+    expect(html).toContain('Жим лёжа');
   });
 });
 
@@ -48,6 +68,7 @@ const workout: LocalWorkout = {
   lastActivityAt: '2026-07-21T18:00:00.000Z',
   completionReason: 'manual',
   isFavorite: true,
+  favoriteName: 'Грудь и трицепс',
   notes: null,
   locale: 'ru',
   revision: 1,

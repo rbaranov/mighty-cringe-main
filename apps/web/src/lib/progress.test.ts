@@ -163,6 +163,7 @@ function workout(startedAt: string, endedAt: string | null, id: string): LocalWo
     lastActivityAt: endedAt ?? startedAt,
     completionReason: endedAt ? 'manual' : null,
     isFavorite: false,
+    favoriteName: null,
     notes: null,
     locale: 'ru',
     revision: 1,

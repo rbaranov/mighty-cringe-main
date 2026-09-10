@@ -432,6 +432,7 @@ export const createWorkoutSchema = z
     lastActivityAt: z.string().datetime().optional(),
     completionReason: z.enum(['manual', 'automatic']).nullable().default(null),
     isFavorite: z.boolean().default(false),
+    favoriteName: z.string().trim().min(1).max(60).nullable().default(null),
     notes: z.string().max(10_000).nullable().default(null),
     locale: z.enum(['ru', 'en']).default('ru'),
     exercises: workoutPlanSchema.default([]),
@@ -464,6 +465,7 @@ const workoutChangesSchema = z
     lastActivityAt: z.string().datetime().optional(),
     completionReason: z.enum(['manual', 'automatic']).nullable().optional(),
     isFavorite: z.boolean().optional(),
+    favoriteName: z.string().trim().min(1).max(60).nullable().optional(),
     notes: z.string().max(10_000).nullable().optional(),
     exercises: workoutPlanSchema.optional(),
   })
@@ -546,6 +548,7 @@ export const workoutRecordSchema = z.object({
   lastActivityAt: z.string().datetime(),
   completionReason: z.enum(['manual', 'automatic']).nullable(),
   isFavorite: z.boolean(),
+  favoriteName: z.string().max(60).nullable(),
   notes: z.string().nullable(),
   locale: z.enum(['ru', 'en']),
   revision: z.number().int().positive(),

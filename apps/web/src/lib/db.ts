@@ -298,6 +298,26 @@ export class MightyCringeDatabase extends Dexie {
       conflicts: 'id, entityType, entityId, createdAt',
       meta: 'key',
     });
+    this.version(12)
+      .stores({
+        workouts: 'id, startedAt, syncState',
+        sets: 'id, workoutId, exerciseId, performedAt, position, syncState, deleted',
+        exercises: 'id, *primaryMuscles',
+        exercisePreferences: 'exerciseId, value, syncState',
+        measurements: 'id, measuredOn, syncState, deleted',
+        voiceEntries: 'id, workoutId, status, createdAt, nextAttemptAt',
+        outbox: 'id, sequence, createdAt',
+        conflicts: 'id, entityType, entityId, createdAt',
+        meta: 'key',
+      })
+      .upgrade(async (transaction) => {
+        await transaction
+          .table('workouts')
+          .toCollection()
+          .modify((workout) => {
+            workout.favoriteName ??= null;
+          });
+      });
   }
 }
 

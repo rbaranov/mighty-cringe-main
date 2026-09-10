@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  createWorkoutSchema,
   exercisePreferenceRecordSchema,
   setExercisePreferenceSchema,
   syncMutationSchema,
+  updateWorkoutSchema,
 } from './index.js';
 
 const exerciseId = '10000000-0000-4000-8000-000000000001';
@@ -55,5 +57,37 @@ test('exercise preference contracts reject unknown values and invalid revisions'
       updatedAt: '2026-08-05T08:00:00.000Z',
     }).success,
     false,
+  );
+});
+
+test('favorite workout names are optional, trimmed, and limited to 60 characters', () => {
+  const baseWorkout = {
+    id: '20000000-0000-4000-8000-000000000001',
+    clientMutationId,
+    startedAt: '2026-09-10T06:00:00.000Z',
+  };
+
+  assert.equal(createWorkoutSchema.parse(baseWorkout).favoriteName, null);
+  assert.equal(
+    createWorkoutSchema.parse({ ...baseWorkout, favoriteName: '  Силовая база  ' }).favoriteName,
+    'Силовая база',
+  );
+  assert.equal(
+    updateWorkoutSchema.safeParse({
+      clientMutationId,
+      workoutId: baseWorkout.id,
+      baseRevision: 1,
+      changes: { favoriteName: 'x'.repeat(61) },
+    }).success,
+    false,
+  );
+  assert.equal(
+    updateWorkoutSchema.safeParse({
+      clientMutationId,
+      workoutId: baseWorkout.id,
+      baseRevision: 1,
+      changes: { favoriteName: null },
+    }).success,
+    true,
   );
 });

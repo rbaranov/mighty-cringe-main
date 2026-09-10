@@ -7,11 +7,13 @@ import { StarIcon } from './StarIcon';
 export function FavoriteWorkoutsSection({
   exercises,
   onRemove,
+  onRename,
   onRepeat,
   workouts,
 }: {
   exercises: Exercise[];
   onRemove: (workout: LocalWorkout) => void;
+  onRename: (workout: LocalWorkout) => void;
   onRepeat: (workout: LocalWorkout) => void;
   workouts: LocalWorkout[];
 }) {
@@ -42,24 +44,35 @@ export function FavoriteWorkoutsSection({
           const summary = names.length
             ? names.join(' · ')
             : tr(locale, 'Пустая тренировка', 'Empty workout');
+          const date = formatWorkoutDate(workout.startedAt, locale);
           return (
             <article className="favorite-workout-card" key={workout.id}>
               <div className="favorite-workout-card-copy">
                 <div className="favorite-workout-card-meta">
-                  <strong>{formatWorkoutDate(workout.startedAt, locale)}</strong>
+                  <strong>{workout.favoriteName ?? date}</strong>
                   <span>
+                    {workout.favoriteName ? `${date} · ` : ''}
                     {tr(locale, `${names.length} упражнений`, `${names.length} exercises`)}
                   </span>
                 </div>
                 <p title={summary}>{summary}</p>
               </div>
-              <button
-                className="button primary small favorite-workout-repeat"
-                onClick={() => onRepeat(workout)}
-                type="button"
-              >
-                {tr(locale, 'Повторить', 'Repeat')}
-              </button>
+              <div className="favorite-workout-card-actions">
+                <button
+                  className="button ghost small favorite-workout-rename"
+                  onClick={() => onRename(workout)}
+                  type="button"
+                >
+                  {tr(locale, 'Название', 'Name')}
+                </button>
+                <button
+                  className="button primary small favorite-workout-repeat"
+                  onClick={() => onRepeat(workout)}
+                  type="button"
+                >
+                  {tr(locale, 'Повторить', 'Repeat')}
+                </button>
+              </div>
               <button
                 aria-label={tr(
                   locale,

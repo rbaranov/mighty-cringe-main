@@ -417,6 +417,7 @@ export class MemoryRepository implements WorkoutRepository {
       lastActivityAt: input.lastActivityAt,
       completionReason: input.completionReason,
       isFavorite: input.isFavorite,
+      favoriteName: input.favoriteName,
       notes: input.notes,
       locale: input.locale,
       exercises: orderedPlan(input.exercises),
@@ -506,6 +507,9 @@ export class MemoryRepository implements WorkoutRepository {
     }
     if (input.changes.isFavorite !== undefined) {
       workout.isFavorite = input.changes.isFavorite;
+    }
+    if ('favoriteName' in input.changes) {
+      workout.favoriteName = input.changes.favoriteName ?? null;
     }
     touchMemoryWorkout(workout, legacyResume ? legacyResumeAt : input.activityAt);
     if ('notes' in input.changes) workout.notes = input.changes.notes ?? null;
@@ -1067,6 +1071,7 @@ export class MemoryRepository implements WorkoutRepository {
       lastActivityAt: workout.lastActivityAt,
       completionReason: workout.completionReason,
       isFavorite: workout.isFavorite,
+      favoriteName: workout.favoriteName,
       notes: workout.notes,
       locale: workout.locale,
       exercises: orderedPlan(workout.exercises),
@@ -1386,6 +1391,7 @@ export class PostgresRepository implements WorkoutRepository {
         lastActivityAt: new Date(input.lastActivityAt),
         completionReason: input.completionReason,
         isFavorite: input.isFavorite,
+        favoriteName: input.favoriteName,
         notes: input.notes,
         locale: input.locale,
       });
@@ -1488,6 +1494,10 @@ export class PostgresRepository implements WorkoutRepository {
           lastActivityAt: nextLastActivityAt,
           completionReason: nextCompletionReason,
           isFavorite: input.changes.isFavorite ?? existing.isFavorite,
+          favoriteName:
+            'favoriteName' in input.changes
+              ? (input.changes.favoriteName ?? null)
+              : existing.favoriteName,
           notes: 'notes' in input.changes ? (input.changes.notes ?? null) : existing.notes,
           revision: existing.revision + 1,
           updatedAt: processingAt,
@@ -2524,6 +2534,7 @@ function toWorkoutRecord(
     lastActivityAt: workout.lastActivityAt.toISOString(),
     completionReason: workout.completionReason,
     isFavorite: workout.isFavorite,
+    favoriteName: workout.favoriteName,
     notes: workout.notes,
     locale: workout.locale === 'en' ? 'en' : 'ru',
     revision: workout.revision,
@@ -2647,6 +2658,7 @@ function sameWorkoutCreate(
     asIso(workout.lastActivityAt) === input.lastActivityAt &&
     workout.completionReason === input.completionReason &&
     workout.isFavorite === input.isFavorite &&
+    workout.favoriteName === input.favoriteName &&
     workout.notes === input.notes &&
     workout.locale === input.locale &&
     samePlan(storedPlan, input.exercises)
@@ -2695,6 +2707,7 @@ function workoutChangesMatch(
     (!('completionReason' in changes) ||
       workout.completionReason === (changes.completionReason ?? null)) &&
     (changes.isFavorite === undefined || workout.isFavorite === changes.isFavorite) &&
+    (!('favoriteName' in changes) || workout.favoriteName === (changes.favoriteName ?? null)) &&
     (!('notes' in changes) || workout.notes === (changes.notes ?? null)) &&
     (changes.exercises === undefined || samePlan(storedPlan, changes.exercises))
   );

@@ -52,6 +52,7 @@ export function ProgressView({
   onDeleteMeasurement,
   onDeleteWorkout,
   onEditWorkout,
+  onEditFavoriteName,
   onImportMeasurements,
   onRepeatWorkout,
   onResumeWorkout,
@@ -65,6 +66,7 @@ export function ProgressView({
   onDeleteMeasurement: (measurement: LocalMeasurement) => void;
   onDeleteWorkout: (workout: LocalWorkout) => void;
   onEditWorkout: (workout: LocalWorkout) => void;
+  onEditFavoriteName: (workout: LocalWorkout) => void;
   onImportMeasurements: (drafts: MeasurementDraft[]) => Promise<void>;
   onRepeatWorkout: (workout: LocalWorkout) => void;
   onResumeWorkout: (workout: LocalWorkout) => void;
@@ -313,6 +315,7 @@ export function ProgressView({
             exercises={exercises}
             onDeleteWorkout={onDeleteWorkout}
             onEditWorkout={onEditWorkout}
+            onEditFavoriteName={onEditFavoriteName}
             onRepeatWorkout={onRepeatWorkout}
             onResumeWorkout={onResumeWorkout}
             onToggleFavorite={onToggleFavorite}
@@ -515,6 +518,7 @@ function DayDetails({
   exercises,
   onDeleteWorkout,
   onEditWorkout,
+  onEditFavoriteName,
   onRepeatWorkout,
   onResumeWorkout,
   onToggleFavorite,
@@ -526,6 +530,7 @@ function DayDetails({
   exercises: Exercise[];
   onDeleteWorkout: (workout: LocalWorkout) => void;
   onEditWorkout: (workout: LocalWorkout) => void;
+  onEditFavoriteName: (workout: LocalWorkout) => void;
   onRepeatWorkout: (workout: LocalWorkout) => void;
   onResumeWorkout: (workout: LocalWorkout) => void;
   onToggleFavorite: (workout: LocalWorkout) => void;
@@ -567,6 +572,12 @@ function DayDetails({
                 <span>{workout.notes}</span>
               </div>
             )}
+            {workout?.isFavorite && workout.favoriteName && (
+              <div className="workout-history-favorite-name">
+                <strong>{tr(locale, 'Избранная', 'Favorite')}</strong>
+                <span>{workout.favoriteName}</span>
+              </div>
+            )}
             {workout && (
               <div className="workout-history-actions">
                 <button
@@ -597,6 +608,15 @@ function DayDetails({
                 >
                   {tr(locale, 'Удалить', 'Delete')}
                 </button>
+                {workout.isFavorite && (
+                  <button
+                    className="button ghost small"
+                    onClick={() => onEditFavoriteName(workout)}
+                    type="button"
+                  >
+                    {tr(locale, 'Название', 'Name')}
+                  </button>
+                )}
                 <button
                   aria-label={tr(
                     locale,
