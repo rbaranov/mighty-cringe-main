@@ -37,6 +37,7 @@ test(
       lastActivityAt: '2026-07-21T10:00:00.000Z',
       completionReason: null,
       isFavorite: false,
+      favoriteName: null,
       notes: null,
       locale: 'ru' as const,
       exercises: [
@@ -82,11 +83,13 @@ test(
       baseRevision: 2,
       changes: {
         isFavorite: true,
+        favoriteName: 'Силовая база',
         notes: 'Мало спал, но рабочие веса шли уверенно.',
       },
     });
     assert.equal(favoriteWorkout.entity.revision, 3);
     assert.equal(favoriteWorkout.entity.isFavorite, true);
+    assert.equal(favoriteWorkout.entity.favoriteName, 'Силовая база');
     assert.equal(favoriteWorkout.entity.notes, 'Мало спал, но рабочие веса шли уверенно.');
 
     const setId = randomUUID();
@@ -168,6 +171,7 @@ test(
     assert.equal(history[0].sets[0].revision, 3);
     assert.equal(history[0].revision, 3);
     assert.equal(history[0].isFavorite, true);
+    assert.equal(history[0].favoriteName, 'Силовая база');
     assert.equal(history[0].notes, 'Мало спал, но рабочие веса шли уверенно.');
     assert.equal(history[0].exercises[0].id, secondPlanItemId);
 

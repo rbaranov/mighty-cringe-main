@@ -90,6 +90,7 @@ describe('local user boundary', () => {
       lastActivityAt: '2026-07-22T05:00:00.000Z',
       completionReason: null,
       isFavorite: false,
+      favoriteName: null,
       notes: null,
       locale: 'ru',
       exercises: [],

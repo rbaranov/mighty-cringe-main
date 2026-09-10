@@ -1,0 +1,1 @@
+ALTER TABLE "workouts" ADD COLUMN "favorite_name" varchar(60);

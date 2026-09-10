@@ -24,6 +24,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { SetSheet } from './components/SetSheet';
 import { WorkoutTimingSheet } from './components/WorkoutTimingSheet';
 import { WorkoutNotesSheet } from './components/WorkoutNotesSheet';
+import { WorkoutFavoriteNameSheet } from './components/WorkoutFavoriteNameSheet';
 import { AutoFinishNotice, WorkoutInactivityBanner } from './components/WorkoutLifecycleNotices';
 import { ConfirmationSheet } from './components/ConfirmationSheet';
 import { ExerciseAddPanel } from './components/ExerciseAddPanel';
@@ -280,6 +281,7 @@ function AuthenticatedAppContent({
   const [explainContext, setExplainContext] = useState<{ exercise: Exercise | null } | null>(null);
   const [editingWorkoutId, setEditingWorkoutId] = useState<string | null>(null);
   const [timingWorkoutId, setTimingWorkoutId] = useState<string | null>(null);
+  const [favoriteNameWorkoutId, setFavoriteNameWorkoutId] = useState<string | null>(null);
   const [lifecycleNow, setLifecycleNow] = useState(() => Date.now());
   const finishingWorkoutId = useRef<string | null>(null);
   const resumingWorkoutId = useRef<string | null>(null);
@@ -396,6 +398,9 @@ function AuthenticatedAppContent({
     : undefined;
   const timingWorkout = timingWorkoutId
     ? workouts.find((workout) => workout.id === timingWorkoutId && workout.endedAt !== null)
+    : undefined;
+  const favoriteNameWorkout = favoriteNameWorkoutId
+    ? workouts.find((workout) => workout.id === favoriteNameWorkoutId && workout.endedAt !== null)
     : undefined;
   const editingWorkout = editingWorkoutId
     ? workouts.find((workout) => workout.id === editingWorkoutId && workout.endedAt !== null)
@@ -594,6 +599,7 @@ function AuthenticatedAppContent({
       lastActivityAt: startedAt,
       completionReason: null,
       isFavorite: false,
+      favoriteName: null,
       notes: null,
       locale,
       exercises: workoutExercises,
@@ -613,6 +619,7 @@ function AuthenticatedAppContent({
         lastActivityAt: startedAt,
         completionReason: null,
         isFavorite: false,
+        favoriteName: null,
         notes: null,
         locale,
         exercises: workoutExercises,
@@ -665,8 +672,12 @@ function AuthenticatedAppContent({
     setView('workout');
   }
 
-  async function updateWorkoutFavorite(workout: LocalWorkout, isFavorite: boolean) {
-    await saveWorkoutFavorite(workout, isFavorite);
+  async function updateWorkoutFavorite(
+    workout: LocalWorkout,
+    isFavorite: boolean,
+    favoriteName: string | null = workout.favoriteName,
+  ) {
+    await saveWorkoutFavorite(workout, isFavorite, favoriteName);
   }
 
   async function updateWorkoutNotes(workout: LocalWorkout, notes: string) {
@@ -676,13 +687,18 @@ function AuthenticatedAppContent({
 
   function requestToggleWorkoutFavorite(workout: LocalWorkout) {
     if (!workout.isFavorite) {
-      void updateWorkoutFavorite(workout, true);
+      setFavoriteNameWorkoutId(workout.id);
       return;
     }
     openConfirmation({
       steps: workoutFavoriteRemovalSteps(locale),
       action: () => updateWorkoutFavorite(workout, false),
     });
+  }
+
+  function requestEditWorkoutFavoriteName(workout: LocalWorkout) {
+    if (workout.endedAt === null || !workout.isFavorite) return;
+    setFavoriteNameWorkoutId(workout.id);
   }
 
   function openConfirmation(request: ConfirmationRequest) {
@@ -1562,6 +1578,7 @@ function AuthenticatedAppContent({
                     : void removeDraftExercise(itemId)
                 }
                 onRemoveFavorite={requestToggleWorkoutFavorite}
+                onRenameFavorite={requestEditWorkoutFavoriteName}
                 onRepeatFavorite={requestRepeatWorkout}
                 onReplaceExercise={(itemId) =>
                   setExercisePicker({
@@ -1600,6 +1617,7 @@ function AuthenticatedAppContent({
                 onDeleteWorkout={requestDeleteWorkout}
                 onEditWorkout={editCompletedWorkout}
                 onImportMeasurements={importMeasurements}
+                onEditFavoriteName={requestEditWorkoutFavoriteName}
                 onRepeatWorkout={requestRepeatWorkout}
                 onResumeWorkout={requestResumeWorkout}
                 onSaveMeasurement={saveMeasurement}
@@ -1715,6 +1733,11 @@ function AuthenticatedAppContent({
           return saveWorkoutTiming(timingWorkout, startedAt, durationSeconds);
         }}
         workout={timingWorkout ?? null}
+      />
+      <WorkoutFavoriteNameSheet
+        onClose={() => setFavoriteNameWorkoutId(null)}
+        onSave={(workout, favoriteName) => updateWorkoutFavorite(workout, true, favoriteName)}
+        workout={favoriteNameWorkout ?? null}
       />
       <ExercisePickerSheet
         catalog={catalogChoices}
@@ -1885,6 +1908,7 @@ function WorkoutView({
   onOpenExercise,
   onRemoveExercise,
   onRemoveFavorite,
+  onRenameFavorite,
   onRepeatFavorite,
   onReplaceExercise,
   onResumeAutoFinished,
@@ -1917,6 +1941,7 @@ function WorkoutView({
   onOpenExercise: (exercise: Exercise) => void;
   onRemoveExercise: (itemId: string, hasLoggedSets: boolean) => void;
   onRemoveFavorite: (workout: LocalWorkout) => void;
+  onRenameFavorite: (workout: LocalWorkout) => void;
   onRepeatFavorite: (workout: LocalWorkout) => void;
   onReplaceExercise: (itemId: string) => void;
   onResumeAutoFinished: () => void;
@@ -2036,6 +2061,7 @@ function WorkoutView({
         <FavoriteWorkoutsSection
           exercises={catalog}
           onRemove={onRemoveFavorite}
+          onRename={onRenameFavorite}
           onRepeat={onRepeatFavorite}
           workouts={favoriteWorkouts}
         />

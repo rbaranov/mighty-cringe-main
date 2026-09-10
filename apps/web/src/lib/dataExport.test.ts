@@ -28,6 +28,7 @@ const workout: LocalWorkout = {
   lastActivityAt: '2026-08-03T14:00:00.000Z',
   completionReason: 'manual',
   isFavorite: false,
+  favoriteName: null,
   notes: null,
   locale: 'ru',
   exercises: [

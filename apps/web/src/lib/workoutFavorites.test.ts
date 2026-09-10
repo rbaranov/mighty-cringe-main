@@ -3,7 +3,7 @@ import 'fake-indexeddb/auto';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { db, type LocalWorkout } from './db';
-import { saveWorkoutFavorite } from './workoutFavorites';
+import { normalizeWorkoutFavoriteName, saveWorkoutFavorite } from './workoutFavorites';
 
 describe('favorite workout persistence', () => {
   beforeEach(async () => {
@@ -18,10 +18,11 @@ describe('favorite workout persistence', () => {
   it('keeps the bookmark locally and queues it while offline', async () => {
     await db.workouts.put(workout);
 
-    await saveWorkoutFavorite(workout, true);
+    await saveWorkoutFavorite(workout, true, '  Тяжёлая грудь  ');
 
     expect(await db.workouts.get(workout.id)).toMatchObject({
       isFavorite: true,
+      favoriteName: 'Тяжёлая грудь',
       syncState: 'pending',
     });
     expect((await db.outbox.toArray())[0]?.mutation).toMatchObject({
@@ -29,9 +30,29 @@ describe('favorite workout persistence', () => {
       payload: {
         workoutId: workout.id,
         baseRevision: workout.revision,
-        changes: { isFavorite: true },
+        changes: { isFavorite: true, favoriteName: 'Тяжёлая грудь' },
       },
     });
+  });
+
+  it('retains the name when a favorite is removed and added again', async () => {
+    const namedWorkout = { ...workout, isFavorite: true, favoriteName: 'Ноги' };
+    await db.workouts.put(namedWorkout);
+
+    await saveWorkoutFavorite(namedWorkout, false);
+    const removed = await db.workouts.get(workout.id);
+    expect(removed).toMatchObject({ isFavorite: false, favoriteName: 'Ноги' });
+
+    await saveWorkoutFavorite(removed!, true);
+    expect(await db.workouts.get(workout.id)).toMatchObject({
+      isFavorite: true,
+      favoriteName: 'Ноги',
+    });
+  });
+
+  it('normalizes blank and padded names', () => {
+    expect(normalizeWorkoutFavoriteName('   ')).toBeNull();
+    expect(normalizeWorkoutFavoriteName('  Спина и бицепс  ')).toBe('Спина и бицепс');
   });
 
   it('does not bookmark an unfinished workout', async () => {
@@ -54,6 +75,7 @@ const workout: LocalWorkout = {
   lastActivityAt: '2026-07-21T18:00:00.000Z',
   completionReason: 'manual',
   isFavorite: false,
+  favoriteName: null,
   notes: null,
   locale: 'ru',
   revision: 2,

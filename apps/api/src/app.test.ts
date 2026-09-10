@@ -321,13 +321,14 @@ test('OAuth sessions isolate athlete data, support logout, and enforce admin rol
         clientMutationId: '30000000-0000-4000-8000-000000000013',
         workoutId,
         baseRevision: 4,
-        changes: { isFavorite: true },
+        changes: { isFavorite: true, favoriteName: 'Силовая база' },
       },
     },
   });
   assert.equal(favoriteWorkout.statusCode, 200);
   assert.equal(favoriteWorkout.json().entity.revision, 5);
   assert.equal(favoriteWorkout.json().entity.isFavorite, true);
+  assert.equal(favoriteWorkout.json().entity.favoriteName, 'Силовая база');
 
   const noteWorkout = await app.inject({
     method: 'POST',

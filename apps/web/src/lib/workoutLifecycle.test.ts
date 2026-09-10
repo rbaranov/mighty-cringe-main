@@ -88,6 +88,7 @@ function activeWorkout(overrides: Partial<LocalWorkout> = {}): LocalWorkout {
     lastActivityAt: '2026-07-30T10:00:00.000Z',
     completionReason: null,
     isFavorite: false,
+    favoriteName: null,
     notes: null,
     locale: 'ru',
     revision: 1,

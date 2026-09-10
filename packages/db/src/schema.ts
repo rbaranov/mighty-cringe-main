@@ -193,6 +193,7 @@ export const workouts = pgTable(
     lastActivityAt: timestamp('last_activity_at', { withTimezone: true }).notNull(),
     completionReason: workoutCompletionReasonEnum('completion_reason'),
     isFavorite: boolean('is_favorite').notNull().default(false),
+    favoriteName: varchar('favorite_name', { length: 60 }),
     locale: varchar('locale', { length: 10 }).notNull().default('ru'),
     notes: text('notes'),
     revision: integer('revision').notNull().default(1),

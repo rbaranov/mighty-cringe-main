@@ -6957,6 +6957,69 @@ body {
   font-size: 10px;
 }
 
+.favorite-workout-card-actions {
+  display: grid;
+  gap: 4px;
+}
+
+.favorite-workout-rename.button {
+  min-height: 28px;
+  padding: 4px 8px;
+  font-size: 10px;
+}
+
+.workout-favorite-name-sheet form,
+.workout-favorite-name-field {
+  display: grid;
+  gap: 8px;
+}
+
+.workout-favorite-name-hint {
+  margin: 0 0 14px;
+  color: var(--muted);
+}
+
+.workout-favorite-name-field span,
+.workout-favorite-name-counter {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.workout-favorite-name-field input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 12px;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+}
+
+.workout-favorite-name-counter {
+  justify-self: end;
+}
+
+.workout-history-favorite-name {
+  display: grid;
+  gap: 2px;
+  margin-top: 8px;
+}
+
+.workout-history-favorite-name strong {
+  color: var(--accent);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.workout-history-favorite-name span {
+  font-weight: 800;
+}
+
 .draft-plan-list {
   margin-bottom: 8px;
 }
