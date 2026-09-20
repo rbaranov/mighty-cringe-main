@@ -23,15 +23,18 @@ jobs:
       cancel-in-progress: false
     steps:
       - name: Check out the verified main revision
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.revision || github.sha }}
           fetch-depth: 1
 
       - name: Set up Node.js for configuration preflight
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
+          # This step only runs the preflight scripts; it never installs dependencies. Keep the
+          # automatic pnpm-store cache that setup-node v5 introduced off the production runner.
+          package-manager-cache: false
 
       - name: Reject a stale or unexpected revision
         id: revision
