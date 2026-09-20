@@ -34,9 +34,9 @@ The interface is in Russian.
 
 <table>
   <tr>
-    <td width="33%"><img src="docs/screenshots/workout-plan.png" alt="Today's workout plan with supersets"></td>
-    <td width="33%"><img src="docs/screenshots/progress-calendar.png" alt="Training calendar and streak"></td>
-    <td width="33%"><img src="docs/screenshots/progress-strength.png" alt="Working weight and estimated 1RM"></td>
+    <td width="33%"><img src="docs/screenshots/workout-plan.webp" alt="Today's workout plan with supersets"></td>
+    <td width="33%"><img src="docs/screenshots/progress-calendar.webp" alt="Training calendar and streak"></td>
+    <td width="33%"><img src="docs/screenshots/progress-strength.webp" alt="Working weight and estimated 1RM"></td>
   </tr>
   <tr>
     <td align="center"><b>Workout</b><br>plan for today</td>
@@ -44,9 +44,9 @@ The interface is in Russian.
     <td align="center"><b>Strength</b><br>working weight and 1RM</td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/catalog.png" alt="Exercise catalog with muscle-group and tag filters"></td>
-    <td><img src="docs/screenshots/exercise-card.png" alt="Exercise card with technique description"></td>
-    <td><img src="docs/screenshots/about.png" alt="About the app"></td>
+    <td><img src="docs/screenshots/catalog.webp" alt="Exercise catalog with muscle-group and tag filters"></td>
+    <td><img src="docs/screenshots/exercise-card.webp" alt="Exercise card with technique description"></td>
+    <td><img src="docs/screenshots/about.webp" alt="About the app"></td>
   </tr>
   <tr>
     <td align="center"><b>Catalog</b><br>shared and personal</td>
