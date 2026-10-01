@@ -15,6 +15,7 @@ import {
   canonicalWeight,
   displayWeight,
   exerciseName,
+  formatWeight,
   tr,
   usePreferences,
   weightUnit,
@@ -30,6 +31,10 @@ type Props = {
   exercise: Exercise | null;
   initial: LocalSet | null;
   defaults: LocalSet | null;
+  useLatest?: boolean;
+  setNumber?: number;
+  previousSets?: LocalSet[];
+  previousWorkoutDate?: string | null;
   onClose: () => void;
   onDelete: (() => void) | null;
   onExplain: () => void;
@@ -48,6 +53,10 @@ export function SetSheet({
   exercise,
   initial,
   defaults,
+  useLatest = false,
+  setNumber = 1,
+  previousSets = [],
+  previousWorkoutDate = null,
   onClose,
   onDelete,
   onExplain,
@@ -60,7 +69,7 @@ export function SetSheet({
   const [comment, setComment] = useState('');
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
-  const sheetRef = useRef<HTMLElement>(null);
+  const sheetRef = useRef<HTMLDivElement>(null);
   const weightRef = useRef<HTMLInputElement>(null);
   const repsRef = useRef<HTMLInputElement>(null);
   const rirRef = useRef<HTMLInputElement>(null);
@@ -82,21 +91,14 @@ export function SetSheet({
     (rirValue === null || (rirValue >= 0 && rirValue <= 20));
 
   useEffect(() => {
-    const source = initial ?? defaults;
+    const source = initial ?? (useLatest ? defaults : null);
     setWeight(source ? formatNumericInput(displayWeight(source.weightKg, unitSystem), locale) : '');
     setReps(source ? String(source.reps) : '');
     setRir(source?.rir === null || source?.rir === undefined ? '' : String(source.rir));
     setComment(initial?.comment ?? '');
     savingRef.current = false;
     setSaving(false);
-  }, [
-    exercise?.id,
-    initial?.id,
-    initial?.updatedAt,
-    defaults?.id,
-    defaults?.updatedAt,
-    unitSystem,
-  ]);
+  }, [exercise?.id, initial?.id, initial?.updatedAt, unitSystem]);
 
   useEffect(() => {
     if (!exercise) return;
@@ -142,119 +144,207 @@ export function SetSheet({
       onMouseDown={onClose}
     >
       <section
-        ref={sheetRef}
-        className="sheet set-sheet"
+        className="sheet set-sheet set-entry-sheet"
         aria-modal="true"
         aria-label={`${initial ? tr(locale, 'Изменить', 'Edit') : tr(locale, 'Новый', 'New')} ${tr(locale, 'подход', 'set')}: ${exerciseName(exercise, locale)}`}
         role="dialog"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className="sheet-handle" />
-        <p className="eyebrow">
-          {initial
-            ? tr(locale, 'Изменить подход', 'Edit set')
-            : tr(locale, 'Новый подход', 'New set')}
-        </p>
-        <h2>{exerciseName(exercise, locale)}</h2>
-        {!initial && (
-          <>
-            <button className="button explain-entry full" onClick={onExplain} type="button">
-              🎙️✏️ {tr(locale, 'Сказать или написать', 'Speak or type')}
+        <div className="set-sheet-content" ref={sheetRef}>
+          <div className="sheet-handle" />
+          <div className="set-entry-heading">
+            <div>
+              <p className="eyebrow">
+                {initial
+                  ? tr(locale, 'Изменить подход', 'Edit set')
+                  : tr(locale, `Подход №${setNumber}`, `Set #${setNumber}`)}
+              </p>
+              <h2>{exerciseName(exercise, locale)}</h2>
+            </div>
+            <button
+              className="set-entry-close"
+              aria-label={tr(locale, 'Отмена', 'Cancel')}
+              disabled={saving}
+              onClick={onClose}
+              type="button"
+            >
+              ×
             </button>
-            <p className="form-divider">{tr(locale, 'или ввести вручную', 'or enter manually')}</p>
-          </>
-        )}
-        <div className="form-grid">
-          <NumericStepper
-            allowDecimal
-            decrementDisabled={weightValue !== null && weightValue <= 0}
-            incrementDisabled={weightValue !== null && weightValue >= maximumDisplayWeight}
-            inputLabel={`${tr(locale, 'Вес', 'Weight')}, ${weightUnit(unitSystem, locale)}`}
-            label={
-              <>
-                {tr(locale, 'Вес', 'Weight')}, {weightUnit(unitSystem, locale)}
-              </>
-            }
-            locale={locale}
-            maximum={maximumDisplayWeight}
-            minimum={0}
-            onChange={setWeight}
-            onEnter={() => focusAndReveal(sheetRef, repsRef)}
-            placeholder="40"
-            inputRef={weightRef}
-            sheetRef={sheetRef}
-            step={setWeightStep}
-            value={weight}
-          />
-          <NumericStepper
-            decrementDisabled={repsValue !== null && repsValue <= 1}
-            incrementDisabled={repsValue !== null && repsValue >= 100}
-            inputLabel={tr(locale, 'Повторы', 'Reps')}
-            label={tr(locale, 'Повторы', 'Reps')}
-            locale={locale}
-            maximum={100}
-            minimum={1}
-            onChange={setReps}
-            onEnter={() => focusAndReveal(sheetRef, rirRef)}
-            placeholder="12"
-            inputRef={repsRef}
-            sheetRef={sheetRef}
-            step={1}
-            value={reps}
-          />
-          <NumericStepper
-            decrementDisabled={rirValue !== null && rirValue <= 0}
-            incrementDisabled={rirValue !== null && rirValue >= 20}
-            inputLabel="RIR"
-            label={
-              <>
-                RIR
-                <span className="rir-help">
-                  <button
-                    aria-describedby="rir-tooltip"
-                    aria-label={tr(locale, 'Что такое RIR?', 'What is RIR?')}
-                    type="button"
-                  >
-                    ?
-                  </button>
-                  <span id="rir-tooltip" role="tooltip">
-                    {tr(
-                      locale,
-                      'RIR — сколько повторов осталось бы в запасе до отказа. 0 — ни одного, 2 — ещё примерно два.',
-                      'RIR means reps left in reserve before failure. 0 means none; 2 means about two more.',
-                    )}
-                  </span>
-                </span>
-              </>
-            }
-            locale={locale}
-            maximum={20}
-            minimum={0}
-            onChange={setRir}
-            onEnter={() => focusAndReveal(sheetRef, commentRef)}
-            placeholder="1"
-            inputRef={rirRef}
-            sheetRef={sheetRef}
-            step={1}
-            value={rir}
-          />
-          <label className="wide">
-            {tr(locale, 'Комментарий', 'Comment')}
-            <input
-              enterKeyHint="done"
-              maxLength={1000}
-              onChange={(event) => setComment(event.target.value)}
-              onFocus={(event) => revealInput(sheetRef, event.currentTarget)}
-              onKeyDown={(event) => {
-                if (event.key !== 'Enter') return;
-                event.preventDefault();
-                save();
-              }}
-              placeholder={tr(locale, 'Как ощущалось?', 'How did it feel?')}
-              ref={commentRef}
-              value={comment}
+          </div>
+          {previousWorkoutDate ? (
+            <div className="set-history">
+              <details>
+                <summary>
+                  {tr(locale, 'Последняя тренировка', 'Last workout')} ·{' '}
+                  {new Date(previousWorkoutDate).toLocaleDateString(
+                    locale === 'ru' ? 'ru-RU' : 'en-US',
+                  )}
+                </summary>
+                <ol>
+                  {previousSets.map((set, index) => (
+                    <li
+                      key={set.id}
+                      className={index + 1 === setNumber ? 'matching-set' : undefined}
+                    >
+                      <span>№{index + 1}</span>
+                      <span>
+                        {formatWeight(set.weightKg, locale, unitSystem)} × {set.reps}
+                      </span>
+                      <span>{set.rir === null ? 'RIR —' : `RIR ${set.rir}`}</span>
+                    </li>
+                  ))}
+                </ol>
+              </details>
+            </div>
+          ) : (
+            <p className="set-history-empty">
+              {tr(
+                locale,
+                'Прошлых подходов этого упражнения пока нет.',
+                'No previous sets for this exercise yet.',
+              )}
+            </p>
+          )}
+          {!initial &&
+            (defaults ? (
+              <button
+                className="set-entry-suggestion"
+                type="button"
+                onClick={() => {
+                  setWeight(
+                    formatNumericInput(displayWeight(defaults.weightKg, unitSystem), locale),
+                  );
+                  setReps(String(defaults.reps));
+                  setRir(defaults.rir === null ? '' : String(defaults.rir));
+                }}
+              >
+                {useLatest
+                  ? tr(locale, 'Последний результат', 'Latest result')
+                  : tr(locale, `Взять №${setNumber}`, `Use #${setNumber}`)}
+                : {formatWeight(defaults.weightKg, locale, unitSystem)} × {defaults.reps}
+                {defaults.rir === null ? '' : ` · RIR ${defaults.rir}`} ↗
+              </button>
+            ) : null)}
+          <div className="form-grid">
+            <NumericStepper
+              allowDecimal
+              decrementDisabled={weightValue !== null && weightValue <= 0}
+              incrementDisabled={weightValue !== null && weightValue >= maximumDisplayWeight}
+              inputLabel={`${tr(locale, 'Вес', 'Weight')}, ${weightUnit(unitSystem, locale)}`}
+              label={
+                <>
+                  {tr(locale, 'Вес', 'Weight')}, {weightUnit(unitSystem, locale)}
+                </>
+              }
+              locale={locale}
+              maximum={maximumDisplayWeight}
+              minimum={0}
+              onChange={setWeight}
+              onEnter={() => focusAndReveal(sheetRef, repsRef)}
+              placeholder={
+                defaults
+                  ? formatNumericInput(displayWeight(defaults.weightKg, unitSystem), locale)
+                  : '—'
+              }
+              inputRef={weightRef}
+              sheetRef={sheetRef}
+              step={setWeightStep}
+              value={weight}
             />
-          </label>
+            <NumericStepper
+              decrementDisabled={repsValue !== null && repsValue <= 1}
+              incrementDisabled={repsValue !== null && repsValue >= 100}
+              inputLabel={tr(locale, 'Повторы', 'Reps')}
+              label={tr(locale, 'Повторы', 'Reps')}
+              locale={locale}
+              maximum={100}
+              minimum={1}
+              onChange={setReps}
+              onEnter={() => focusAndReveal(sheetRef, rirRef)}
+              placeholder={defaults ? String(defaults.reps) : '—'}
+              inputRef={repsRef}
+              sheetRef={sheetRef}
+              step={1}
+              value={reps}
+            />
+            <NumericStepper
+              decrementDisabled={rirValue !== null && rirValue <= 0}
+              incrementDisabled={rirValue !== null && rirValue >= 20}
+              inputLabel="RIR"
+              label={
+                <>
+                  RIR
+                  <span className="rir-help">
+                    <button
+                      aria-describedby="rir-tooltip"
+                      aria-label={tr(locale, 'Что такое RIR?', 'What is RIR?')}
+                      type="button"
+                    >
+                      ?
+                    </button>
+                    <span id="rir-tooltip" role="tooltip">
+                      {tr(
+                        locale,
+                        'RIR — сколько повторов осталось бы в запасе до отказа. 0 — ни одного, 2 — ещё примерно два.',
+                        'RIR means reps left in reserve before failure. 0 means none; 2 means about two more.',
+                      )}
+                    </span>
+                  </span>
+                </>
+              }
+              locale={locale}
+              maximum={20}
+              minimum={0}
+              onChange={setRir}
+              onEnter={save}
+              placeholder={defaults?.rir == null ? '—' : String(defaults.rir)}
+              inputRef={rirRef}
+              sheetRef={sheetRef}
+              step={1}
+              value={rir}
+            />
+          </div>
+          <details
+            className="set-entry-extras"
+            key={`${exercise.id}-${initial?.id ?? 'new'}`}
+            open={initial?.comment ? true : undefined}
+          >
+            <summary>{tr(locale, 'Комментарий и ещё', 'Comment and more')}</summary>
+            <div className="form-grid">
+              <label className="wide">
+                {tr(locale, 'Комментарий', 'Comment')}
+                <input
+                  enterKeyHint="done"
+                  maxLength={1000}
+                  onChange={(event) => setComment(event.target.value)}
+                  onFocus={(event) => revealInput(sheetRef, event.currentTarget)}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter') return;
+                    event.preventDefault();
+                    save();
+                  }}
+                  placeholder={tr(locale, 'Как ощущалось?', 'How did it feel?')}
+                  ref={commentRef}
+                  value={comment}
+                />
+              </label>
+            </div>
+            {!initial && (
+              <button className="button ghost full" onClick={onExplain} type="button">
+                {tr(locale, 'Сказать или написать', 'Speak or type')}
+              </button>
+            )}
+            {initial && onDelete && (
+              <button
+                className="button danger full"
+                disabled={saving}
+                onClick={onDelete}
+                type="button"
+              >
+                {tr(locale, 'Удалить подход', 'Delete set')}
+              </button>
+            )}
+          </details>
         </div>
         <div className="set-sheet-actions">
           <button
@@ -268,19 +358,6 @@ export function SetSheet({
               : initial
                 ? tr(locale, 'Сохранить изменения', 'Save changes')
                 : tr(locale, 'Сохранить подход', 'Save set')}
-          </button>
-          {initial && onDelete && (
-            <button
-              className="button danger full"
-              disabled={saving}
-              onClick={onDelete}
-              type="button"
-            >
-              {tr(locale, 'Удалить подход', 'Delete set')}
-            </button>
-          )}
-          <button className="button ghost full" disabled={saving} onClick={onClose} type="button">
-            {tr(locale, 'Отмена', 'Cancel')}
           </button>
         </div>
       </section>

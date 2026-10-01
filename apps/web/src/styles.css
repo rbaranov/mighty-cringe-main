@@ -7825,3 +7825,163 @@ body {
     grid-column: 1 / -1;
   }
 }
+
+/* Set entry has one scrollable body and a separate, opaque action panel. */
+.keyboard-aware-sheet-backdrop .set-entry-sheet {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  background: var(--canvas);
+}
+.set-sheet-content {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  padding: 12px 18px 18px;
+  scroll-padding-block: 16px;
+  background: var(--canvas);
+}
+.set-entry-sheet > .set-sheet-actions {
+  position: static;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 10px 18px calc(12px + env(safe-area-inset-bottom));
+  background: var(--canvas);
+  box-shadow: none;
+}
+.set-sheet .form-grid input::placeholder {
+  color: var(--muted);
+  -webkit-text-fill-color: var(--muted);
+  font-weight: 400;
+  opacity: 1;
+}
+.set-entry-sheet .sheet-handle {
+  margin-bottom: 10px;
+}
+.set-entry-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.set-entry-heading .eyebrow {
+  margin: 0 0 4px;
+  font-size: 11px;
+}
+.set-entry-heading h2 {
+  margin: 0;
+  letter-spacing: normal;
+  font-family: inherit;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-transform: none;
+}
+.set-entry-close {
+  flex: 0 0 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--ink);
+  font-size: 26px;
+}
+.set-entry-sheet .form-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0 0;
+}
+.set-entry-sheet .set-stepper-field {
+  width: 100%;
+  gap: 4px;
+}
+.set-entry-sheet .set-stepper-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+.set-entry-sheet .set-stepper-control {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px;
+}
+.set-entry-sheet .set-stepper-control input {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  min-height: 46px;
+  font-family: inherit;
+  font-size: 20px;
+  font-weight: 600;
+}
+.set-entry-sheet .set-stepper-control button {
+  min-height: 36px;
+  font-size: 20px;
+  font-weight: 500;
+}
+.set-entry-sheet .set-stepper-control button:first-child {
+  grid-column: 1;
+  grid-row: 2;
+}
+.set-entry-sheet .set-stepper-control button:last-child {
+  grid-column: 2;
+  grid-row: 2;
+}
+.set-history {
+  margin-top: 6px;
+  font-size: 13px;
+}
+.set-history summary,
+.set-entry-extras summary {
+  min-height: 36px;
+  align-content: center;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 13px;
+}
+.set-history ol {
+  list-style: none;
+  margin: 0 0 6px;
+  padding: 0;
+}
+.set-history li {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.set-history .matching-set {
+  border-radius: 4px;
+  background: var(--accent-soft);
+  font-weight: 700;
+}
+.set-entry-suggestion {
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--surface-soft);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.set-history p,
+.set-history-empty {
+  margin: 6px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.set-entry-extras {
+  margin-top: 6px;
+}
+.set-entry-sheet .set-entry-extras .form-grid {
+  display: block;
+  margin: 0 0 8px;
+}
+.set-entry-sheet .set-entry-extras label {
+  display: block;
+}
+.set-entry-sheet .set-sheet-content {
+  padding-bottom: 6px;
+}
