@@ -96,6 +96,7 @@ import {
   usePreferences,
 } from './lib/preferences';
 import { setEntrySourceSuffix } from './lib/setEntrySource';
+import { setEntryHistory } from './lib/setEntryHistory';
 import { nextSetPosition } from './lib/setPosition';
 import { resolveSession } from './lib/session';
 import { acceptTrainerInviteFromUrl, currentLoginReturnTo } from './lib/trainer';
@@ -454,23 +455,10 @@ function AuthenticatedAppContent({
     initialSyncCompleted,
     storedDraftPlan,
   ]);
-  const setDefaults = useMemo(() => {
-    if (!sheet || sheet.set) return null;
-    const candidates = sets.filter((set) => set.exerciseId === sheet.exercise.id && !set.deleted);
-    const currentWorkoutSet = workoutContext
-      ? candidates
-          .filter((set) => set.workoutId === workoutContext.id)
-          .sort(
-            (left, right) =>
-              right.position - left.position || right.performedAt.localeCompare(left.performedAt),
-          )[0]
-      : null;
-    return (
-      currentWorkoutSet ??
-      candidates.sort((left, right) => right.performedAt.localeCompare(left.performedAt))[0] ??
-      null
-    );
-  }, [sets, sheet, workoutContext]);
+  const setHistory = useMemo(
+    () => setEntryHistory(sets, workouts, workoutContext, sheet?.exercise.id, sheet?.set),
+    [sets, workouts, workoutContext, sheet],
+  );
   const exerciseDetail = exerciseDetailId
     ? (exercises.find((exercise) => exercise.id === exerciseDetailId) ?? null)
     : null;
@@ -1709,7 +1697,11 @@ function AuthenticatedAppContent({
       )}
 
       <SetSheet
-        defaults={setDefaults}
+        defaults={setHistory.suggestion}
+        useLatest={setHistory.useLatest}
+        setNumber={setHistory.number}
+        previousSets={setHistory.previousSets}
+        previousWorkoutDate={setHistory.previousWorkout?.startedAt ?? null}
         exercise={sheet?.exercise ?? null}
         initial={sheet?.set ?? null}
         onClose={() => setSheet(null)}

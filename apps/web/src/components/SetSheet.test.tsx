@@ -54,7 +54,7 @@ describe('SetSheet', () => {
       />,
     );
 
-    expect(html).toContain('class="sheet set-sheet"');
+    expect(html).toContain('class="sheet set-sheet set-entry-sheet"');
     expect(html).toContain('inputMode="decimal"');
     expect(html).toContain('enterKeyHint="next"');
     expect(html).toContain('enterKeyHint="done"');
@@ -63,6 +63,31 @@ describe('SetSheet', () => {
     expect(html).toContain('aria-label="Что такое RIR?"');
     expect(html).toContain('RIR — сколько повторов осталось бы в запасе');
     expect(html).not.toContain('autofocus');
+  });
+
+  it('shows ordinal history as suggestions without claiming they were entered', () => {
+    const html = renderToStaticMarkup(
+      <SetSheet
+        exercise={exercise}
+        initial={null}
+        defaults={existingSet}
+        setNumber={2}
+        previousWorkoutDate="2026-07-29T12:00:00.000Z"
+        previousSets={[{ ...existingSet, id: 'first', weightKg: 70 }, existingSet]}
+        onClose={() => {}}
+        onDelete={null}
+        onExplain={() => {}}
+        onSave={() => {}}
+      />,
+    );
+    expect(html).toContain('Подход №2');
+    expect(html).toContain('Последняя тренировка');
+    expect(html).toContain('70 кг');
+    expect(html).toContain('80 кг');
+    expect(html).toContain('Взять №2: 80 кг × 8 · RIR 2');
+    expect(html).toContain('placeholder="80"');
+    expect(html).not.toContain('value="80"');
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Сохранить подход/);
   });
 
   it('offers deletion whenever an existing set is edited', () => {
