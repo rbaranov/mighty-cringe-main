@@ -29,7 +29,10 @@ checks. A retry whose desired value already matches is a no-op. An incompatible 
 explicit conflict with the same keep-server or keep-mine choices used for other revisioned data.
 
 Catalog and workout logic consume a preference lookup without adding a personal field to
-`Exercise`. Likes sort before neutral choices within a replacement muscle group. Dislikes are
+`Exercise`. The source exercise's primary muscle group stays first among matching replacements,
+including during search; other matching groups remain selectable.
+Likes sort before neutral choices within a replacement muscle group when there is no search query;
+search relevance determines the order within each group when a query is present. Dislikes are
 excluded from automatic workout suggestions and the default replacement list, including fallback.
 An athlete who explicitly searches for or directly names a disliked exercise may still choose it
 once with a visible warning. Manual plan addition also remains available. Existing draft and active

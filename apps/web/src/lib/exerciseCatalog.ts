@@ -225,6 +225,7 @@ export function groupExerciseChoicesByPrimaryMuscle(
   const order = normalizedQuery
     ? [...defaultOrder].sort(
         (left, right) =>
+          Number(right === preferredMuscle) - Number(left === preferredMuscle) ||
           firstExerciseIndex(exercises, left) - firstExerciseIndex(exercises, right) ||
           defaultOrder.indexOf(left) - defaultOrder.indexOf(right),
       )

@@ -177,6 +177,77 @@ describe('filterExerciseCatalog', () => {
     expect(groups[0]?.exercises[0]).toBe(liked);
   });
 
+  it.each(['ru', 'en'] as const)(
+    'keeps the source muscle first during replacement search in %s',
+    (locale) => {
+      const choices: Exercise[] = [
+        {
+          ...globalExerciseCatalog[0]!,
+          nameRu: 'Жим',
+          nameEn: 'Press',
+          primaryMuscles: ['front_delt'],
+          secondaryMuscles: [],
+        },
+        {
+          ...globalExerciseCatalog[1]!,
+          nameRu: 'Жим штанги лёжа',
+          nameEn: 'Press with a barbell',
+          primaryMuscles: ['chest'],
+          secondaryMuscles: [],
+        },
+        {
+          ...globalExerciseCatalog[2]!,
+          nameRu: 'Наклонный жим',
+          nameEn: 'Incline press',
+          primaryMuscles: ['chest'],
+          secondaryMuscles: [],
+        },
+      ];
+      const query = locale === 'ru' ? 'жим' : 'press';
+      const preferences = new Map([[choices[0]!.id, 'like' as const]]);
+      const { options } = replacementExerciseOptions({
+        exercises: choices,
+        mode: 'replace',
+        preferences,
+        query,
+        unavailableIds: new Set(),
+      });
+      // The off-group exact name is the strongest search match, even liked.
+      expect(options[0]).toBe(choices[0]);
+
+      const groups = groupExerciseChoicesByPrimaryMuscle(
+        options,
+        'chest',
+        locale,
+        preferences,
+        query,
+      );
+
+      expect(groups.map((group) => group.muscle)).toEqual(['chest', 'front_delt']);
+      expect(groups.flatMap((group) => group.exercises)).toEqual([
+        choices[1],
+        choices[2],
+        choices[0],
+      ]);
+    },
+  );
+
+  it('keeps other search results available when the source muscle has no matches', () => {
+    const { options } = replacementExerciseOptions({
+      exercises: globalExerciseCatalog,
+      mode: 'replace',
+      preferences: new Map(),
+      query: 'жим',
+      unavailableIds: new Set(),
+    });
+    expect(options.length).toBeGreaterThan(0);
+    expect(options.some((exercise) => exercise.primaryMuscles[0] === 'calves')).toBe(false);
+
+    expect(groupExerciseChoicesByPrimaryMuscle(options, 'calves', 'ru', new Map(), 'жим')).toEqual(
+      groupExerciseChoicesByPrimaryMuscle(options, null, 'ru', new Map(), 'жим'),
+    );
+  });
+
   it('hides disliked replacements by default but reveals explicit search matches', () => {
     const disliked = globalExerciseCatalog.find((exercise) => exercise.aliases.length > 0)!;
     const preferences = new Map([[disliked.id, 'dislike' as const]]);
