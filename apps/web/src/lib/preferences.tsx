@@ -86,6 +86,17 @@ export function formatWeight(weightKg: number, locale: Locale, unitSystem: UnitS
   return `${formatNumber(displayWeight(weightKg, unitSystem), locale)} ${weightUnit(unitSystem, locale)}`;
 }
 
+/** Keep small stored differences visible in record comparisons and their source sets. */
+export function formatSourceWeight(value: number, locale: Locale, unitSystem: UnitSystem) {
+  if (Math.abs(value * 10 - Math.round(value * 10)) < 1e-8)
+    return formatWeight(value, locale, unitSystem);
+  const displayed = unitSystem === 'imperial' ? value * 2.2046226218 : value;
+  const number = new Intl.NumberFormat(locale === 'en' ? 'en-US' : 'ru-RU', {
+    maximumFractionDigits: 2,
+  }).format(displayed);
+  return `${number} ${weightUnit(unitSystem, locale)}`;
+}
+
 export function formatLength(lengthCm: number, locale: Locale, unitSystem: UnitSystem) {
   return `${formatNumber(displayLength(lengthCm, unitSystem), locale)} ${lengthUnit(unitSystem, locale)}`;
 }

@@ -12,7 +12,6 @@ import type { Exercise } from '@mighty-cringe/contracts';
 
 import type { LocalSet } from '../lib/db';
 import {
-  canonicalWeight,
   displayWeight,
   exerciseName,
   formatWeight,
@@ -22,6 +21,7 @@ import {
 } from '../lib/preferences';
 import {
   formatNumericInput,
+  canonicalSetWeight,
   parseDecimalInput,
   parseIntegerInput,
   stepNumericInput,
@@ -75,6 +75,7 @@ export function SetSheet({
   const [weight, setWeight] = useState(() =>
     source ? formatNumericInput(displayWeight(source.weightKg, unitSystem), locale) : '',
   );
+  const [weightEdited, setWeightEdited] = useState(false);
   const [reps, setReps] = useState(() => (source ? String(source.reps) : ''));
   const [rir, setRir] = useState(() => (source?.rir == null ? '' : String(source.rir)));
   const [comment, setComment] = useState(initial?.comment ?? '');
@@ -90,8 +91,11 @@ export function SetSheet({
   const weightValue = parseDecimalInput(weight);
   const repsValue = parseIntegerInput(reps);
   const rirValue = rir === '' ? null : parseIntegerInput(rir);
-  const canonicalWeightValue =
-    weightValue === null ? null : canonicalWeight(weightValue, unitSystem);
+  const canonicalWeightValue = canonicalSetWeight(
+    weight,
+    weightEdited ? null : (source?.weightKg ?? null),
+    unitSystem,
+  );
   const canSave =
     canonicalWeightValue !== null &&
     canonicalWeightValue >= 0 &&
@@ -104,6 +108,7 @@ export function SetSheet({
   useEffect(() => {
     const source = initial ?? defaults;
     setWeight(source ? formatNumericInput(displayWeight(source.weightKg, unitSystem), locale) : '');
+    setWeightEdited(false);
     setReps(source ? String(source.reps) : '');
     setRir(source?.rir === null || source?.rir === undefined ? '' : String(source.rir));
     setComment(initial?.comment ?? '');
@@ -267,7 +272,10 @@ export function SetSheet({
               locale={locale}
               maximum={maximumDisplayWeight}
               minimum={0}
-              onChange={setWeight}
+              onChange={(value) => {
+                setWeightEdited(true);
+                setWeight(value);
+              }}
               onEnter={() => focusAndReveal(sheetRef, repsRef)}
               placeholder="—"
               inputRef={weightRef}
@@ -350,7 +358,7 @@ export function SetSheet({
             </div>
             {initial && onDelete && (
               <button
-                className="button danger full"
+                className="button ghost set-entry-delete"
                 disabled={saving}
                 onClick={onDelete}
                 type="button"

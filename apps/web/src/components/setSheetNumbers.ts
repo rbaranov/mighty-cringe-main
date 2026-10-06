@@ -1,3 +1,20 @@
+import type { UnitSystem } from '@mighty-cringe/contracts';
+import { canonicalWeight, displayWeight } from '../lib/preferences';
+
+// Display units are rounded. Pass a source only while the weight field is untouched.
+// Reusing a previous value must not manufacture a tiny PR; explicit edits use typed units.
+export function canonicalSetWeight(
+  value: string,
+  sourceWeightKg: number | null,
+  unitSystem: UnitSystem,
+): number | null {
+  const parsed = parseDecimalInput(value);
+  if (parsed === null) return null;
+  if (sourceWeightKg !== null && parsed === displayWeight(sourceWeightKg, unitSystem))
+    return sourceWeightKg;
+  return canonicalWeight(parsed, unitSystem);
+}
+
 export function parseDecimalInput(value: string): number | null {
   const normalized = value.trim().replace(',', '.');
   if (!/^(?:\d+(?:\.\d*)?|\.\d+)$/u.test(normalized)) return null;

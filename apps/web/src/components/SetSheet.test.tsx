@@ -11,7 +11,7 @@ import {
   SetSheet,
   setWeightStep,
 } from './SetSheet';
-import { parseDecimalInput, stepNumericInput } from './setSheetNumbers';
+import { canonicalSetWeight, parseDecimalInput, stepNumericInput } from './setSheetNumbers';
 
 const exercise: Exercise = {
   id: '10000000-0000-4000-8000-000000000003',
@@ -157,6 +157,17 @@ describe('SetSheet', () => {
     expect(stepNumericInput('17,5', -1, setWeightStep, 0, 1000, 'ru')).toBe('16,5');
     expect(stepNumericInput('99', 1, 1, 1, 100, 'en')).toBe('100');
     expect(stepNumericInput('100', 1, 1, 1, 100, 'en')).toBe('100');
+  });
+
+  it('preserves an unchanged canonical weight so rounded imperial defaults do not create false records', () => {
+    expect(canonicalSetWeight('176.4', 80, 'imperial')).toBe(80);
+    expect(canonicalSetWeight('176,4', 80, 'imperial')).toBe(80);
+    expect(canonicalSetWeight('80', 80.02, 'metric')).toBe(80.02);
+    expect(canonicalSetWeight('177.4', 80, 'imperial')).toBe(80.47);
+    expect(canonicalSetWeight('81', 80, 'metric')).toBe(81);
+    expect(canonicalSetWeight('176.4', null, 'imperial')).toBe(80.01);
+    expect(canonicalSetWeight('80.0', null, 'metric')).toBe(80);
+    expect(canonicalSetWeight('', 80, 'metric')).toBeNull();
   });
 
   it('uses the visual viewport only while the software keyboard covers the focused form', () => {
