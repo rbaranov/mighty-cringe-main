@@ -48,6 +48,7 @@ type Props = {
 
 export const setWeightStep = 1;
 const softwareKeyboardThreshold = 80;
+const historyExpandedKey = 'mighty-cringe:set-history-expanded';
 
 export function SetSheet({
   exercise,
@@ -63,10 +64,20 @@ export function SetSheet({
   onSave,
 }: Props) {
   const { locale, unitSystem } = usePreferences();
-  const [weight, setWeight] = useState('');
-  const [reps, setReps] = useState('');
-  const [rir, setRir] = useState('');
-  const [comment, setComment] = useState('');
+  const [historyExpanded, setHistoryExpanded] = useState(() => {
+    try {
+      return window.localStorage.getItem(historyExpandedKey) === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const source = initial ?? defaults;
+  const [weight, setWeight] = useState(() =>
+    source ? formatNumericInput(displayWeight(source.weightKg, unitSystem), locale) : '',
+  );
+  const [reps, setReps] = useState(() => (source ? String(source.reps) : ''));
+  const [rir, setRir] = useState(() => (source?.rir == null ? '' : String(source.rir)));
+  const [comment, setComment] = useState(initial?.comment ?? '');
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const sheetRef = useRef<HTMLDivElement>(null);
@@ -91,7 +102,7 @@ export function SetSheet({
     (rirValue === null || (rirValue >= 0 && rirValue <= 20));
 
   useEffect(() => {
-    const source = initial ?? (useLatest ? defaults : null);
+    const source = initial ?? defaults;
     setWeight(source ? formatNumericInput(displayWeight(source.weightKg, unitSystem), locale) : '');
     setReps(source ? String(source.reps) : '');
     setRir(source?.rir === null || source?.rir === undefined ? '' : String(source.rir));
@@ -161,19 +172,47 @@ export function SetSheet({
               </p>
               <h2>{exerciseName(exercise, locale)}</h2>
             </div>
-            <button
-              className="set-entry-close"
-              aria-label={tr(locale, 'Отмена', 'Cancel')}
-              disabled={saving}
-              onClick={onClose}
-              type="button"
-            >
-              ×
-            </button>
+            <div className="set-entry-heading-actions">
+              <button
+                className="set-entry-close"
+                aria-label={tr(locale, 'Отмена', 'Cancel')}
+                disabled={saving}
+                onClick={onClose}
+                type="button"
+              >
+                ×
+              </button>
+            </div>
           </div>
+          {!initial && (
+            <button
+              className="set-entry-microphone"
+              onClick={onExplain}
+              type="button"
+              aria-label={tr(locale, 'Сказать или написать', 'Speak or type')}
+              title={tr(locale, 'Сказать или написать', 'Speak or type')}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="9" y="2" width="6" height="12" rx="3" />
+                <path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8" />
+              </svg>
+              <span>{tr(locale, 'Сказать или написать', 'Speak or type')}</span>
+            </button>
+          )}
           {previousWorkoutDate ? (
             <div className="set-history">
-              <details>
+              <details
+                open={historyExpanded}
+                onToggle={(event) => {
+                  const expanded = event.currentTarget.open;
+                  setHistoryExpanded(expanded);
+                  try {
+                    window.localStorage.setItem(historyExpandedKey, String(expanded));
+                  } catch {
+                    // Keep the choice for this session when browser storage is unavailable.
+                  }
+                }}
+              >
                 <summary>
                   {tr(locale, 'Последняя тренировка', 'Last workout')} ·{' '}
                   {new Date(previousWorkoutDate).toLocaleDateString(
@@ -205,26 +244,15 @@ export function SetSheet({
               )}
             </p>
           )}
-          {!initial &&
-            (defaults ? (
-              <button
-                className="set-entry-suggestion"
-                type="button"
-                onClick={() => {
-                  setWeight(
-                    formatNumericInput(displayWeight(defaults.weightKg, unitSystem), locale),
-                  );
-                  setReps(String(defaults.reps));
-                  setRir(defaults.rir === null ? '' : String(defaults.rir));
-                }}
-              >
-                {useLatest
-                  ? tr(locale, 'Последний результат', 'Latest result')
-                  : tr(locale, `Взять №${setNumber}`, `Use #${setNumber}`)}
-                : {formatWeight(defaults.weightKg, locale, unitSystem)} × {defaults.reps}
-                {defaults.rir === null ? '' : ` · RIR ${defaults.rir}`} ↗
-              </button>
-            ) : null)}
+          {!initial && defaults && (
+            <p className="set-entry-source">
+              {useLatest
+                ? tr(locale, 'Последний результат', 'Latest result')
+                : tr(locale, `Прошлый подход №${setNumber}`, `Previous set #${setNumber}`)}
+              : {formatWeight(defaults.weightKg, locale, unitSystem)} × {defaults.reps}
+              {defaults.rir === null ? '' : ` · RIR ${defaults.rir}`}
+            </p>
+          )}
           <div className="form-grid">
             <NumericStepper
               allowDecimal
@@ -241,11 +269,7 @@ export function SetSheet({
               minimum={0}
               onChange={setWeight}
               onEnter={() => focusAndReveal(sheetRef, repsRef)}
-              placeholder={
-                defaults
-                  ? formatNumericInput(displayWeight(defaults.weightKg, unitSystem), locale)
-                  : '—'
-              }
+              placeholder="—"
               inputRef={weightRef}
               sheetRef={sheetRef}
               step={setWeightStep}
@@ -261,7 +285,7 @@ export function SetSheet({
               minimum={1}
               onChange={setReps}
               onEnter={() => focusAndReveal(sheetRef, rirRef)}
-              placeholder={defaults ? String(defaults.reps) : '—'}
+              placeholder="—"
               inputRef={repsRef}
               sheetRef={sheetRef}
               step={1}
@@ -296,20 +320,15 @@ export function SetSheet({
               maximum={20}
               minimum={0}
               onChange={setRir}
-              onEnter={save}
-              placeholder={defaults?.rir == null ? '—' : String(defaults.rir)}
+              onEnter={() => focusAndReveal(sheetRef, commentRef)}
+              placeholder="—"
               inputRef={rirRef}
               sheetRef={sheetRef}
               step={1}
               value={rir}
             />
           </div>
-          <details
-            className="set-entry-extras"
-            key={`${exercise.id}-${initial?.id ?? 'new'}`}
-            open={initial?.comment ? true : undefined}
-          >
-            <summary>{tr(locale, 'Комментарий и ещё', 'Comment and more')}</summary>
+          <div className="set-entry-extras">
             <div className="form-grid">
               <label className="wide">
                 {tr(locale, 'Комментарий', 'Comment')}
@@ -329,11 +348,6 @@ export function SetSheet({
                 />
               </label>
             </div>
-            {!initial && (
-              <button className="button ghost full" onClick={onExplain} type="button">
-                {tr(locale, 'Сказать или написать', 'Speak or type')}
-              </button>
-            )}
             {initial && onDelete && (
               <button
                 className="button danger full"
@@ -344,7 +358,7 @@ export function SetSheet({
                 {tr(locale, 'Удалить подход', 'Delete set')}
               </button>
             )}
-          </details>
+          </div>
         </div>
         <div className="set-sheet-actions">
           <button

@@ -65,7 +65,7 @@ describe('SetSheet', () => {
     expect(html).not.toContain('autofocus');
   });
 
-  it('shows ordinal history as suggestions without claiming they were entered', () => {
+  it('prefills matching ordinal history as immediately savable values', () => {
     const html = renderToStaticMarkup(
       <SetSheet
         exercise={exercise}
@@ -84,10 +84,51 @@ describe('SetSheet', () => {
     expect(html).toContain('Последняя тренировка');
     expect(html).toContain('70 кг');
     expect(html).toContain('80 кг');
-    expect(html).toContain('Взять №2: 80 кг × 8 · RIR 2');
-    expect(html).toContain('placeholder="80"');
-    expect(html).not.toContain('value="80"');
-    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Сохранить подход/);
+    expect(html).toContain('Прошлый подход №2');
+    expect(html).toContain('value="80"');
+    expect(html).toContain('value="8"');
+    expect(html).toContain('value="2"');
+    expect(html).not.toContain('placeholder="80"');
+    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Сохранить подход/);
+  });
+
+  it('keeps the microphone outside collapsed details and prefills the fallback including zero RIR', () => {
+    const html = renderToStaticMarkup(
+      <SetSheet
+        exercise={exercise}
+        initial={null}
+        defaults={{ ...existingSet, weightKg: 0, rir: 0 }}
+        useLatest
+        onClose={() => {}}
+        onDelete={null}
+        onExplain={() => {}}
+        onSave={() => {}}
+      />,
+    );
+    expect(html).toContain('aria-label="Сказать или написать"');
+    expect(html).not.toContain('Комментарий и ещё');
+    expect(html).toContain('class="set-entry-extras"');
+    expect(html).toContain('Последний результат');
+    expect(html.match(/value="0"/g)).toHaveLength(2);
+    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Сохранить подход/);
+  });
+
+  it('keeps edited values ahead of defaults and leaves a first-ever set empty', () => {
+    const props = {
+      exercise,
+      onClose: () => {},
+      onDelete: null,
+      onExplain: () => {},
+      onSave: () => {},
+    };
+    const edited = renderToStaticMarkup(
+      <SetSheet {...props} initial={existingSet} defaults={{ ...existingSet, weightKg: 50 }} />,
+    );
+    expect(edited).toContain('value="80"');
+    expect(edited).not.toContain('value="50"');
+    const empty = renderToStaticMarkup(<SetSheet {...props} initial={null} defaults={null} />);
+    expect(empty).toContain('value=""');
+    expect(empty).toMatch(/<button[^>]*disabled=""[^>]*>Сохранить подход/);
   });
 
   it('offers deletion whenever an existing set is edited', () => {
