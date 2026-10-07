@@ -22,6 +22,7 @@ import {
 import { useLiveQuery } from 'dexie-react-hooks';
 
 import { SetSheet } from './components/SetSheet';
+import { useSheetViewport } from './components/useSheetViewport';
 import { WorkoutTimingSheet } from './components/WorkoutTimingSheet';
 import { WorkoutNotesSheet } from './components/WorkoutNotesSheet';
 import { WorkoutFavoriteNameSheet } from './components/WorkoutFavoriteNameSheet';
@@ -273,6 +274,7 @@ function AuthenticatedAppContent({
   onLogout,
   onUserUpdated,
 }: AuthenticatedAppProps) {
+  useSheetViewport();
   const { locale, unitSystem } = usePreferences();
   const [view, setView] = useState<View>('workout');
   const [sheet, setSheet] = useState<{ exercise: Exercise; set: LocalSet | null } | null>(null);

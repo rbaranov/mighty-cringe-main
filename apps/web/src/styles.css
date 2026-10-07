@@ -8061,3 +8061,34 @@ body {
     gap: 8px;
   }
 }
+
+/* Mobile keyboards shrink the visual viewport, while dvh can still include the keyboard. */
+.sheet-backdrop {
+  top: var(--sheet-viewport-top, 0px);
+  bottom: auto;
+  height: var(--sheet-viewport-height, 100dvh);
+  overflow: hidden;
+}
+
+.sheet-backdrop > .sheet {
+  min-height: 0;
+  max-height: calc(100% - max(8px, env(safe-area-inset-top)));
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* The picker list and set-entry body keep their own scroll area and visible actions. */
+.sheet-backdrop > .exercise-picker,
+.sheet-backdrop > .set-entry-sheet {
+  overflow: hidden;
+}
+
+.sheet-backdrop > .set-entry-sheet {
+  max-height: 100%;
+}
+
+/* Avoid Safari's automatic input zoom, which would compete with keyboard viewport sizing. */
+.sheet:not(.set-entry-sheet) :is(input, textarea, select) {
+  font-size: 16px;
+}
