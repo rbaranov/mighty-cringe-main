@@ -1,6 +1,8 @@
 # Проверка прокрутки окон с клавиатурой
 
-Ветка `agent/sheet-scroll-fix`, рабочая копия `/Users/rb/Sources/mighty-cringe`.
+Рабочая копия `/Users/rb/Sources/mighty-cringe`. Изменение подготовлено в
+`agent/sheet-scroll-fix`; владелец разрешил merge 2026-10-08.
+Для повторной проверки после merge использовать актуальный `main`.
 Локальное приложение: <http://localhost:5174/>; health: <http://localhost:5174/health>.
 
 При работающем локальном API на 3000 повторно запустить frontend:
