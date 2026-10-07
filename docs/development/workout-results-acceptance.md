@@ -1,10 +1,8 @@
 # Локальная проверка итога, прогресса и формы подхода
 
-Ветка: `agent/workout-results-progress`.
-Рабочая копия: `/Users/rb/.codex/worktrees/workout-results-progress/mighty-cringe`.
-
-Эта ветка создана от `main` в отдельной рабочей копии и включает принятое исправление поиска замены (#74).
-Ветка не выпущена в production; merge требует локальной проверки и разрешения владельца.
+Изменение подготовлено в ветке `agent/workout-results-progress`, после локальной приёмки
+владелец разрешил merge 7 октября 2026 года. Ниже сохранён сценарий повторной проверки
+из актуального `main` в `/Users/rb/Sources/mighty-cringe`.
 
 ## Запуск
 
@@ -15,7 +13,7 @@
 Повторный запуск frontend при работающем локальном API:
 
 ```bash
-cd /Users/rb/.codex/worktrees/workout-results-progress/mighty-cringe
+cd /Users/rb/Sources/mighty-cringe
 pnpm build:packages
 pnpm --filter @mighty-cringe/web dev --port 5174 --strictPort
 ```
@@ -60,4 +58,4 @@ integration-теста штатно пропущены без отдельной
 и применение явной правки веса. Это не заменяет проверку клавиатуры на телефоне и offline-запуска
 установленной PWA владельцем.
 
-После успешной проверки явно сообщить, что локальная приёмка пройдена и merge разрешён.
+Первичная локальная приёмка завершена; сценарий можно повторять при последующих изменениях.
