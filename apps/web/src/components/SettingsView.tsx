@@ -10,6 +10,7 @@ import { getTrainerRelationship } from '../lib/trainer';
 import { hasAcceptedVoiceConsent, loadVoiceConfig } from '../lib/voice';
 import { DataExportPanel } from './DataExportPanel';
 import { PushReminderSettings } from './PushReminderSettings';
+import { ScreenNavigation } from './ScreenNavigation';
 import { TrainerRelationshipCard } from './TrainerAccess';
 import { VoiceCommandSettingsPanel, VoiceRecordingsPanel } from './VoicePanel';
 
@@ -88,17 +89,21 @@ export function SettingsView({
   if (section !== null) {
     const backToAudio = section === 'recordings';
     return (
-      <section className="screen settings-detail-screen">
-        <button
-          className="settings-back"
-          onClick={() => setSection(backToAudio ? 'audio' : null)}
-          type="button"
-        >
-          ←{' '}
-          {backToAudio
-            ? tr(locale, 'Аудиокоманды', 'Audio commands')
-            : tr(locale, 'Настройки', 'Settings')}
-        </button>
+      <section className="screen screen-nested settings-detail-screen">
+        <ScreenNavigation
+          key={section}
+          backLabel={
+            backToAudio
+              ? tr(locale, 'К аудиокомандам', 'Back to audio commands')
+              : tr(locale, 'К настройкам', 'Back to settings')
+          }
+          onBack={() => setSection(backToAudio ? 'audio' : null)}
+          title={
+            backToAudio
+              ? tr(locale, 'Аудиокоманды', 'Audio commands')
+              : tr(locale, 'Настройки', 'Settings')
+          }
+        />
         {section === 'preferences' && (
           <PreferenceSettings
             error={preferencesError}

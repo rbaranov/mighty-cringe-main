@@ -19,6 +19,7 @@ import {
   revokeTrainerRelationship,
 } from '../lib/trainer';
 import { displayMeasurement, formatWeight, tr, usePreferences } from '../lib/preferences';
+import { ScreenNavigation } from './ScreenNavigation';
 
 export function TrainerRelationshipCard({ refreshKey = 0 }: { refreshKey?: number }) {
   const { locale } = usePreferences();
@@ -212,13 +213,14 @@ export function TrainerDashboard({ onBack }: { onBack: () => void }) {
 
   if (selected) {
     return (
-      <section className="screen trainer-dashboard">
-        <button className="button ghost small" onClick={() => setSelected(null)} type="button">
-          ‹ {tr(locale, 'Подопечные', 'Athletes')}
-        </button>
+      <section className="screen screen-nested trainer-dashboard">
+        <ScreenNavigation
+          backLabel={tr(locale, 'К списку учеников', 'Back to trainees')}
+          onBack={() => setSelected(null)}
+          title={tr(locale, 'Ученик', 'Athlete')}
+        />
         <div className="trainer-heading">
           <div>
-            <p className="eyebrow">{tr(locale, 'Ученик', 'Athlete')}</p>
             <h1>{selected.displayName}</h1>
           </div>
           <span className="read-only-badge">👁 {tr(locale, 'Только чтение', 'Read only')}</span>
@@ -267,13 +269,14 @@ export function TrainerDashboard({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <section className="screen trainer-dashboard">
-      <button className="button ghost small" onClick={onBack} type="button">
-        ‹ {tr(locale, 'Моя тренировка', 'My workout')}
-      </button>
+    <section className="screen screen-nested trainer-dashboard">
+      <ScreenNavigation
+        backLabel={tr(locale, 'К настройкам', 'Back to settings')}
+        onBack={onBack}
+        title={tr(locale, 'Кабинет тренера', 'Trainer dashboard')}
+      />
       <div className="trainer-heading">
         <div>
-          <p className="eyebrow">{tr(locale, 'Тренерский кабинет', 'Coach dashboard')}</p>
           <h1>{tr(locale, 'Подопечные', 'Athletes')}</h1>
         </div>
         <span className="read-only-badge">👁 {tr(locale, 'Только чтение', 'Read only')}</span>

@@ -22,6 +22,8 @@ import {
 import { useLiveQuery } from 'dexie-react-hooks';
 
 import { SetSheet } from './components/SetSheet';
+import { ScreenNavigation } from './components/ScreenNavigation';
+import { useSheetViewport } from './components/useSheetViewport';
 import { WorkoutTimingSheet } from './components/WorkoutTimingSheet';
 import { WorkoutNotesSheet } from './components/WorkoutNotesSheet';
 import { WorkoutFavoriteNameSheet } from './components/WorkoutFavoriteNameSheet';
@@ -273,6 +275,7 @@ function AuthenticatedAppContent({
   onLogout,
   onUserUpdated,
 }: AuthenticatedAppProps) {
+  useSheetViewport();
   const { locale, unitSystem } = usePreferences();
   const [view, setView] = useState<View>('workout');
   const [sheet, setSheet] = useState<{ exercise: Exercise; set: LocalSet | null } | null>(null);
@@ -1549,6 +1552,11 @@ function AuthenticatedAppContent({
             preference={preferenceByExerciseId.get(exerciseDetail.id) ?? null}
             onAddSet={(exercise) => setSheet({ exercise, set: null })}
             onBack={() => setExerciseDetailId(null)}
+            backLabel={
+              view === 'catalog'
+                ? tr(locale, 'К каталогу', 'Back to catalog')
+                : tr(locale, 'К тренировке', 'Back to workout')
+            }
             onDeleteSet={requestDeleteSet}
             onDeleteExercise={requestDeleteCatalogExercise}
             onEditExercise={setExerciseEditor}
@@ -2643,6 +2651,7 @@ function ExerciseDetailView({
   sets,
   workouts,
   onBack,
+  backLabel,
   onAddSet,
   onEditSet,
   onMoveSet,
@@ -2658,6 +2667,7 @@ function ExerciseDetailView({
   sets: LocalSet[];
   workouts: LocalWorkout[];
   onBack: () => void;
+  backLabel: string;
   onAddSet: (exercise: Exercise) => void;
   onEditSet: (exercise: Exercise, set: LocalSet) => void;
   onMoveSet: (set: LocalSet, direction: -1 | 1) => void;
@@ -2706,16 +2716,14 @@ function ExerciseDetailView({
   )}`;
 
   return (
-    <section className="screen exercise-detail-screen">
-      <button className="detail-back" onClick={onBack} type="button">
-        ←{' '}
-        {activeWorkout
-          ? tr(locale, 'К тренировке', 'Back to workout')
-          : tr(locale, 'Назад', 'Back')}
-      </button>
+    <section className="screen screen-nested exercise-detail-screen">
+      <ScreenNavigation
+        backLabel={backLabel}
+        onBack={onBack}
+        title={tr(locale, 'Упражнение', 'Exercise')}
+      />
       <div className="exercise-detail-title">
         <div>
-          <p className="eyebrow">{tr(locale, 'Упражнение', 'Exercise')}</p>
           <h1>{exerciseName(exercise, locale)}</h1>
         </div>
         <Tag tag={exercise.tag} />

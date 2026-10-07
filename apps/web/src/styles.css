@@ -3449,14 +3449,6 @@ small,
   white-space: nowrap;
 }
 
-.detail-back {
-  margin-bottom: 18px;
-  border: 0;
-  padding: 0;
-  background: transparent;
-  color: var(--accent-deep);
-  font-weight: 750;
-}
 .exercise-detail-title {
   display: flex;
   align-items: flex-start;
@@ -3465,6 +3457,10 @@ small,
 }
 .exercise-detail-title h1 {
   max-width: 460px;
+  overflow-wrap: anywhere;
+}
+.exercise-detail-title > div {
+  min-width: 0;
 }
 .exercise-detail-meta {
   display: flex;
@@ -4579,16 +4575,6 @@ body {
   font-size: 20px;
 }
 
-.settings-back {
-  margin-bottom: 18px;
-  border: 0;
-  padding: 8px 0;
-  background: transparent;
-  color: var(--ink);
-  font-size: 12px;
-  font-weight: 900;
-}
-
 .settings-choice-group {
   margin-top: 18px;
 }
@@ -5517,10 +5503,6 @@ body {
   flex-direction: column;
 }
 
-.exercise-detail-screen > .detail-back {
-  order: 0;
-}
-
 .exercise-detail-screen > .exercise-detail-title {
   order: 1;
 }
@@ -5539,11 +5521,6 @@ body {
 
 .exercise-detail-screen > .exercise-detail-actions {
   order: 5;
-}
-
-.detail-back {
-  color: var(--accent-deep);
-  font-weight: 900;
 }
 
 .exercise-detail-meta span {
@@ -7150,7 +7127,6 @@ body {
   font-size: 16px;
 }
 
-.exercise-add-back,
 .catalog-add-alternative {
   border: 0;
   padding: 4px 0;
@@ -8060,4 +8036,35 @@ body {
   .set-entry-sheet .form-grid {
     gap: 8px;
   }
+}
+
+/* Mobile keyboards shrink the visual viewport, while dvh can still include the keyboard. */
+.sheet-backdrop {
+  top: var(--sheet-viewport-top, 0px);
+  bottom: auto;
+  height: var(--sheet-viewport-height, 100dvh);
+  overflow: hidden;
+}
+
+.sheet-backdrop > .sheet {
+  min-height: 0;
+  max-height: calc(100% - max(8px, env(safe-area-inset-top)));
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* The picker list and set-entry body keep their own scroll area and visible actions. */
+.sheet-backdrop > .exercise-picker,
+.sheet-backdrop > .set-entry-sheet {
+  overflow: hidden;
+}
+
+.sheet-backdrop > .set-entry-sheet {
+  max-height: 100%;
+}
+
+/* Avoid Safari's automatic input zoom, which would compete with keyboard viewport sizing. */
+.sheet:not(.set-entry-sheet) :is(input, textarea, select) {
+  font-size: 16px;
 }
