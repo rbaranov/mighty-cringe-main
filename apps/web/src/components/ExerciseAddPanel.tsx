@@ -10,6 +10,7 @@ import {
 import { createManualExercise } from '../lib/exercises';
 import { ExerciseDiscoveryPanel } from './ExerciseDiscoveryPanel';
 import { KeyboardSafeButton } from './KeyboardSafeButton';
+import { BackButton } from './ScreenNavigation';
 
 type Muscle = Exercise['primaryMuscles'][number];
 
@@ -87,13 +88,13 @@ export function ExerciseAddPanel({
   if (mode === 'online') {
     return (
       <div className="exercise-add-panel">
-        <KeyboardSafeButton
-          className="exercise-add-back"
-          onPress={() => setMode('choice')}
-          type="button"
-        >
-          ← {tr(locale, 'К вариантам добавления', 'Back to add options')}
-        </KeyboardSafeButton>
+        <div className="panel-navigation">
+          <BackButton
+            label={tr(locale, 'К вариантам добавления', 'Back to add options')}
+            onBack={() => setMode('choice')}
+          />
+          <strong>{tr(locale, 'Поиск в интернете', 'Search online')}</strong>
+        </div>
         <ExerciseDiscoveryPanel
           autoSearch
           existingExercises={existingExercises}
@@ -111,14 +112,14 @@ export function ExerciseAddPanel({
         className="exercise-add-panel manual"
         aria-label={tr(locale, 'Создать упражнение', 'Create exercise')}
       >
-        <KeyboardSafeButton
-          className="exercise-add-back"
-          onPress={() => setMode('choice')}
-          type="button"
-        >
-          ← {tr(locale, 'К вариантам добавления', 'Back to add options')}
-        </KeyboardSafeButton>
-        <strong>{tr(locale, 'Быстро создать своё', 'Quickly create your own')}</strong>
+        <div className="panel-navigation">
+          <BackButton
+            label={tr(locale, 'К вариантам добавления', 'Back to add options')}
+            disabled={saving}
+            onBack={() => setMode('choice')}
+          />
+          <strong>{tr(locale, 'Быстро создать своё', 'Quickly create your own')}</strong>
+        </div>
         <p>
           {tr(
             locale,

@@ -10,6 +10,7 @@ import {
 
 import { updatePersonalExercise } from '../lib/exercises';
 import { tr, usePreferences } from '../lib/preferences';
+import { ScreenNavigation } from './ScreenNavigation';
 
 type Muscle = Exercise['primaryMuscles'][number];
 
@@ -155,12 +156,14 @@ export function ExerciseEditorView({
   return (
     <section
       aria-label={tr(locale, 'Исправить упражнение', 'Edit exercise')}
-      className="screen exercise-editor-screen"
+      className="screen screen-nested exercise-editor-screen"
     >
-      <button className="detail-back" disabled={saving} onClick={onClose} type="button">
-        ← {tr(locale, 'К упражнению', 'Back to exercise')}
-      </button>
-      <p className="eyebrow">{tr(locale, 'Личный каталог', 'Personal catalog')}</p>
+      <ScreenNavigation
+        backLabel={tr(locale, 'К упражнению', 'Back to exercise')}
+        disabled={saving}
+        onBack={onClose}
+        title={tr(locale, 'Редактирование', 'Editing')}
+      />
       <h1>{tr(locale, 'Исправить данные', 'Edit details')}</h1>
       <p className="intro exercise-editor-intro">
         {tr(
