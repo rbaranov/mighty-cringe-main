@@ -7897,7 +7897,9 @@ body {
   gap: 4px;
 }
 .set-entry-sheet .set-stepper-label {
-  font-size: 12px;
+  min-height: 44px;
+  gap: 2px;
+  font-size: 13px;
   font-weight: 600;
 }
 .set-entry-sheet .set-stepper-control {
@@ -7909,11 +7911,12 @@ body {
   grid-row: 1;
   min-height: 46px;
   font-family: inherit;
-  font-size: 20px;
-  font-weight: 600;
+  font-size: 24px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 .set-entry-sheet .set-stepper-control button {
-  min-height: 36px;
+  min-height: 44px;
   font-size: 20px;
   font-weight: 500;
 }
@@ -7995,7 +7998,7 @@ body {
   justify-content: center;
   gap: 8px;
   width: 100%;
-  min-height: 40px;
+  min-height: 44px;
   margin-top: 10px;
   padding: 8px 10px;
   font: inherit;
@@ -8003,8 +8006,8 @@ body {
   font-weight: 600;
   border: 0;
   border-radius: 8px;
-  background: var(--accent);
-  color: var(--surface);
+  background: var(--surface-soft);
+  color: var(--ink);
 }
 .set-entry-microphone svg {
   width: 24px;
@@ -8026,4 +8029,35 @@ body {
 .set-entry-sheet .rir-help:hover [role='tooltip'],
 .set-entry-sheet .rir-help:focus-within [role='tooltip'] {
   transform: translateY(0);
+}
+
+.set-entry-sheet .rir-help > button {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  background: transparent;
+}
+.set-entry-sheet .rir-help > button::before {
+  position: absolute;
+  inset: 9px;
+  border: 1.5px solid var(--ink);
+  border-radius: 50%;
+  content: '';
+}
+.set-entry-sheet .set-entry-delete {
+  width: auto;
+  min-height: 44px;
+  padding: 10px 12px;
+  background: transparent;
+  color: var(--danger);
+  font-size: 14px;
+}
+@media (max-width: 360px) {
+  .set-entry-sheet .set-sheet-content {
+    padding-inline: 14px;
+  }
+  .set-entry-sheet .form-grid {
+    gap: 8px;
+  }
 }

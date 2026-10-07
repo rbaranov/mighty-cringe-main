@@ -35,6 +35,7 @@ import { ExerciseEnrichmentPanel } from './components/ExerciseEnrichmentPanel';
 import { FavoriteWorkoutsSection } from './components/FavoriteWorkoutsSection';
 import type { MeasurementDraft } from './components/BodyMeasurementsSection';
 import { ProgressView } from './components/ProgressView';
+import { WorkoutResultView } from './components/WorkoutResultView';
 import { SettingsView } from './components/SettingsView';
 import { TrainerDashboard } from './components/TrainerAccess';
 import { VoicePanel } from './components/VoicePanel';
@@ -339,6 +340,14 @@ function AuthenticatedAppContent({
     [],
     null,
   );
+  const workoutResultId = useLiveQuery(
+    async () => (await db.meta.get('workoutResultId'))?.value ?? null,
+    [],
+    null,
+  );
+  const resultWorkout = workouts.find(
+    (workout) => workout.id === workoutResultId && workout.endedAt !== null,
+  );
   const storedDraftPlan = useLiveQuery(
     async () => ({ value: (await db.meta.get('draftWorkoutPlan'))?.value ?? null }),
     [],
@@ -575,6 +584,7 @@ function AuthenticatedAppContent({
   }, []);
 
   async function createWorkoutWithPlan(workoutExercises: WorkoutExercise[]) {
+    await dismissWorkoutResult();
     setEditingWorkoutId(null);
     const id = crypto.randomUUID();
     const clientMutationId = crypto.randomUUID();
@@ -712,6 +722,7 @@ function AuthenticatedAppContent({
         },
       ],
       action: async () => {
+        await dismissWorkoutResult();
         setEditingWorkoutId(null);
         setView('workout');
       },
@@ -831,11 +842,18 @@ function AuthenticatedAppContent({
         await db.workouts.update(workout.id, { ...changes, syncState: 'pending' });
         if (reason === 'automatic') {
           await db.meta.put({ key: 'autoFinishNoticeWorkoutId', value: workout.id });
+        } else {
+          await db.meta.put({ key: 'workoutResultId', value: workout.id });
         }
         await queueMutation(mutation);
       });
       setDraftPlan(null);
-      await flushOutbox();
+      if (reason === 'manual') {
+        setEditingWorkoutId(null);
+        setExerciseDetailId(null);
+        setView('workout');
+      }
+      void flushOutbox();
     } finally {
       finishingWorkoutId.current = null;
     }
@@ -889,6 +907,19 @@ function AuthenticatedAppContent({
 
   async function dismissAutoFinishNotice() {
     await db.meta.delete('autoFinishNoticeWorkoutId');
+  }
+
+  async function dismissWorkoutResult() {
+    await db.meta.delete('workoutResultId');
+  }
+
+  async function showWorkoutResult(workout: LocalWorkout) {
+    if (workout.endedAt === null) return;
+    await db.meta.put({ key: 'workoutResultId', value: workout.id });
+    setEditingWorkoutId(null);
+    setExerciseDetailId(null);
+    setView('workout');
+    window.scrollTo(0, 0);
   }
 
   async function saveWorkoutTiming(
@@ -958,6 +989,7 @@ function AuthenticatedAppContent({
       }
       await updateWorkoutLifecycle(selected, resumeWorkoutChanges(activityAt), activityAt);
       await dismissAutoFinishNotice();
+      await dismissWorkoutResult();
       setEditingWorkoutId(null);
       setView('workout');
       await flushOutbox();
@@ -1418,7 +1450,11 @@ function AuthenticatedAppContent({
       className={[
         'app-shell',
         `app-shell-${view}`,
-        view === 'workout' && workoutContext && !exerciseDetail && 'app-shell-live',
+        view === 'workout' &&
+          workoutContext &&
+          !exerciseDetail &&
+          (!resultWorkout || editingWorkout) &&
+          'app-shell-live',
         editingWorkout && 'app-shell-history-edit',
       ]
         .filter(Boolean)
@@ -1531,7 +1567,30 @@ function AuthenticatedAppContent({
           />
         ) : (
           <>
-            {view === 'workout' && (
+            {view === 'workout' && resultWorkout && !editingWorkout && (
+              <WorkoutResultView
+                workout={resultWorkout}
+                workouts={workouts}
+                sets={sets}
+                exercises={exercises}
+                onDone={() => void dismissWorkoutResult()}
+                onOpenWorkout={() => {
+                  void dismissWorkoutResult();
+                  editCompletedWorkout(resultWorkout);
+                }}
+                onProgress={() => {
+                  void dismissWorkoutResult();
+                  setView('progress');
+                  window.scrollTo(0, 0);
+                }}
+                onFavorite={() =>
+                  resultWorkout.isFavorite
+                    ? requestEditWorkoutFavoriteName(resultWorkout)
+                    : requestToggleWorkoutFavorite(resultWorkout)
+                }
+              />
+            )}
+            {view === 'workout' && (!resultWorkout || editingWorkout) && (
               <WorkoutView
                 activeWorkout={workoutContext}
                 autoFinishedWorkout={autoFinishedWorkout}
@@ -1611,6 +1670,7 @@ function AuthenticatedAppContent({
                 onResumeWorkout={requestResumeWorkout}
                 onSaveMeasurement={saveMeasurement}
                 onToggleFavorite={requestToggleWorkoutFavorite}
+                onShowWorkoutResult={(workout) => void showWorkoutResult(workout)}
                 sets={sets}
                 workouts={workouts}
               />
