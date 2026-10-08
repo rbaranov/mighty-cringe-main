@@ -101,9 +101,8 @@ if (!relationship) {
     now,
   );
   await repository.acceptTrainerInvite(hash(token), athlete.id, athlete.email, now);
-  await repository.updateTrainerAccess(athlete.id, 'manage', now);
 }
-// Re-running never resets journals or upgrades the access of an existing relationship.
+// Re-running preserves existing journals. An accepted invitation grants journal access immediately.
 if (!(await repository.listWorkouts(athlete.id)).length) {
   const exerciseIds = (await repository.listExercises(athlete.id))
     .filter((exercise) => exercise.scope === 'global' && !exercise.deletedAt)

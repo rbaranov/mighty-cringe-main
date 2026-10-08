@@ -17,7 +17,6 @@ import {
   revokeTrainerAthlete,
   revokeTrainerInvite,
   revokeTrainerRelationship,
-  updateTrainerRelationshipAccess,
 } from '../lib/trainer';
 import { displayMeasurement, formatWeight, tr, usePreferences } from '../lib/preferences';
 import { ScreenNavigation } from './ScreenNavigation';
@@ -27,7 +26,7 @@ export function TrainerRelationshipCard({ refreshKey = 0 }: { refreshKey?: numbe
   const { locale } = usePreferences();
   const [trainer, setTrainer] = useState<TrainerSummary | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
-  const [confirmation, setConfirmation] = useState<'grant' | 'withdraw' | 'revoke' | null>(null);
+  const [confirming, setConfirming] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -54,30 +53,12 @@ export function TrainerRelationshipCard({ refreshKey = 0 }: { refreshKey?: numbe
     try {
       await revokeTrainerRelationship();
       setTrainer(null);
-      setConfirmation(null);
+      setConfirming(false);
     } catch (requestError) {
       setError(
         requestError instanceof Error
           ? requestError.message
           : tr(locale, 'Не удалось отозвать доступ.', 'Could not revoke access.'),
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function updateAccess(access: 'read' | 'manage') {
-    setError(null);
-    setSaving(true);
-    try {
-      const result = await updateTrainerRelationshipAccess(access);
-      setTrainer(result.trainer);
-      setConfirmation(null);
-    } catch (requestError) {
-      setError(
-        requestError instanceof Error
-          ? requestError.message
-          : tr(locale, 'Не удалось изменить доступ.', 'Could not change access.'),
       );
     } finally {
       setSaving(false);
@@ -95,96 +76,74 @@ export function TrainerRelationshipCard({ refreshKey = 0 }: { refreshKey?: numbe
         </strong>
       </div>
       {trainer && (
-        <div className="trainer-permission-actions">
-          <p>
-            {trainer.access === 'manage'
-              ? tr(
-                  locale,
-                  'Разрешены просмотр и изменения: тренировки, подходы, замеры, избранное и личный каталог упражнений. Доступ к аккаунту остаётся только у тебя.',
-                  'Viewing and editing are allowed: workouts, sets, measurements, favorites and your personal exercise catalog. Your account remains under your control.',
-                )
-              : tr(
-                  locale,
-                  'Сейчас тренер может только смотреть тренировки и замеры. Изменения доступны только после твоего разрешения.',
-                  'Your coach can currently only view workouts and measurements. Editing requires your permission.',
-                )}
-          </p>
-          {!confirmation ? (
-            <>
-              <button
-                className="button ghost full"
-                onClick={() => setConfirmation(trainer.access === 'manage' ? 'withdraw' : 'grant')}
-                type="button"
-              >
-                {trainer.access === 'manage'
-                  ? tr(
-                      locale,
-                      'Запретить изменения, оставить просмотр',
-                      'Disable editing, keep viewing',
-                    )
-                  : tr(locale, 'Разрешить тренеру изменения', 'Allow your coach to edit')}
-              </button>
-              <button
-                className="button ghost small"
-                onClick={() => setConfirmation('revoke')}
-                type="button"
-              >
-                {tr(locale, 'Отозвать весь доступ тренера', 'Revoke all coach access')}
-              </button>
-            </>
-          ) : (
-            <div className="inline-confirmation">
-              <p>
-                {confirmation === 'grant'
-                  ? tr(
-                      locale,
-                      `Тренер ${trainer.displayName} сможет добавлять, изменять и удалять твои тренировки, подходы, замеры, избранное и упражнения в личном каталоге. Аккаунт и управление доступом останутся только у тебя. Разрешить?`,
-                      `Coach ${trainer.displayName} will be able to add, edit and delete your workouts, sets, measurements, favorites and personal exercises. Your account and access settings stay under your control. Allow editing?`,
-                    )
-                  : confirmation === 'withdraw'
-                    ? tr(
-                        locale,
-                        'Тренер сразу потеряет право изменять твои данные. Просмотр тренировок и замеров останется. Уже сохранённые изменения останутся в журнале.',
-                        'Your coach will immediately lose editing access, but can still view workouts and measurements. Previously saved changes will remain in your log.',
-                      )
-                    : tr(
-                        locale,
-                        'Тренер сразу перестанет видеть и изменять твои данные. Уже сохранённые изменения останутся в журнале. Продолжить?',
-                        'Your coach will immediately lose access to view and edit your data. Previously saved changes will remain in your log. Continue?',
-                      )}
-              </p>
-              <button
-                className={`button ${confirmation === 'grant' ? 'primary' : 'danger'} small`}
-                disabled={saving}
-                onClick={() =>
-                  void (confirmation === 'revoke'
-                    ? revoke()
-                    : updateAccess(confirmation === 'grant' ? 'manage' : 'read'))
-                }
-                type="button"
-              >
-                {saving
-                  ? tr(locale, 'Сохраняем…', 'Saving…')
-                  : confirmation === 'grant'
-                    ? tr(locale, 'Да, разрешить изменения', 'Allow editing')
-                    : confirmation === 'withdraw'
-                      ? tr(locale, 'Оставить только просмотр', 'Keep view-only access')
-                      : tr(locale, 'Да, отозвать', 'Revoke')}
-              </button>
-              <button
-                className="button ghost small"
-                disabled={saving}
-                onClick={() => setConfirmation(null)}
-                type="button"
-              >
-                {tr(locale, 'Отмена', 'Cancel')}
-              </button>
-            </div>
-          )}
-        </div>
+        <TrainerConnectionControls
+          trainerName={trainer.displayName}
+          confirming={confirming}
+          saving={saving}
+          onRequestDisconnect={() => setConfirming(true)}
+          onDisconnect={() => void revoke()}
+          onCancel={() => setConfirming(false)}
+        />
       )}
       {error && <p className="auth-error">{error}</p>}
     </section>
+  );
+}
+
+export function TrainerConnectionControls({
+  trainerName,
+  confirming,
+  saving,
+  onRequestDisconnect,
+  onDisconnect,
+  onCancel,
+}: {
+  trainerName: string;
+  confirming: boolean;
+  saving: boolean;
+  onRequestDisconnect: () => void;
+  onDisconnect: () => void;
+  onCancel: () => void;
+}) {
+  const { locale } = usePreferences();
+  return (
+    <div className="trainer-permission-actions">
+      <p>
+        {tr(
+          locale,
+          'Тренер видит весь твой спортивный журнал и может добавлять, изменять и удалять тренировки, подходы, замеры, избранное и упражнения в личном каталоге. Аккаунт, аудиозаписи и управление доступом остаются только у тебя.',
+          'Your coach can view your entire training log and add, edit or delete workouts, sets, measurements, favorites and personal exercises. Your account, audio recordings and access settings remain under your control.',
+        )}
+      </p>
+      {confirming ? (
+        <div className="inline-confirmation">
+          <p>
+            {tr(
+              locale,
+              `Отключить тренера ${trainerName}? Он сразу потеряет возможность смотреть и изменять твой спортивный журнал. Уже внесённые изменения сохранятся.`,
+              `Disconnect coach ${trainerName}? They will immediately lose access to view and edit your training log. Changes already made will remain.`,
+            )}
+          </p>
+          <button
+            className="button danger small"
+            disabled={saving}
+            onClick={onDisconnect}
+            type="button"
+          >
+            {saving
+              ? tr(locale, 'Отключаем…', 'Disconnecting…')
+              : tr(locale, 'Да, отключить', 'Disconnect')}
+          </button>
+          <button className="button ghost small" disabled={saving} onClick={onCancel} type="button">
+            {tr(locale, 'Отмена', 'Cancel')}
+          </button>
+        </div>
+      ) : (
+        <button className="button ghost small" onClick={onRequestDisconnect} type="button">
+          {tr(locale, 'Отключить тренера', 'Disconnect coach')}
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -320,34 +279,21 @@ export function TrainerDashboard({
           <div>
             <h1>{selected.displayName}</h1>
           </div>
-          <span className="read-only-badge">
-            {selected.access === 'manage'
-              ? tr(locale, 'Просмотр и изменения', 'View and edit')
-              : tr(locale, 'Только просмотр', 'View only')}
-          </span>
         </div>
-        {onOpenAthlete && selected.access === 'manage' ? (
+        {onOpenAthlete && (
           <button
             className="button primary full"
             onClick={() => onOpenAthlete(selected)}
             type="button"
           >
-            {tr(locale, 'Открыть режим подопечного', 'Open athlete mode')}
+            {tr(locale, 'Открыть журнал подопечного', 'Open athlete journal')}
           </button>
-        ) : selected.access !== 'manage' ? (
-          <p className="intro">
-            {tr(
-              locale,
-              'Чтобы вести тренировки подопечного, он должен разрешить изменения в «Настройки → Тренер и доступ».',
-              'To manage this athlete’s workouts, they must allow editing in Settings → Coach and access.',
-            )}
-          </p>
-        ) : null}
+        )}
         {error && <p className="auth-error">{error}</p>}
         {!details ? (
           <p className="sets-line muted">{tr(locale, 'Загружаем историю…', 'Loading history…')}</p>
         ) : (
-          <AthleteReadOnlyDetails {...details} />
+          <AthleteJournalOverview {...details} />
         )}
         {confirmRevoke === selected.id ? (
           <div className="inline-confirmation">
@@ -401,8 +347,8 @@ export function TrainerDashboard({
       <p className="intro">
         {tr(
           locale,
-          'Приглашение открывает просмотр тренировок и замеров. Подопечный отдельно разрешает изменения в своих настройках.',
-          'An accepted invitation allows viewing workouts and measurements. Each athlete separately allows editing in their settings.',
+          'После принятия приглашения ты сможешь вести спортивный журнал подопечного: тренировки, подходы, замеры, избранное и личный каталог упражнений. Подопечный может отключить тебя в настройках.',
+          'Once the invitation is accepted, you can manage the athlete’s training log: workouts, sets, measurements, favorites and personal exercises. The athlete can disconnect you in Settings.',
         )}
       </p>
       <section className="trainer-invite-card">
@@ -442,10 +388,7 @@ export function TrainerDashboard({
             <button onClick={() => void openAthlete(athlete)} key={athlete.id} type="button">
               <span>{athlete.displayName}</span>
               <small>
-                {athlete.access === 'manage'
-                  ? tr(locale, 'Просмотр и изменения', 'View and edit')
-                  : tr(locale, 'Только просмотр', 'View only')}{' '}
-                · {formatDate(athlete.linkedAt, locale)}
+                {tr(locale, 'Подключён', 'Connected')} {formatDate(athlete.linkedAt, locale)}
               </small>
               <b>›</b>
             </button>
@@ -482,7 +425,7 @@ export function TrainerDashboard({
   );
 }
 
-function AthleteReadOnlyDetails({
+function AthleteJournalOverview({
   workouts,
   measurements,
 }: {

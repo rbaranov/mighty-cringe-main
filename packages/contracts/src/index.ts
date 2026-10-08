@@ -380,12 +380,12 @@ export const journalActivitySchema = z.object({
 });
 export type JournalActivity = z.infer<typeof journalActivitySchema>;
 
+/** Legacy persisted values. Active relationships now always expose manage access. */
 export const trainerAccessSchema = z.enum(['read', 'manage']);
-export const updateTrainerAccessSchema = z.object({ access: trainerAccessSchema });
 export type TrainerAccess = z.infer<typeof trainerAccessSchema>;
 
 export const trainerSummarySchema = z.object({
-  access: trainerAccessSchema,
+  access: z.literal('manage'),
   linkId: z.string().uuid(),
   id: z.string().uuid(),
   displayName: z.string().min(1),
@@ -401,7 +401,7 @@ export const trainerInviteRecordSchema = z.object({
 });
 
 export const trainerAthleteSummarySchema = z.object({
-  access: trainerAccessSchema,
+  access: z.literal('manage'),
   linkId: z.string().uuid(),
   id: z.string().uuid(),
   displayName: z.string().min(1),

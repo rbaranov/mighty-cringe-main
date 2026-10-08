@@ -56,9 +56,19 @@ to encrypted Object Storage and OpenRouter.
 
 ### Trainer journal rollout and rollback
 
-Migrations `0016` and `0017` are additive: existing trainer links retain `read` access and exercises
-receive revision `1`. They do not grant management permission or delete sporting data.
-The PWA requires a fresh context endpoint response before entering an athlete journal.
+Migrations `0016` and `0017` added trainer access/audit and exercise revision `1`. Migration `0018`
+implements the approved single-access model: existing active links become `manage`, and new links
+default to it. Link IDs, inactive links, sporting data and audit history are preserved. The legacy
+column and enum remain compatible with the previous API during rollout. A CHECK added in the same
+migration transaction rejects an old API's attempted downgrade, including its link-ID change;
+it cannot report a successful read-only restriction. The new API authorizes all
+active relationships equally and returns `410 trainer_access_model_changed` for the retired access
+toggle; it does not silently accept a cached client's request to downgrade access. Full DELETE
+revocation still works. The PWA requires a fresh context response before entering an athlete journal.
+
+Use a forward fix for single-access regressions: rolling back only the API restores the old permission
+toggle while the upgraded links remain `manage`. Never reset active links to `read` as an automatic
+rollback or reuse old link identifiers after full revocation and reconnecting.
 
 Do not roll the API back to a version that ignores `X-Athlete-Id`, `X-Trainer-Link-Id`, or `X-Actor-Id`
 while the new PWA can still be open or cached on devices. An older API could interpret a delegated

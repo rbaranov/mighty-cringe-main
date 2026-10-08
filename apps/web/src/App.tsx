@@ -352,23 +352,14 @@ function AuthenticatedApp(props: AuthenticatedAppProps) {
         throw new Error(
           tr(
             props.user.locale,
-            'Для переключения нужна сеть: проверяем разрешение подопечного.',
-            'Switching requires a connection to verify athlete permission.',
+            'Для переключения нужна сеть: проверяем связь с подопечным.',
+            'Switching requires a connection to verify the athlete relationship.',
           ),
         );
       const result = await getTrainerAthleteContext(next.id, (input, init) =>
         fetch(input, { ...init, signal: AbortSignal.timeout(8_000) }),
       );
       if (requestId !== contextRequest.current) return;
-      if (result.athlete.access !== 'manage') {
-        throw new Error(
-          tr(
-            props.user.locale,
-            'Подопечному нужно разрешить редактирование: Настройки → Тренер и доступ. История доступна в кабинете тренера.',
-            'The athlete must allow editing in Settings → Coach and access. Read-only history is available in the coach dashboard.',
-          ),
-        );
-      }
       setAthleteDataContext({
         actorId: props.user.id,
         athleteId: next.id,
@@ -403,8 +394,8 @@ function AuthenticatedApp(props: AuthenticatedAppProps) {
       setContextNotice(
         tr(
           props.user.locale,
-          'Доступ к редактированию подопечного отозван. Непереданные изменения остаются отдельно и не попадут в твой журнал.',
-          'Athlete editing access was revoked. Unsent changes remain separate and will not enter your journal.',
+          'Доступ к журналу подопечного отозван. Непереданные изменения остаются отдельно и не попадут в твой журнал.',
+          'Access to the athlete journal was revoked. Unsent changes remain separate and will not enter your journal.',
         ),
       );
     };
@@ -595,8 +586,8 @@ function AuthenticatedAppContent({
         setInviteNotice(
           tr(
             locale,
-            `Тренер ${result.trainer.displayName} подключён. Доступ можно отозвать здесь.`,
-            `Coach ${result.trainer.displayName} is connected. You can revoke access here.`,
+            `Тренер ${result.trainer.displayName} подключён и может вести твой спортивный журнал. Отключить тренера можно здесь.`,
+            `Coach ${result.trainer.displayName} is connected and can manage your training journal. You can disconnect the coach here.`,
           ),
         );
         setRelationshipRefreshKey((value) => value + 1);

@@ -131,11 +131,7 @@ export function AthleteContextHeader({
                 type="button"
               >
                 <span>{item.displayName}</span>
-                <small>
-                  {item.access === 'manage'
-                    ? tr(locale, 'Просмотр и изменения', 'View and edit')
-                    : tr(locale, 'Только просмотр', 'View only')}
-                </small>
+                <small>{tr(locale, 'Спортивный журнал', 'Training log')}</small>
               </button>
             ))}
             {athletes.length === 0 && (
