@@ -45,9 +45,21 @@ weak restic password, invalid monitoring threshold, or invalid 32-byte voice enc
 deployment before any containers are changed. Validation reports setting names only and never prints
 their values.
 
+Pass the file through Compose's `--env-file` option for variable interpolation. Services receive
+explicit environment allowlists: S3 backup keys and the restic password go only to `backup`, while
+the Healthchecks URL stays in the host monitoring service. Do not add a shared service `env_file`.
+`node scripts/check-production-secret-boundary.mjs` checks the rendered configuration with synthetic
+credentials; CI runs it before the Docker backup/restore test.
+
 The **Deploy production** workflow can also be started manually on `main` to repeat a controlled
 deployment of its current revision. A failed Compose operation or health check keeps the Actions
 run red and includes service status and bounded logs for diagnosis.
+
+Monitoring can be activated without SSH by setting the `HEALTHCHECKS_PING_URL` environment secret
+in GitHub's `production` environment. The main-only deploy runner validates and atomically installs
+that one setting in the existing private host environment before preflight. An absent secret leaves
+the host configuration unchanged, including any already configured monitoring URL. Other production
+secrets stay on the server. See the [monitoring runbook](../../docs/deployment/hetzner-first-deploy.md#9-мониторинг-и-уведомления).
 
 Caddy obtains and renews TLS certificates after the domain records resolve to the server. The
 `migrate` applies the committed Drizzle migrations before the API and worker start. PostgreSQL is

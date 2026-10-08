@@ -83,11 +83,30 @@ grep -Fqx 'https://hc-ping.example/test-check/start' "$calls_file"
 grep -Fqx 'https://hc-ping.example/test-check' "$calls_file"
 
 : > "$calls_file"
-if FAKE_DISK_PERCENT=95 run_monitor; then
+if (FAKE_DISK_PERCENT=95 run_monitor); then
   echo "Monitoring unexpectedly accepted critical disk usage" >&2
   exit 1
 fi
 grep -Fqx 'https://hc-ping.example/test-check/fail' "$calls_file"
 grep -Fq 'disk usage for / is 95%' "$calls_file"
 
-echo "Monitoring success and critical failure paths passed"
+: > "$calls_file"
+rm "$state_dir/last-backup-success" "$state_dir/last-restore-check-success"
+if run_monitor; then
+  echo "Monitoring unexpectedly accepted missing backup and restore success stamps" >&2
+  exit 1
+fi
+grep -Fqx 'https://hc-ping.example/test-check/fail' "$calls_file"
+grep -Fq 'encrypted backup has no successful run recorded' "$calls_file"
+grep -Fq 'isolated restore verification has no successful run recorded' "$calls_file"
+
+: > "$calls_file"
+touch "$state_dir/last-backup-success" "$state_dir/last-restore-check-success"
+run_monitor
+grep -Fqx 'https://hc-ping.example/test-check' "$calls_file"
+if grep -Fqx 'https://hc-ping.example/test-check/fail' "$calls_file"; then
+  echo "Monitoring sent a failure after recovery" >&2
+  exit 1
+fi
+
+echo "Monitoring success, critical failure, missing backup stamps and recovery paths passed"

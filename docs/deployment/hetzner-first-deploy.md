@@ -342,10 +342,10 @@ pnpm --filter @mighty-cringe/push exec web-push generate-vapid-keys --json
 
 ```bash
 cd ~/actions-runner/_work/mighty-cringe-main/mighty-cringe-main/infra/production
-PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose ps
-PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose logs --tail=100 migrate
-PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose logs --tail=100 caddy
-PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose logs --tail=100 worker
+docker compose --env-file /etc/mighty-cringe/production.env ps
+docker compose --env-file /etc/mighty-cringe/production.env logs --tail=100 migrate
+docker compose --env-file /etc/mighty-cringe/production.env logs --tail=100 caddy
+docker compose --env-file /etc/mighty-cringe/production.env logs --tail=100 worker
 ```
 
 `migrate` должен завершиться с кодом `0`; остальные сервисы, включая `worker`, должны работать.
@@ -383,10 +383,14 @@ personal access tokens для этого подхода не нужны.
 
 Перед запуском реальных аккаунтов:
 
-1. Создайте private bucket в Hetzner Helsinki, например `mighty-cringe-prod-rb-2026`.
-2. Создайте отдельные S3 credentials для бэкапов и сразу сохраните secret key: Hetzner не
-   показывает его повторно. Ограничьте key политикой только этим bucket, если credentials
-   находятся в отдельном проекте.
+1. Создайте отдельный Hetzner project только для бэкапов MightyCringe и private bucket в
+   Helsinki, например `mighty-cringe-prod-rb-2026`. Не размещайте здесь голосовые записи
+   или buckets других приложений.
+2. Создайте S3 credentials в этом project и сразу сохраните secret key: Hetzner не
+   показывает его повторно. По умолчанию key имеет доступ ко всем существующим и будущим
+   buckets своего project. Если используете общий project, сначала настройте bucket policies,
+   которые действительно ограничивают доступ ключа. Варианты изоляции описаны в
+   [документации Hetzner](https://docs.hetzner.com/storage/object-storage/faq/s3-credentials/).
 3. Сгенерируйте независимый пароль шифрования: `openssl rand -hex 32`. Сохраните его в
    password manager и ещё в одной офлайн-копии: без него восстановление невозможно.
 4. Добавьте в `/etc/mighty-cringe/production.env`:
@@ -404,7 +408,22 @@ personal access tokens для этого подхода не нужны.
    RESTIC_CHECK_SUBSET=5%
    ```
 
-5. После деплоя проверьте таймеры и вручную выполните обе операции:
+5. Перед deploy выполните preflight без вывода значений секретов:
+
+   ```bash
+   cd ~/actions-runner/_work/mighty-cringe-main/mighty-cringe-main
+   node scripts/check-production-env.mjs /etc/mighty-cringe/production.env
+   docker compose --env-file /etc/mighty-cringe/production.env \
+     -f infra/production/compose.yaml config --quiet
+   ```
+
+   Запустите **Deploy production** для текущего `main`. Workflow создаст первый зашифрованный
+   snapshot и проверит восстановление в отдельной временной БД, затем включит таймеры.
+   Дождитесь завершения всего workflow: работающий `/health` сам по себе не подтверждает бэкапы.
+   Секреты бэкапов должны передаваться только контейнеру `backup`; общий `production.env`
+   нельзя подключать целиком через `env_file` к API, Caddy или другим контейнерам.
+
+6. После успешного deploy проверьте таймеры и при необходимости вручную повторите обе операции:
 
    ```bash
    systemctl list-timers 'mighty-cringe-*'
@@ -421,7 +440,8 @@ personal access tokens для этого подхода не нужны.
 
 ### Полное восстановление после потери PostgreSQL
 
-1. Остановите запись в API: `docker compose stop api worker`.
+1. В каталоге `infra/production` остановите запись в API:
+   `docker compose --env-file /etc/mighty-cringe/production.env stop api worker`.
 2. Убедитесь, что известен момент сбоя, и сохраните повреждённый volume или snapshot для разбора.
 3. Запустите `mighty-cringe-restore-check.service`. Не продолжайте, если изолированная проверка
    последнего snapshot неуспешна.
@@ -441,18 +461,31 @@ personal access tokens для этого подхода не нужны.
    запустите сервисы:
 
    ```bash
-   PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose stop api worker
+   docker compose --env-file /etc/mighty-cringe/production.env stop api worker
    sudo nano /etc/mighty-cringe/production.env
-   PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose up -d migrate api
+   docker compose --env-file /etc/mighty-cringe/production.env \
+     up -d --build migrate api worker web caddy
    ```
 
 7. Проверьте `/health`, вход, количество пользователей и историю тренировок. Зафиксируйте время
    snapshot — все изменения после него входят в заявленный RPO.
 8. Только после проверки переключите трафик и сохраните старую базу до завершения разбора инцидента.
 
-При полной потере VPS сначала разверните новый пустой PostgreSQL на новом сервере и скопируйте туда
-только `production.env` из защищённого источника. Затем выполните шаги 3–8: restic скачает snapshot
-из Object Storage независимо от потерянного Docker volume.
+При полной потере VPS сначала подготовьте новый сервер с Docker, пользователем `deploy`, checkout
+нужной версии приложения и `production.env` из защищённого источника. Не запускайте API до
+восстановления. Из каталога `infra/production` подготовьте пустой PostgreSQL и backup image:
+
+```bash
+docker compose --env-file /etc/mighty-cringe/production.env up -d --wait postgres
+docker compose --env-file /etc/mighty-cringe/production.env --profile backup build backup
+sudo install -d -m 0750 -o deploy -g deploy /var/lib/mighty-cringe/monitoring
+PRODUCTION_DIR="$PWD" PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env \
+  scripts/run-backup.sh verify
+```
+
+Эта проверка не требует заранее установленных systemd timers. После её успеха выполните шаги 4–8:
+restic скачает snapshot из Object Storage независимо от потерянного Docker volume. Сохраните
+`POSTGRES_DB` с новым именем в production environment перед обычным deploy, который установит таймеры.
 
 Hetzner server backups — дополнительная защита, а не замена независимому бэкапу БД и медиа.
 
@@ -473,6 +506,16 @@ Hetzner server backups — дополнительная защита, а не з
    MONITOR_RESTORE_MAX_AGE_SECONDS=3456000
    ```
 
+Если SSH недоступен, тот же Ping URL можно сохранить как environment secret
+`HEALTHCHECKS_PING_URL` в GitHub → Settings → Environments → `production` → Environment secrets.
+Это дополнительное защищённое место хранения только адреса Healthchecks; пароли БД, OAuth и
+ключи бэкапов туда переносить не нужно. После merge соответствующего workflow в `main` обычный
+деплой сам проверит конфигурацию и атомарно запишет URL в существующий `production.env` с правами
+0600, от пользователя `deploy`. Остальные настройки сохраняются; отсутствующие пороги используют
+значения 90%, 36 часов и 40 дней. Firewall и парольный вход менять не требуется.
+Пустой или удалённый GitHub secret не выключает уже настроенный мониторинг: URL остаётся на хосте.
+Для замены URL обновите secret и повторите deploy; отключение требует удалить URL на хосте.
+
 После деплоя workflow сам запускает первую проверку. Убедитесь, что check перешёл в состояние Up:
 
 ```bash
@@ -487,26 +530,40 @@ restore, а также заполнение `/` и `/var/lib/docker`. Явная
 короткой диагностикой. Если VPS выключен или потерял сеть, отсутствие очередного heartbeat приводит
 к уведомлению после grace time.
 
-Для контролируемого end-to-end теста временно остановите API не более чем на одну проверку, затем
-сразу запустите его снова. Не оставляйте production неработающим:
+Для контролируемого end-to-end теста запустите отдельную проверку с пустым временным каталогом
+отметок успешного бэкапа. Она проверяет реальный production и отправляет ожидаемый `/fail` из-за
+отсутствующих тестовых отметок. API, база и настоящие отметки успешных бэкапов продолжают работать:
 
 ```bash
-cd ~/actions-runner/_work/mighty-cringe-main/mighty-cringe-main/infra/production
-PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose stop api
-sudo systemctl start mighty-cringe-monitor.service || true
-PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose start api
-curl -fsS https://mightycringe.com/health
+sudo systemd-run --unit="mighty-cringe-alert-test-$(date +%s)" --wait --collect \
+  --property=User=deploy --property=Group=deploy \
+  --property=EnvironmentFile=/etc/mighty-cringe/monitoring-runner.env \
+  --property=RuntimeDirectory=mighty-cringe-alert-test \
+  --property=RuntimeDirectoryMode=0700 \
+  /usr/bin/env MONITOR_STATE_DIR=/run/mighty-cringe-alert-test \
+  /usr/local/lib/mighty-cringe/run-monitoring.sh
 ```
 
-Должно прийти аварийное уведомление, а следующий успешный запуск мониторинга должен отправить
-recovery. Если уведомления нет, проверяйте интеграцию Healthchecks.io до допуска реальных данных.
+Ненулевой exit status здесь ожидаем: в журнале проверки должны быть причины
+`encrypted backup has no successful run recorded` и
+`isolated restore verification has no successful run recorded`. Подтвердите событие Down в
+Healthchecks.io и получение аварийного уведомления выбранным каналом. Очередной штатный запуск
+может отправить recovery в течение пяти минут; его также можно вызвать вручную:
+
+```bash
+sudo systemctl start mighty-cringe-monitor.service
+curl --max-time 10 -fsS https://mightycringe.com/health
+```
+
+Проверьте Up и уведомление о восстановлении. Успешный HTTP-запрос к ping URL не доказывает доставку
+уведомления владельцу. Если уведомления нет, проверяйте интеграцию до допуска реальных данных.
 
 Логи контейнеров ротируются Docker `local` driver: максимум три файла по 10 MB на контейнер. Caddy
 пишет структурированный access log, Fastify — application log. Команды диагностики:
 
 ```bash
-PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env \
-  docker compose logs --since=30m --tail=300 api caddy postgres
+docker compose --env-file /etc/mighty-cringe/production.env \
+  logs --since=30m --tail=300 api caddy postgres
 sudo journalctl -u mighty-cringe-monitor.service -u mighty-cringe-backup.service \
   --since='1 hour ago' --no-pager
 journalctl --disk-usage
@@ -522,15 +579,15 @@ Journald хранит persistent-логи до 30 дней, использует
 ```bash
 # Статус
 cd ~/actions-runner/_work/mighty-cringe-main/mighty-cringe-main/infra/production
-PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose ps
+docker compose --env-file /etc/mighty-cringe/production.env ps
 
 # Логи API, worker и reverse proxy
-PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose logs --tail=200 api
-PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose logs --tail=200 worker
-PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose logs --tail=200 caddy
+docker compose --env-file /etc/mighty-cringe/production.env logs --tail=200 api
+docker compose --env-file /etc/mighty-cringe/production.env logs --tail=200 worker
+docker compose --env-file /etc/mighty-cringe/production.env logs --tail=200 caddy
 
 # Ручной повторный запуск уже полученной ревизии
-PRODUCTION_ENV_FILE=/etc/mighty-cringe/production.env docker compose up -d --build
+docker compose --env-file /etc/mighty-cringe/production.env up -d --build
 
 # Состояние и журнал последнего бэкапа
 systemctl status mighty-cringe-backup.timer mighty-cringe-restore-check.timer

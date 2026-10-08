@@ -1,5 +1,7 @@
 name: mighty-cringe
 
+# Supply interpolation values with --env-file. Each service receives only its own settings;
+# never inject the whole production file, which also contains backup and monitoring secrets.
 x-logging: &default-logging
   driver: local
   options:
@@ -10,7 +12,8 @@ services:
   caddy:
     image: caddy:2.10-alpine
     restart: unless-stopped
-    env_file: ${PRODUCTION_ENV_FILE:-.env}
+    environment:
+      DOMAIN: ${DOMAIN}
     ports:
       - '80:80'
       - '443:443'
@@ -39,8 +42,14 @@ services:
       context: ../..
       dockerfile: infra/production/Dockerfile.api
     restart: unless-stopped
-    env_file: ${PRODUCTION_ENV_FILE:-.env}
     environment:
+      PORT: ${PORT:-3000}
+      WEB_ORIGIN: ${WEB_ORIGIN}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-}
+      TRAINER_EMAILS: ${TRAINER_EMAILS:-}
+      SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-30}
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_STT_MODEL: ${OPENROUTER_STT_MODEL:-}
@@ -66,9 +75,9 @@ services:
       context: ../..
       dockerfile: infra/production/Dockerfile.worker
     restart: unless-stopped
-    env_file: ${PRODUCTION_ENV_FILE:-.env}
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      WORKER_INTERVAL_MS: ${WORKER_INTERVAL_MS:-15000}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_STT_MODEL: ${OPENROUTER_STT_MODEL:-}
       VOICE_S3_ACCESS_KEY_ID: ${VOICE_S3_ACCESS_KEY_ID:-}
@@ -92,7 +101,6 @@ services:
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
-    env_file: ${PRODUCTION_ENV_FILE:-.env}
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -122,7 +130,6 @@ services:
     working_dir: /app/packages/db
     command: ['./node_modules/.bin/drizzle-kit', 'migrate', '--config', 'drizzle.config.ts']
     restart: 'no'
-    env_file: ${PRODUCTION_ENV_FILE:-.env}
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     depends_on:
@@ -138,10 +145,24 @@ services:
     build:
       context: ../..
       dockerfile: infra/production/Dockerfile.backup
-    env_file: ${PRODUCTION_ENV_FILE:-.env}
     environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       PGHOST: postgres
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_REGION: ${S3_REGION:-hel1}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-}
       AWS_DEFAULT_REGION: ${S3_REGION:-hel1}
+      RESTIC_REPOSITORY: ${RESTIC_REPOSITORY:-}
+      RESTIC_PASSWORD: ${RESTIC_PASSWORD:-}
+      BACKUP_HOST: ${BACKUP_HOST:-mightycringe-production}
+      BACKUP_KEEP_DAILY: ${BACKUP_KEEP_DAILY:-14}
+      BACKUP_KEEP_WEEKLY: ${BACKUP_KEEP_WEEKLY:-8}
+      BACKUP_KEEP_MONTHLY: ${BACKUP_KEEP_MONTHLY:-12}
+      RESTIC_CHECK_SUBSET: ${RESTIC_CHECK_SUBSET:-5%}
     depends_on:
       postgres:
         condition: service_healthy
@@ -158,7 +179,6 @@ services:
       - backup
     image: postgres:17-alpine
     restart: 'no'
-    env_file: ${PRODUCTION_ENV_FILE:-.env}
     environment:
       POSTGRES_DB: mightycringe_restore
       POSTGRES_USER: ${POSTGRES_USER}

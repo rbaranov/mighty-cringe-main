@@ -17,10 +17,13 @@
 Здесь только проверки, credentials и действия во внешних аккаунтах, которые агент не может
 выполнить самостоятельно. Такие пункты не блокируют разработку следующих задач.
 
-1. **Включить реальные бэкапы и мониторинг.**
-   Создать private S3 bucket и отдельные credentials, сохранить `RESTIC_PASSWORD` вне сервера,
-   внести backup-группу в production environment и проверить backup → изолированный restore.
-   Затем подключить Healthchecks.io, выполнить deploy и проверить аварийное уведомление. Детали:
+1. **Подтвердить сохранность ключа бэкапов и включить мониторинг.**
+   Подтвердить, что действующий `RESTIC_PASSWORD` сохранён вне сервера. Для серверных проверок
+   после приёмки разрешить merge PR #80 и сохранение Ping URL Healthchecks.io в защищённый
+   GitHub environment secret `production/HEALTHCHECKS_PING_URL`; по просьбе владельца firewall
+   не менять. Подключить подготовленный check Healthchecks.io через deploy,
+   выполнить deploy и подтвердить доставку аварийного
+   уведомления и recovery. Детали:
    [production runbook](../infra/production/README.md), [ADR 0003](adr/0003-encrypted-postgres-backups.md),
    [ADR 0005](adr/0005-production-monitoring.md).
 
@@ -46,7 +49,16 @@
 
 # В РАБОТЕ
 
-Активных задач нет.
+1. **Изоляция секретов и подключение мониторинга** — `agent/backup-monitoring-activation`.
+   Закрывается передача production-секретов всем контейнерам через общий `env_file`.
+   Подготовлены проверка аварийного уведомления без остановки API и уточнённый runbook
+   восстановления. Ветка прошла CI и ждёт локальной приёмки и разрешения merge.
+   В Healthchecks.io настроен check `mighty-cringe-production`: period 5 минут, grace 10 минут,
+   email-уведомления о сбое и восстановлении. Тестовое письмо имеет статус Delivered;
+   владелец подтвердил получение. Сигналов от сервера пока нет.
+   Подготовлена активация через secret GitHub environment `production` и существующий runner,
+   без SSH и изменения firewall. Остаются приёмка ветки, merge, сохранение Ping URL,
+   deploy и проверка реальных сигналов/таймеров. SSH с текущего адреса Mac недоступен.
 
 ---
 

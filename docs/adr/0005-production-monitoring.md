@@ -21,8 +21,12 @@ environment.
 Use a dedicated Healthchecks.io check as the external dead man's switch and alert router. Each run
 sends a start event and either success or an explicit failure with bounded, non-sensitive diagnostic
 text. If the VPS or its network disappears, the missing heartbeat becomes the alert. The check's UUID
-URL is a secret stored only in the production environment. The owner must attach and test at least one
-notification integration.
+URL is a secret stored in the host's private production environment. For activation without SSH,
+it may also be supplied as `HEALTHCHECKS_PING_URL` in the GitHub Actions `production` environment.
+The existing main-only deploy runner validates the full candidate configuration, then atomically
+updates only that setting with mode 0600 before normal preflight. An absent GitHub secret leaves the
+host configuration unchanged. Database, OAuth and backup secrets remain on the host. The owner must
+attach and test at least one notification integration.
 
 Keep logs on the VPS for the current scale. Caddy emits JSON access logs and Fastify emits application
 logs to stdout/stderr. Docker's `local` logging driver rotates three 10 MB files per container. Journald
@@ -31,8 +35,9 @@ and backup failures are therefore inspectable without creating an unbounded disk
 
 ## Consequences
 
-- The application cannot deploy this change until the owner creates a check and supplies
-  `HEALTHCHECKS_PING_URL`; this is an intentional production gate.
+- With `HEALTHCHECKS_PING_URL` empty, monitoring stays disabled and unrelated releases can deploy.
+  Enabling monitoring requires configured encrypted backups and a check with an owner notification
+  integration; partial configuration fails preflight before containers change.
 - Healthchecks.io is used for heartbeat and notification delivery, not uptime probing, metrics, or log
   aggregation. The local script performs the probes and its missing heartbeat covers total host loss.
 - The ping URL and diagnostic body must never contain credentials, user records, or application log
