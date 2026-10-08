@@ -464,6 +464,9 @@ function AuthenticatedAppContent({
   const [sheet, setSheet] = useState<{ exercise: Exercise; set: LocalSet | null } | null>(null);
   const [exercisePicker, setExercisePicker] = useState<ExercisePickerMode | null>(null);
   const [draftPlan, setDraftPlan] = useState<WorkoutExercise[] | null>(null);
+  const [regeneratingPlan, setRegeneratingPlan] = useState(false);
+  const [draftPlanNotice, setDraftPlanNotice] = useState<string | null>(null);
+  const draftGenerationInFlight = useRef(false);
   const [exerciseDetailId, setExerciseDetailId] = useState<string | null>(null);
   const [exerciseEditor, setExerciseEditor] = useState<Exercise | null>(null);
   const [confirmation, setConfirmation] = useState<PendingConfirmation | null>(null);
@@ -654,20 +657,23 @@ function AuthenticatedAppContent({
     if (!catalogChoices.length) return;
     if (storedDraftPlan.value !== null) void db.meta.delete('draftWorkoutPlan');
     let disposed = false;
-    void Promise.all([db.exercisePreferences.toArray(), db.workouts.toArray()]).then(
-      ([latestPreferences, latestWorkouts]) => {
-        if (disposed || latestWorkouts.some((workout) => workout.endedAt === null)) return;
-        const latestPreferenceLookup = new Map(
-          latestPreferences.map((preference) => [preference.exerciseId, preference.value] as const),
-        );
-        const latestSuggestions = buildSuggestedExercises({
-          catalog: catalogChoices,
-          workouts: latestWorkouts,
-          preferences: latestPreferenceLookup,
-        });
-        setDraftPlan((current) => current ?? createWorkoutPlanFromExercises(latestSuggestions));
-      },
-    );
+    void Promise.all([
+      db.exercisePreferences.toArray(),
+      db.workouts.toArray(),
+      db.sets.toArray(),
+    ]).then(([latestPreferences, latestWorkouts, latestSets]) => {
+      if (disposed || latestWorkouts.some((workout) => workout.endedAt === null)) return;
+      const latestPreferenceLookup = new Map(
+        latestPreferences.map((preference) => [preference.exerciseId, preference.value] as const),
+      );
+      const latestSuggestions = buildSuggestedExercises({
+        catalog: catalogChoices,
+        workouts: latestWorkouts,
+        sets: latestSets,
+        preferences: latestPreferenceLookup,
+      });
+      setDraftPlan((current) => current ?? createWorkoutPlanFromExercises(latestSuggestions));
+    });
     return () => {
       disposed = true;
     };
@@ -847,15 +853,84 @@ function AuthenticatedAppContent({
 
   async function updateDraftPlan(nextPlan: WorkoutExercise[]) {
     assertLocalContext();
+    if (draftGenerationInFlight.current) return;
     const normalized = normalizeWorkoutPlan(nextPlan);
+    setDraftPlanNotice(null);
     setDraftPlan(normalized);
     await writeLocal(async () => {
       await db.meta.put({ key: 'draftWorkoutPlan', value: JSON.stringify(normalized) });
     });
   }
 
+  async function regenerateDraftPlan() {
+    assertLocalContext();
+    if (activeWorkout || draftPlan === null || draftGenerationInFlight.current) return;
+    draftGenerationInFlight.current = true;
+    setRegeneratingPlan(true);
+    setDraftPlanNotice(null);
+    try {
+      const nextPlan = await writeLocal(async () => {
+        const [latestPreferences, latestWorkouts, latestSets, latestCatalog] = await Promise.all([
+          db.exercisePreferences.toArray(),
+          db.workouts.toArray(),
+          db.sets.toArray(),
+          db.exercises.toArray(),
+        ]);
+        if (latestWorkouts.some((workout) => workout.endedAt === null)) return null;
+        const suggested = buildSuggestedExercises({
+          catalog: collapseExerciseCatalogDuplicates(
+            latestCatalog.filter(
+              (exercise) => !exercise.deletedAt && !retiredGlobalExerciseIds.has(exercise.id),
+            ),
+          ),
+          workouts: latestWorkouts,
+          sets: latestSets,
+          preferences: new Map(
+            latestPreferences.map((preference) => [preference.exerciseId, preference.value]),
+          ),
+          seed: crypto.randomUUID(),
+          previousExerciseIds: draftPlan.map((item) => item.exerciseId),
+        });
+        const plan = createWorkoutPlanFromExercises(suggested);
+        await db.meta.put({ key: 'draftWorkoutPlan', value: JSON.stringify(plan) });
+        return plan;
+      });
+      assertLocalContext();
+      if (!nextPlan) return;
+      setDraftPlan(nextPlan);
+      if (
+        nextPlan.length === draftPlan.length &&
+        nextPlan.every((item) =>
+          draftPlan.some((previous) => previous.exerciseId === item.exerciseId),
+        )
+      ) {
+        setDraftPlanNotice(
+          tr(
+            locale,
+            'Других сочетаний пока нет. Добавь упражнения в каталог или измени отметки «не нравится».',
+            'No other combinations yet. Add exercises to your catalog or review your dislikes.',
+          ),
+        );
+      }
+    } catch {
+      if (isDataContextValid(dataContext)) {
+        setDraftPlanNotice(
+          tr(
+            locale,
+            'Не удалось сохранить новый план. Попробуй ещё раз.',
+            'Could not save the new plan. Try again.',
+          ),
+        );
+      }
+    } finally {
+      draftGenerationInFlight.current = false;
+      setRegeneratingPlan(false);
+    }
+  }
+
   async function clearDraftPlan() {
     assertLocalContext();
+    setDraftPlanNotice(null);
     setDraftPlan([]);
     await writeLocal(async () => {
       await db.meta.delete('draftWorkoutPlan');
@@ -864,6 +939,7 @@ function AuthenticatedAppContent({
 
   async function startWorkout() {
     assertLocalContext();
+    if (draftGenerationInFlight.current) return;
     if (draftPlan !== null) {
       await createWorkoutWithPlan(draftPlan);
       await clearDraftPlan();
@@ -871,9 +947,10 @@ function AuthenticatedAppContent({
     }
     await (initialSyncPromise.current ?? syncAll());
     assertLocalContext();
-    const [latestPreferences, latestWorkouts] = await Promise.all([
+    const [latestPreferences, latestWorkouts, latestSets] = await Promise.all([
       db.exercisePreferences.toArray(),
       db.workouts.toArray(),
+      db.sets.toArray(),
     ]);
     if (latestWorkouts.some((workout) => workout.endedAt === null)) return;
     const latestPreferenceLookup = new Map(
@@ -882,6 +959,7 @@ function AuthenticatedAppContent({
     const latestSuggestions = buildSuggestedExercises({
       catalog: catalogChoices,
       workouts: latestWorkouts,
+      sets: latestSets,
       preferences: latestPreferenceLookup,
     });
     await createWorkoutWithPlan(createWorkoutPlanFromExercises(latestSuggestions));
@@ -890,7 +968,7 @@ function AuthenticatedAppContent({
 
   async function repeatWorkout(workout: LocalWorkout) {
     assertLocalContext();
-    if (activeWorkout || workout.endedAt === null) return;
+    if (activeWorkout || workout.endedAt === null || draftGenerationInFlight.current) return;
     await createWorkoutWithPlan(copyWorkoutPlan(workout.exercises));
     await clearDraftPlan();
     setExerciseDetailId(null);
@@ -1083,6 +1161,7 @@ function AuthenticatedAppContent({
         }
         await queueMutation(mutation);
       });
+      setDraftPlanNotice(null);
       setDraftPlan(null);
       if (reason === 'manual') {
         setEditingWorkoutId(null);
@@ -1906,6 +1985,10 @@ function AuthenticatedAppContent({
                 autoFinishedWorkout={autoFinishedWorkout}
                 catalog={exercises}
                 draftPlan={draftPlan ?? []}
+                draftPlanNotice={draftPlanNotice}
+                regeneratingPlan={regeneratingPlan}
+                canRegeneratePlan={draftPlan !== null && catalogChoices.length > 0}
+                onRegeneratePlan={() => void regenerateDraftPlan()}
                 editingHistory={Boolean(editingWorkout)}
                 favoriteWorkouts={favoriteWorkouts}
                 inactivityState={inactivityState}
@@ -2276,6 +2359,10 @@ function WorkoutView({
   autoFinishedWorkout,
   catalog,
   draftPlan,
+  draftPlanNotice,
+  regeneratingPlan,
+  canRegeneratePlan,
+  onRegeneratePlan,
   editingHistory,
   favoriteWorkouts,
   inactivityState,
@@ -2309,6 +2396,10 @@ function WorkoutView({
   autoFinishedWorkout: LocalWorkout | undefined;
   catalog: Exercise[];
   draftPlan: WorkoutExercise[];
+  draftPlanNotice: string | null;
+  regeneratingPlan: boolean;
+  canRegeneratePlan: boolean;
+  onRegeneratePlan: () => void;
   editingHistory: boolean;
   favoriteWorkouts: LocalWorkout[];
   inactivityState: WorkoutInactivityState;
@@ -2433,6 +2524,13 @@ function WorkoutView({
             workout={autoFinishedWorkout}
           />
         )}
+        <FavoriteWorkoutsSection
+          exercises={catalog}
+          onRemove={onRemoveFavorite}
+          onRename={onRenameFavorite}
+          onRepeat={onRepeatFavorite}
+          workouts={favoriteWorkouts}
+        />
         <div className="workout-plan-heading">
           <p className="eyebrow">{tr(locale, 'Сегодня', 'Today')}</p>
           <h1>{tr(locale, 'План на сегодня', "Today's plan")}</h1>
@@ -2441,12 +2539,30 @@ function WorkoutView({
         <p className="intro workout-plan-intro">
           {tr(
             locale,
-            'Проверь упражнения и связки. Таймер запустится только после старта.',
-            'Review the exercises and groups. The timer begins only after you start.',
+            'Учитываем частые упражнения, отметки «нравится» и избранные тренировки.',
+            'Based on your frequent exercises, likes and favorite workouts.',
           )}
         </p>
         <button
+          className="button ghost workout-plan-regenerate"
+          disabled={!canRegeneratePlan || regeneratingPlan}
+          onClick={() => {
+            setOptionsItemId(null);
+            onRegeneratePlan();
+          }}
+          type="button"
+        >
+          <span aria-hidden="true">↻</span>{' '}
+          {regeneratingPlan
+            ? tr(locale, 'Подбираем…', 'Choosing…')
+            : tr(locale, 'Другой вариант', 'Another option')}
+        </button>
+        <p className="workout-plan-notice" role="status">
+          {draftPlanNotice}
+        </p>
+        <button
           className="button primary action workout-plan-start"
+          disabled={regeneratingPlan}
           onClick={onStart}
           type="button"
         >
@@ -2481,13 +2597,6 @@ function WorkoutView({
             ＋ {tr(locale, 'Добавить упражнение', 'Add exercise')}
           </button>
         </div>
-        <FavoriteWorkoutsSection
-          exercises={catalog}
-          onRemove={onRemoveFavorite}
-          onRename={onRenameFavorite}
-          onRepeat={onRepeatFavorite}
-          workouts={favoriteWorkouts}
-        />
         <ExerciseOptionsSheet
           exercise={optionsSelection?.exercise ?? null}
           hasLoggedSets={false}

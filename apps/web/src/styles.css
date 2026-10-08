@@ -6873,9 +6873,9 @@ body {
 }
 
 .favorite-workouts {
-  margin: 30px 0 0;
-  padding-top: 22px;
-  border-top: 1px solid var(--line);
+  margin: 0 0 26px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--line);
 }
 
 .favorite-workouts .section-head {
@@ -6908,9 +6908,8 @@ body {
 }
 
 .favorite-workout-card-meta {
-  display: flex;
-  align-items: baseline;
-  gap: 7px;
+  display: grid;
+  gap: 3px;
   min-width: 0;
 }
 
@@ -6928,7 +6927,7 @@ body {
 }
 
 .favorite-workout-card-meta span {
-  flex: 0 0 auto;
+  overflow-wrap: anywhere;
 }
 
 .favorite-workout-card-copy p {
@@ -7080,6 +7079,20 @@ body {
 
 .workout-plan-start {
   margin-bottom: 0;
+}
+
+.workout-plan-regenerate {
+  min-height: 44px;
+  margin-bottom: 12px;
+}
+
+.workout-plan-notice {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.workout-plan-notice:empty {
+  margin: 0;
 }
 
 .draft-exercise-card {

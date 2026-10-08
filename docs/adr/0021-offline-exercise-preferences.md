@@ -38,6 +38,15 @@ An athlete who explicitly searches for or directly names a disliked exercise may
 once with a visible warning. Manual plan addition also remains available. Existing draft and active
 workouts are never rewritten after a preference change.
 
+As of 2026-10-08, automatic plans also favor likes, exercises actually performed more often in
+completed workouts, and exercises in saved favorite workouts. Frequency counts each exercise once
+per completed workout with a non-deleted set; unused plan entries do not count. These signals bias
+random selection within the existing muscle slots without excluding unfamiliar exercises. Dislikes
+still override every positive signal. The initial suggestion is stable for the same day and data;
+an explicit "Another option" creates a new seed and avoids repeating the same combination when
+alternatives exist. The resulting draft is saved in the current journal's IndexedDB before it is
+shown, works offline, and is restored after reload. Active workouts and saved favorites are unchanged.
+
 The local data export includes preference records and advances to format version 2. Preferences are
 cleared with the rest of the account-scoped IndexedDB data on logout or account change.
 
