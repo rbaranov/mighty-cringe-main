@@ -5,6 +5,8 @@ set -eu
 production_dir=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 cd "$production_dir"
 
+node ../../scripts/check-production-secret-boundary.mjs
+
 compose() {
   PRODUCTION_ENV_FILE="$production_dir/backup-test.env" docker compose \
     --env-file "$production_dir/backup-test.env" \

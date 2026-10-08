@@ -45,6 +45,12 @@ weak restic password, invalid monitoring threshold, or invalid 32-byte voice enc
 deployment before any containers are changed. Validation reports setting names only and never prints
 their values.
 
+Pass the file through Compose's `--env-file` option for variable interpolation. Services receive
+explicit environment allowlists: S3 backup keys and the restic password go only to `backup`, while
+the Healthchecks URL stays in the host monitoring service. Do not add a shared service `env_file`.
+`node scripts/check-production-secret-boundary.mjs` checks the rendered configuration with synthetic
+credentials; CI runs it before the Docker backup/restore test.
+
 The **Deploy production** workflow can also be started manually on `main` to repeat a controlled
 deployment of its current revision. A failed Compose operation or health check keeps the Actions
 run red and includes service status and bounded logs for diagnosis.

@@ -31,8 +31,9 @@ and backup failures are therefore inspectable without creating an unbounded disk
 
 ## Consequences
 
-- The application cannot deploy this change until the owner creates a check and supplies
-  `HEALTHCHECKS_PING_URL`; this is an intentional production gate.
+- With `HEALTHCHECKS_PING_URL` empty, monitoring stays disabled and unrelated releases can deploy.
+  Enabling monitoring requires configured encrypted backups and a check with an owner notification
+  integration; partial configuration fails preflight before containers change.
 - Healthchecks.io is used for heartbeat and notification delivery, not uptime probing, metrics, or log
   aggregation. The local script performs the probes and its missing heartbeat covers total host loss.
 - The ping URL and diagnostic body must never contain credentials, user records, or application log
