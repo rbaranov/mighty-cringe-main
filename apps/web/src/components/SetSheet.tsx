@@ -1,3 +1,4 @@
+import { AthleteContextLabel, useAthleteContext } from './AthleteContext';
 import {
   useEffect,
   useRef,
@@ -64,6 +65,10 @@ export function SetSheet({
   onSave,
 }: Props) {
   const { locale, unitSystem } = usePreferences();
+  const athlete = useAthleteContext();
+  const explainLabel = athlete
+    ? tr(locale, 'Написать подход', 'Type a set')
+    : tr(locale, 'Сказать или написать', 'Speak or type');
   const [historyExpanded, setHistoryExpanded] = useState(() => {
     try {
       return window.localStorage.getItem(historyExpandedKey) === 'true';
@@ -168,6 +173,7 @@ export function SetSheet({
       >
         <div className="set-sheet-content" ref={sheetRef}>
           <div className="sheet-handle" />
+          <AthleteContextLabel />
           <div className="set-entry-heading">
             <div>
               <p className="eyebrow">
@@ -194,14 +200,20 @@ export function SetSheet({
               className="set-entry-microphone"
               onClick={onExplain}
               type="button"
-              aria-label={tr(locale, 'Сказать или написать', 'Speak or type')}
-              title={tr(locale, 'Сказать или написать', 'Speak or type')}
+              aria-label={explainLabel}
+              title={explainLabel}
             >
               <svg viewBox="0 0 24 24" aria-hidden="true">
-                <rect x="9" y="2" width="6" height="12" rx="3" />
-                <path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8" />
+                {athlete ? (
+                  <path d="M4 5h16M12 5v14M8 19h8" />
+                ) : (
+                  <>
+                    <rect x="9" y="2" width="6" height="12" rx="3" />
+                    <path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8" />
+                  </>
+                )}
               </svg>
-              <span>{tr(locale, 'Сказать или написать', 'Speak or type')}</span>
+              <span>{explainLabel}</span>
             </button>
           )}
           {previousWorkoutDate ? (

@@ -53,6 +53,7 @@ export const exerciseLinkSchema = z.object({
 export const exerciseSchema = z.object({
   id: z.string().uuid(),
   scope: z.enum(['global', 'user']).optional(),
+  revision: z.number().int().positive().optional(),
   deletedAt: z.string().datetime().nullable().optional(),
   nameRu: z.string().min(1).max(80),
   nameEn: z.string().min(1).max(80),
@@ -371,7 +372,21 @@ export const trainerInviteAcceptSchema = z.object({
 export const trainerInviteIdSchema = z.string().uuid();
 export const trainerAthleteIdSchema = z.string().uuid();
 
+export const journalActivitySchema = z.object({
+  id: z.string().uuid(),
+  actorDisplayName: z.string(),
+  action: z.string(),
+  createdAt: z.string().datetime(),
+});
+export type JournalActivity = z.infer<typeof journalActivitySchema>;
+
+export const trainerAccessSchema = z.enum(['read', 'manage']);
+export const updateTrainerAccessSchema = z.object({ access: trainerAccessSchema });
+export type TrainerAccess = z.infer<typeof trainerAccessSchema>;
+
 export const trainerSummarySchema = z.object({
+  access: trainerAccessSchema,
+  linkId: z.string().uuid(),
   id: z.string().uuid(),
   displayName: z.string().min(1),
   avatarUrl: z.string().url().nullable(),
@@ -386,6 +401,8 @@ export const trainerInviteRecordSchema = z.object({
 });
 
 export const trainerAthleteSummarySchema = z.object({
+  access: trainerAccessSchema,
+  linkId: z.string().uuid(),
   id: z.string().uuid(),
   displayName: z.string().min(1),
   avatarUrl: z.string().url().nullable(),

@@ -12,6 +12,7 @@
     "local:doctor": "node scripts/local-environment.mjs doctor",
     "local:up": "node scripts/local-environment.mjs up",
     "local:dev": "node scripts/local-environment.mjs dev",
+    "local:trainer-acceptance": "node scripts/local-trainer-acceptance.mjs",
     "local:status": "node scripts/local-environment.mjs status",
     "local:stop": "node scripts/local-environment.mjs stop",
     "local:reset": "node scripts/local-environment.mjs reset",

@@ -29,6 +29,14 @@
   font-synthesis: none;
 }
 
+/* The athlete journal keeps the same compact masthead; only its context accents change. */
+.app-shell.app-shell-athlete {
+  --accent: #215ca9;
+  --accent-deep: #174982;
+  --accent-soft: #dce7f3;
+  --screen-marker: #215ca9;
+}
+
 * {
   box-sizing: border-box;
 }

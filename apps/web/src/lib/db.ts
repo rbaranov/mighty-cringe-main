@@ -83,8 +83,8 @@ export class MightyCringeDatabase extends Dexie {
   conflicts!: EntityTable<SyncConflict, 'id'>;
   meta!: EntityTable<LocalMeta, 'key'>;
 
-  constructor() {
-    super('mighty-cringe');
+  constructor(name = 'mighty-cringe') {
+    super(name);
     this.version(1).stores({
       workouts: 'id, startedAt, syncState',
       sets: 'id, workoutId, exerciseId, performedAt, syncState',
@@ -321,12 +321,38 @@ export class MightyCringeDatabase extends Dexie {
   }
 }
 
-export const db = new MightyCringeDatabase();
+// Session metadata always belongs to the authenticated account. Sporting screens use
+// the live binding below, which changes only when their keyed React tree remounts.
+export const ownDb = new MightyCringeDatabase();
+export let db = ownDb;
+
+export function setActiveDatabase(database: MightyCringeDatabase) {
+  db = database;
+}
+
+const scopedCleanupListeners = new Set<() => void>();
+
+export function registerScopedDatabaseCleanup(listener: () => void) {
+  scopedCleanupListeners.add(listener);
+}
+
+async function clearScopedLocalData() {
+  // Also remove caches from earlier PWA sessions, which are not in the in-memory map.
+  for (const listener of scopedCleanupListeners) listener();
+  const names = await Dexie.getDatabaseNames();
+  await Promise.all(
+    names
+      .filter((name) => name.startsWith('mighty-cringe:athlete:'))
+      .map((name) => Dexie.delete(name)),
+  );
+}
 
 export async function activateLocalUser(userId: string) {
+  const db = ownDb;
   const activeUser = await db.meta.get('activeUserId');
   if (activeUser?.value === userId) return;
 
+  await clearScopedLocalData();
   await db.transaction(
     'rw',
     [
@@ -358,6 +384,7 @@ export async function activateLocalUser(userId: string) {
 }
 
 export async function cacheCurrentUser(user: CurrentUser) {
+  const db = ownDb;
   const activeUser = await db.meta.get('activeUserId');
   if (activeUser?.value !== user.id) return;
   await db.meta.bulkPut([
@@ -367,6 +394,7 @@ export async function cacheCurrentUser(user: CurrentUser) {
 }
 
 export async function getCachedCurrentUser(): Promise<CurrentUser | null> {
+  const db = ownDb;
   const [activeUser, cachedUser, offlineAllowed] = await db.meta.bulkGet([
     'activeUserId',
     'cachedCurrentUser',
@@ -382,10 +410,13 @@ export async function getCachedCurrentUser(): Promise<CurrentUser | null> {
 }
 
 export async function disableOfflineSession() {
+  const db = ownDb;
   await db.meta.put({ key: 'offlineSessionAllowed', value: 'false' });
 }
 
 export async function clearLocalUserData() {
+  const db = ownDb;
+  await clearScopedLocalData();
   await db.transaction(
     'rw',
     [
@@ -413,4 +444,49 @@ export async function clearLocalUserData() {
       ]);
     },
   );
+}
+
+/** Logout clears every local owner partition, including a previously selected or revoked link. */
+export async function getLocalLogoutRisks() {
+  const names = await Dexie.getDatabaseNames();
+  const scoped = names.filter((name) => name.startsWith('mighty-cringe:athlete:'));
+  const databases = [ownDb, ...scoped.map((name) => new MightyCringeDatabase(name))];
+  try {
+    const counts = await Promise.all(
+      databases.map((database) =>
+        database.transaction(
+          'r',
+          database.outbox,
+          database.conflicts,
+          database.voiceEntries,
+          async () => {
+            const [pendingMutations, conflicts, voice] = await Promise.all([
+              database.outbox.count(),
+              database.conflicts.count(),
+              database.voiceEntries.toArray(),
+            ]);
+            return {
+              pendingMutations,
+              conflicts,
+              localVoiceEntries: voice.filter(
+                (entry) => !entry.serverStored && entry.status !== 'deleting',
+              ).length,
+              pendingVoiceDeletions: voice.filter((entry) => entry.status === 'deleting').length,
+            };
+          },
+        ),
+      ),
+    );
+    return counts.reduce(
+      (sum, item) => ({
+        pendingMutations: sum.pendingMutations + item.pendingMutations,
+        conflicts: sum.conflicts + item.conflicts,
+        localVoiceEntries: sum.localVoiceEntries + item.localVoiceEntries,
+        pendingVoiceDeletions: sum.pendingVoiceDeletions + item.pendingVoiceDeletions,
+      }),
+      { pendingMutations: 0, conflicts: 0, localVoiceEntries: 0, pendingVoiceDeletions: 0 },
+    );
+  } finally {
+    for (const database of databases) if (database !== ownDb) database.close();
+  }
 }

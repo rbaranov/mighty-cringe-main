@@ -586,6 +586,132 @@ describe('durable sync status', () => {
     });
   });
 
+  it('completes deletion of a local workout whose create response arrives after it was removed', async () => {
+    const workoutId = '60000000-0000-4000-8000-000000000031';
+    const clientMutationId = '61000000-0000-4000-8000-000000000031';
+    const workout = {
+      id: workoutId,
+      startedAt: measuredOn,
+      endedAt: null,
+      durationSeconds: 0,
+      activeSegmentStartedAt: measuredOn,
+      lastActivityAt: measuredOn,
+      completionReason: null,
+      isFavorite: false,
+      favoriteName: null,
+      notes: null,
+      locale: 'ru' as const,
+      exercises: [],
+      revision: 0,
+      updatedAt: measuredOn,
+      syncState: 'pending' as const,
+    };
+    await db.workouts.put(workout);
+    await db.outbox.put({
+      id: clientMutationId,
+      sequence: 1,
+      createdAt: measuredOn,
+      mutation: { type: 'workout.create', payload: { ...workout, clientMutationId } },
+    });
+    let release!: (response: Response) => void;
+    const response = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    let announce!: () => void;
+    const sent = new Promise<void>((resolve) => {
+      announce = resolve;
+    });
+    const request = vi.fn<typeof fetch>(async (_input, init) => {
+      const mutation = JSON.parse(String(init?.body)) as SyncMutation;
+      if (mutation.type === 'workout.create') {
+        announce();
+        return response;
+      }
+      expect(mutation).toMatchObject({
+        type: 'workout.delete',
+        payload: { workoutId, baseRevision: 1 },
+      });
+      return Response.json({
+        entityType: 'workout',
+        entity: null,
+        entityId: workoutId,
+        duplicate: false,
+      });
+    });
+    vi.stubGlobal('navigator', { onLine: true });
+    vi.stubGlobal('fetch', request);
+    const flushing = flushOutbox();
+    await sent;
+    await db.transaction('rw', db.workouts, db.outbox, async () => {
+      await db.workouts.delete(workoutId);
+      await db.outbox.delete(clientMutationId);
+    });
+    release(
+      Response.json({
+        entityType: 'workout',
+        entity: { ...workout, revision: 1, sets: [] },
+        duplicate: false,
+      }),
+    );
+    await expect(flushing).resolves.toBe('success');
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(await db.workouts.get(workoutId)).toBeUndefined();
+    expect(await db.outbox.count()).toBe(0);
+  });
+
+  it('preserves the revision of a stale form instead of rebasing it to a newer polled cache', async () => {
+    const exerciseId = '10000000-0000-4000-8000-000000000011';
+    await db.exercisePreferences.put({
+      exerciseId,
+      value: 'like',
+      revision: 2,
+      updatedAt: '2026-08-05T08:02:00.000Z',
+      syncState: 'pending',
+    });
+    await db.outbox.put({
+      id: 'stale-form',
+      sequence: 1,
+      createdAt: measuredOn,
+      mutation: {
+        type: 'exercise-preference.set',
+        payload: {
+          clientMutationId: 'stale-form',
+          exerciseId,
+          value: 'like',
+          baseRevision: 1,
+        },
+      },
+    });
+    vi.stubGlobal('navigator', { onLine: true });
+    const request = vi.fn<typeof fetch>(async (_input, init) => {
+      const sent = JSON.parse(String(init?.body)) as SyncMutation;
+      assertPreferenceMutation(sent);
+      expect(sent.payload.baseRevision).toBe(1);
+      return Response.json(
+        {
+          code: 'revision_conflict',
+          current: {
+            exerciseId,
+            value: 'dislike',
+            revision: 2,
+            updatedAt: '2026-08-05T08:02:00.000Z',
+          },
+        },
+        { status: 409 },
+      );
+    });
+    vi.stubGlobal('fetch', request);
+    await expect(flushOutbox()).resolves.toBe('success');
+    expect(await db.conflicts.get('stale-form')).toMatchObject({
+      mutation: { payload: { baseRevision: 1 } },
+      current: { value: 'dislike', revision: 2 },
+    });
+    expect(await db.exercisePreferences.get(exerciseId)).toMatchObject({
+      value: 'like',
+      syncState: 'conflict',
+    });
+  });
+
   it('rebases a preference conflict when the athlete keeps the local version', async () => {
     const exerciseId = '10000000-0000-4000-8000-000000000004';
     const mutationId = '94000000-0000-4000-8000-000000000002';

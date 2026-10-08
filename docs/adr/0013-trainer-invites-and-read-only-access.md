@@ -1,9 +1,14 @@
 # ADR 0013: Trainer invitations and read-only athlete access
 
-- Status: accepted
+- Status: partially superseded by [ADR 0022](./0022-trainer-journal-context.md)
 - Date: 2026-07-22
 
-## Context
+The read-only-only policy below records the original decision. ADR 0022 adds athlete-authorized
+management of sporting data through an explicit journal context. Existing links remain read-only
+until the athlete grants management permission; invitation protections and explicit revocation
+remain in force.
+
+## Context (original decision)
 
 An athlete may deliberately share progress with one trainer, but ordinary account isolation must remain
 the default. A share link is a bearer credential and must not be stored in plaintext, returned in roster
@@ -11,7 +16,7 @@ responses, or grant access before the athlete signs in with a verified Google ac
 must affect subsequent reads immediately. A trainer must never gain a mutation path that can silently
 change the athlete's workouts, sets, or measurements.
 
-## Decision
+## Decision (original implementation)
 
 Accounts listed in the server-only `TRAINER_EMAILS` setting receive the `trainer` role at Google sign-in.
 Trainer, admin, and superadmin roles may open the trainer console. They can create a cryptographically

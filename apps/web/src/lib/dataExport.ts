@@ -1,13 +1,14 @@
 import type { CurrentUser, Exercise, UnitSystem } from '@mighty-cringe/contracts';
 
 import {
-  db,
   type LocalExercisePreference,
   type LocalMeasurement,
   type LocalSet,
   type LocalWorkout,
   type SyncState,
 } from './db';
+
+import { assertDataContext, getDataContext, type DataContext } from './dataContext';
 
 export const localDataExportFormat = 'mighty-cringe.local-data';
 export const localDataExportVersion = 2;
@@ -62,7 +63,10 @@ type LocalDataExportOptions = {
 
 export async function loadLocalDataExport(
   options: LocalDataExportOptions,
+  context = getDataContext(),
 ): Promise<LocalDataExport> {
+  assertDataContext(context);
+  const db = context.database;
   const input = await db.transaction(
     'r',
     [db.workouts, db.sets, db.measurements, db.exercises, db.exercisePreferences],
@@ -78,6 +82,7 @@ export async function loadLocalDataExport(
     },
   );
 
+  assertDataContext(context);
   return buildLocalDataExport(input, options);
 }
 
@@ -170,7 +175,9 @@ type ExportRuntime = {
 export async function deliverLocalDataExport(
   data: LocalDataExport,
   runtime: ExportRuntime = browserExportRuntime(),
+  context?: DataContext,
 ): Promise<ExportDelivery> {
+  if (context) assertDataContext(context);
   const fileName = localDataExportFileName(data.exportedAt);
   const file = runtime.createFile(serializeLocalDataExport(data), fileName);
   const shareData: ShareData = {
@@ -188,6 +195,7 @@ export async function deliverLocalDataExport(
     }
   }
 
+  if (context) assertDataContext(context);
   runtime.download(file, fileName);
   return 'downloaded';
 }

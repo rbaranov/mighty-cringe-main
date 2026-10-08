@@ -1,4 +1,5 @@
-import { db, type LocalWorkout } from './db';
+import { type LocalWorkout } from './db';
+import { getDataContext } from './dataContext';
 import { flushOutbox, queueMutation } from './sync';
 
 export const workoutFavoriteNameMaxLength = 60;
@@ -11,7 +12,9 @@ export async function saveWorkoutFavorite(
   workout: LocalWorkout,
   isFavorite: boolean,
   favoriteName: string | null = workout.favoriteName,
+  context = getDataContext(),
 ) {
+  const db = context.database;
   const normalizedName = normalizeWorkoutFavoriteName(favoriteName ?? '');
   if (
     workout.endedAt === null ||
@@ -24,15 +27,18 @@ export async function saveWorkoutFavorite(
       favoriteName: normalizedName,
       syncState: 'pending',
     });
-    await queueMutation({
-      type: 'workout.update',
-      payload: {
-        clientMutationId: crypto.randomUUID(),
-        workoutId: workout.id,
-        baseRevision: workout.revision,
-        changes: { isFavorite, favoriteName: normalizedName },
+    await queueMutation(
+      {
+        type: 'workout.update',
+        payload: {
+          clientMutationId: crypto.randomUUID(),
+          workoutId: workout.id,
+          baseRevision: workout.revision,
+          changes: { isFavorite, favoriteName: normalizedName },
+        },
       },
-    });
+      context,
+    );
   });
-  await flushOutbox();
+  await flushOutbox(context);
 }

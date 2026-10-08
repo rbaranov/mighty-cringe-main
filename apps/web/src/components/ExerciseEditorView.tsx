@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { AthleteContextLabel } from './AthleteContext';
+import { useEffect, useRef, useState } from 'react';
 
 import {
   exerciseNameIssue,
@@ -9,6 +10,7 @@ import {
 } from '@mighty-cringe/contracts';
 
 import { updatePersonalExercise } from '../lib/exercises';
+import { getDataContext } from '../lib/dataContext';
 import { tr, usePreferences } from '../lib/preferences';
 import { ScreenNavigation } from './ScreenNavigation';
 
@@ -57,6 +59,9 @@ export function ExerciseEditorView({
   onSaved: (exercise: Exercise) => Promise<void>;
 }) {
   const { locale } = usePreferences();
+  const [context] = useState(getDataContext);
+  const expectedRevision = useRef<number | undefined>(undefined);
+  const active = useRef(true);
   const [draft, setDraft] = useState<UpdateExerciseInput | null>(null);
   const [aliases, setAliases] = useState('');
   const [equipment, setEquipment] = useState('');
@@ -64,10 +69,18 @@ export function ExerciseEditorView({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!exercise) {
       setDraft(null);
       return;
     }
+    expectedRevision.current = exercise.revision;
     setDraft({
       nameRu: exercise.nameRu,
       nameEn: exercise.nameEn,
@@ -83,7 +96,8 @@ export function ExerciseEditorView({
     setAliases(exercise.aliases.join(', '));
     setEquipment(exercise.equipment.join(', '));
     setError(null);
-  }, [exercise]);
+    // Keep the draft and its original revision while background sync refreshes this exercise.
+  }, [exercise?.id]);
 
   if (!exercise || !draft) return null;
 
@@ -137,16 +151,30 @@ export function ExerciseEditorView({
     setSaving(true);
     setError(null);
     try {
-      const updated = await updatePersonalExercise(exercise.id, next);
+      const updated = await updatePersonalExercise(
+        exercise.id,
+        next,
+        context,
+        expectedRevision.current,
+      );
       await onSaved(updated);
-      onClose();
-    } catch {
+      if (active.current) onClose();
+    } catch (requestError) {
+      const conflict =
+        requestError instanceof Error &&
+        ['exercise_revision_conflict', 'exercise_revision_required'].includes(requestError.message);
       setError(
-        tr(
-          locale,
-          'Не удалось сохранить исправления. Проверь подключение и попробуй ещё раз.',
-          'Could not save the corrections. Check your connection and try again.',
-        ),
+        conflict
+          ? tr(
+              locale,
+              'Карточка уже изменилась на другом устройстве или требует обновления. Твой текст остался в форме. Скопируй нужные правки, закрой и снова открой редактор, чтобы работать с актуальной версией.',
+              'This exercise changed on another device or needs refreshing. Your draft is still in the form. Copy any edits you need, then close and reopen the editor to use the latest version.',
+            )
+          : tr(
+              locale,
+              'Не удалось сохранить исправления. Проверь подключение и попробуй ещё раз.',
+              'Could not save the corrections. Check your connection and try again.',
+            ),
       );
     } finally {
       setSaving(false);
@@ -164,6 +192,7 @@ export function ExerciseEditorView({
         onBack={onClose}
         title={tr(locale, 'Редактирование', 'Editing')}
       />
+      <AthleteContextLabel />
       <h1>{tr(locale, 'Исправить данные', 'Edit details')}</h1>
       <p className="intro exercise-editor-intro">
         {tr(

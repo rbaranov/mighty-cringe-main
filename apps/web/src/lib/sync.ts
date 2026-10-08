@@ -14,7 +14,15 @@ import type {
   WorkoutRecord,
 } from '@mighty-cringe/contracts';
 
-import { db, type LocalWorkout, type OutboxMutation, type SyncConflict } from './db';
+import { type LocalWorkout, type OutboxMutation, type SyncConflict } from './db';
+import {
+  assertDataContext,
+  getDataContext,
+  isDataContextValid,
+  sportingRequest,
+  subscribeDataContext,
+  type DataContext,
+} from './dataContext';
 import { flushVoiceQueue, refreshVoiceEntries } from './voice';
 
 type MutationResponse =
@@ -36,27 +44,51 @@ export type SyncStatus = {
   message: string | null;
 };
 
-type SyncOutcome = 'success' | 'offline' | 'retry' | 'unauthorized';
+type SyncOutcome = 'success' | 'offline' | 'retry' | 'unauthorized' | 'forbidden';
 
 let lastSequence = 0;
-let activeFlush: Promise<SyncOutcome> | null = null;
-let retryAttempt = 0;
-let retryTimer: ReturnType<typeof setTimeout> | null = null;
-let syncStatus: SyncStatus = browserOnline()
-  ? { phase: 'idle', message: null }
-  : { phase: 'offline', message: null };
+type ContextSyncState = {
+  activeFlush: Promise<SyncOutcome> | null;
+  activeSync: Promise<SyncOutcome> | null;
+  activeRefresh: Promise<SyncOutcome> | null;
+  retryAttempt: number;
+  retryTimer: ReturnType<typeof setTimeout> | null;
+  status: SyncStatus;
+};
+const contextStates = new WeakMap<DataContext, ContextSyncState>();
 const syncListeners = new Set<() => void>();
+subscribeDataContext(() => {
+  for (const listener of syncListeners) listener();
+});
 
-export function getSyncStatus() {
-  return syncStatus;
+function stateFor(context: DataContext) {
+  let state = contextStates.get(context);
+  if (!state) {
+    state = {
+      activeFlush: null,
+      activeSync: null,
+      activeRefresh: null,
+      retryAttempt: 0,
+      retryTimer: null,
+      status: { phase: browserOnline() ? 'idle' : 'offline', message: null },
+    };
+    contextStates.set(context, state);
+  }
+  return state;
 }
 
-export function subscribeSyncStatus(listener: () => void) {
+export function getSyncStatus(context = getDataContext()) {
+  return stateFor(context).status;
+}
+
+export function subscribeSyncStatus(listener: () => void, _context = getDataContext()) {
   syncListeners.add(listener);
   return () => syncListeners.delete(listener);
 }
 
-export async function queueMutation(mutation: SyncMutation) {
+export async function queueMutation(mutation: SyncMutation, context = getDataContext()) {
+  if (!isDataContextValid(context)) throw new Error('data_context_unavailable');
+  const db = context.database;
   const id = mutation.payload.clientMutationId;
   await db.outbox.put({
     id,
@@ -64,66 +96,104 @@ export async function queueMutation(mutation: SyncMutation) {
     createdAt: new Date().toISOString(),
     mutation,
   });
-  if (browserOnline()) setTimeout(() => void flushOutbox(), 0);
+  if (browserOnline()) setTimeout(() => void flushOutbox(context), 0);
 }
 
-export function flushOutbox() {
-  if (activeFlush) return activeFlush;
+export function flushOutbox(context = getDataContext()): Promise<SyncOutcome> {
+  const state = stateFor(context);
+  if (state.activeFlush) return state.activeFlush;
+  if (state.activeRefresh) return state.activeRefresh.then(() => flushOutbox(context));
+  if (!isDataContextValid(context)) return Promise.resolve('forbidden' as const);
   updateSyncStatus(
     browserOnline() ? { phase: 'syncing', message: null } : { phase: 'offline', message: null },
+    context,
   );
-  activeFlush = performFlush()
-    .catch(() => 'retry' as const)
+  state.activeFlush = performFlush(context)
+    .catch(() => (isDataContextValid(context) ? ('retry' as const) : ('forbidden' as const)))
     .then(async (outcome) => {
-      await finishSync(outcome);
+      await finishSync(outcome, context);
       return outcome;
     })
     .finally(() => {
-      activeFlush = null;
+      state.activeFlush = null;
     });
-  return activeFlush;
+  return state.activeFlush;
 }
 
-export async function syncAll() {
-  const flushOutcome = await flushOutbox();
+export function syncAll(context = getDataContext()): Promise<SyncOutcome> {
+  const state = stateFor(context);
+  if (state.activeSync) return state.activeSync;
+  state.activeSync = performSyncAll(context).finally(() => {
+    state.activeSync = null;
+  });
+  return state.activeSync;
+}
+
+async function performSyncAll(context: DataContext) {
+  const flushOutcome = await flushOutbox(context);
   if (flushOutcome !== 'success') return flushOutcome;
-  const voiceOutcome = await flushVoiceQueue();
-  if (voiceOutcome !== 'success') {
-    await finishSync(voiceOutcome);
-    return voiceOutcome;
+  if (!context.relationshipId) {
+    const voiceOutcome = await flushVoiceQueue(context);
+    if (voiceOutcome !== 'success') {
+      await finishSync(voiceOutcome, context);
+      return voiceOutcome;
+    }
   }
-  updateSyncStatus({ phase: 'syncing', message: null });
-  const refreshOutcome = await refreshHistory().catch(() => 'retry' as const);
-  await finishSync(refreshOutcome);
+  if (!isDataContextValid(context)) return 'forbidden' as const;
+  updateSyncStatus({ phase: 'syncing', message: null }, context);
+  const refreshOutcome = await refreshHistory(context).catch(() =>
+    isDataContextValid(context) ? ('retry' as const) : ('forbidden' as const),
+  );
+  await finishSync(refreshOutcome, context);
   return refreshOutcome;
 }
 
-export async function refreshHistory(): Promise<SyncOutcome> {
+export function refreshHistory(context = getDataContext()): Promise<SyncOutcome> {
+  const state = stateFor(context);
+  if (state.activeRefresh) return state.activeRefresh;
+  const flush = state.activeFlush;
+  state.activeRefresh = (async () => {
+    if (flush) {
+      const outcome = await flush;
+      if (outcome !== 'success') return outcome;
+    }
+    return performRefreshHistory(context);
+  })().finally(() => {
+    state.activeRefresh = null;
+  });
+  return state.activeRefresh;
+}
+
+async function performRefreshHistory(context: DataContext): Promise<SyncOutcome> {
   if (!browserOnline()) return 'offline';
 
   const outcomes = await Promise.all([
-    refreshWorkoutHistory(),
-    refreshMeasurementHistory(),
-    refreshExercisePreferences(),
-    refreshVoiceEntries(),
+    refreshWorkoutHistory(context),
+    refreshMeasurementHistory(context),
+    refreshExercisePreferences(context),
+    refreshExercises(context),
+    ...(context.relationshipId ? [] : [refreshVoiceEntries(context)]),
   ]);
   return combineOutcomes(outcomes);
 }
 
-async function refreshWorkoutHistory(): Promise<SyncOutcome> {
+async function refreshWorkoutHistory(context: DataContext): Promise<SyncOutcome> {
+  const db = context.database;
   let response: Response;
   try {
-    response = await fetch('/api/v1/workouts', { credentials: 'same-origin' });
+    response = await sportingRequest('/api/v1/workouts', { credentials: 'same-origin' }, context);
   } catch {
-    return 'retry';
+    return isDataContextValid(context) ? 'retry' : 'forbidden';
   }
   if (response.status === 401) {
     window.dispatchEvent(new Event('mighty-cringe:unauthorized'));
     return 'unauthorized';
   }
+  if (response.status === 403) return 'forbidden';
   if (!response.ok) return 'retry';
 
   const payload = (await response.json()) as { items: WorkoutRecord[] };
+  if (!isDataContextValid(context)) return 'forbidden';
   await db.transaction('rw', db.workouts, db.sets, async () => {
     const serverWorkoutIds = new Set(payload.items.map((workout) => workout.id));
     const serverSetIds = new Set(
@@ -159,20 +229,27 @@ async function refreshWorkoutHistory(): Promise<SyncOutcome> {
   return 'success';
 }
 
-async function refreshMeasurementHistory(): Promise<SyncOutcome> {
+async function refreshMeasurementHistory(context: DataContext): Promise<SyncOutcome> {
+  const db = context.database;
   let response: Response;
   try {
-    response = await fetch('/api/v1/measurements', { credentials: 'same-origin' });
+    response = await sportingRequest(
+      '/api/v1/measurements',
+      { credentials: 'same-origin' },
+      context,
+    );
   } catch {
-    return 'retry';
+    return isDataContextValid(context) ? 'retry' : 'forbidden';
   }
   if (response.status === 401) {
     window.dispatchEvent(new Event('mighty-cringe:unauthorized'));
     return 'unauthorized';
   }
+  if (response.status === 403) return 'forbidden';
   if (!response.ok) return 'retry';
 
   const payload = (await response.json()) as { items: MeasurementRecord[] };
+  if (!isDataContextValid(context)) return 'forbidden';
   await db.transaction('rw', db.measurements, async () => {
     const serverIds = new Set(payload.items.map((measurement) => measurement.id));
     for (const measurement of payload.items) {
@@ -193,20 +270,27 @@ async function refreshMeasurementHistory(): Promise<SyncOutcome> {
   return 'success';
 }
 
-export async function refreshExercisePreferences(): Promise<SyncOutcome> {
+export async function refreshExercisePreferences(context = getDataContext()): Promise<SyncOutcome> {
+  const db = context.database;
   let response: Response;
   try {
-    response = await fetch('/api/v1/exercise-preferences', { credentials: 'same-origin' });
+    response = await sportingRequest(
+      '/api/v1/exercise-preferences',
+      { credentials: 'same-origin' },
+      context,
+    );
   } catch {
-    return 'retry';
+    return isDataContextValid(context) ? 'retry' : 'forbidden';
   }
   if (response.status === 401) {
     window.dispatchEvent(new Event('mighty-cringe:unauthorized'));
     return 'unauthorized';
   }
+  if (response.status === 403) return 'forbidden';
   if (!response.ok) return 'retry';
 
   const payload = (await response.json()) as { items: ExercisePreferenceRecord[] };
+  if (!isDataContextValid(context)) return 'forbidden';
   await db.transaction('rw', db.exercisePreferences, async () => {
     const serverIds = new Set(payload.items.map((preference) => preference.exerciseId));
     for (const preference of payload.items) {
@@ -228,8 +312,51 @@ export async function refreshExercisePreferences(): Promise<SyncOutcome> {
   return 'success';
 }
 
-export async function resolveConflict(conflictId: string, strategy: 'server' | 'mine') {
+export async function refreshExercises(context = getDataContext()): Promise<SyncOutcome> {
+  const db = context.database;
+  let response: Response;
+  try {
+    response = await sportingRequest('/api/v1/exercises', { credentials: 'same-origin' }, context);
+  } catch {
+    return isDataContextValid(context) ? 'retry' : 'forbidden';
+  }
+  if (response.status === 401) {
+    window.dispatchEvent(new Event('mighty-cringe:unauthorized'));
+    return 'unauthorized';
+  }
+  if (response.status === 403) return 'forbidden';
+  if (!response.ok) return 'retry';
+  const payload = (await response.json()) as { items: Exercise[] };
+  if (!isDataContextValid(context)) return 'forbidden';
+  await db.transaction('rw', db.exercises, db.outbox, async () => {
+    const pendingIds = new Set(
+      (await db.outbox.toArray())
+        .filter((item) => item.mutation.type === 'exercise.create')
+        .map((item) => (item.mutation.type === 'exercise.create' ? item.mutation.payload.id : '')),
+    );
+    const local = await db.exercises.toArray();
+    const remote = new Map(payload.items.map((exercise) => [exercise.id, exercise]));
+    const preserved = local.filter(
+      (exercise) =>
+        pendingIds.has(exercise.id) ||
+        (exercise.revision ?? 0) > (remote.get(exercise.id)?.revision ?? 0),
+    );
+    await db.exercises.clear();
+    await db.exercises.bulkPut(payload.items);
+    await db.exercises.bulkPut(preserved);
+  });
+  return 'success';
+}
+
+export async function resolveConflict(
+  conflictId: string,
+  strategy: 'server' | 'mine',
+  context = getDataContext(),
+) {
+  const db = context.database;
+  assertDataContext(context);
   const conflict = await db.conflicts.get(conflictId);
+  assertDataContext(context);
   if (!conflict) return;
 
   if (strategy === 'server') {
@@ -242,7 +369,7 @@ export async function resolveConflict(conflictId: string, strategy: 'server' | '
       db.conflicts,
       async () => {
         if (conflict.current) {
-          await applyCurrent(conflict.current);
+          await applyCurrent(conflict.current, context);
         } else if (conflict.entityType === 'workout') {
           await db.sets.where('workoutId').equals(conflict.entityId).delete();
           await db.workouts.delete(conflict.entityId);
@@ -259,7 +386,8 @@ export async function resolveConflict(conflictId: string, strategy: 'server' | '
     return;
   }
 
-  const rebased = await rebaseMutation(conflict);
+  const rebased = await rebaseMutation(conflict, context);
+  assertDataContext(context);
   if (!rebased) return;
   await db.transaction(
     'rw',
@@ -288,7 +416,7 @@ export async function resolveConflict(conflictId: string, strategy: 'server' | '
           });
         }
       }
-      await markSyncState(rebased, 'pending');
+      await markSyncState(rebased, 'pending', context);
       await db.outbox.put({
         id: rebased.payload.clientMutationId,
         sequence: nextSequence(),
@@ -298,28 +426,34 @@ export async function resolveConflict(conflictId: string, strategy: 'server' | '
       await db.conflicts.delete(conflict.id);
     },
   );
-  await flushOutbox();
+  await flushOutbox(context);
 }
 
-async function performFlush(): Promise<SyncOutcome> {
+async function performFlush(context: DataContext): Promise<SyncOutcome> {
+  const db = context.database;
   if (!browserOnline()) return 'offline';
 
   while (browserOnline()) {
+    if (!isDataContextValid(context)) return 'forbidden';
     const queued = await db.outbox.orderBy('sequence').first();
     if (!queued) return 'success';
-    const prepared = await prepareMutation(queued);
+    const prepared = await prepareMutation(queued, context);
     if (!prepared) return 'retry';
 
     let response: Response;
     try {
-      response = await fetch('/api/v1/sync', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(prepared.mutation),
-      });
+      response = await sportingRequest(
+        '/api/v1/sync',
+        {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(prepared.mutation),
+        },
+        context,
+      );
     } catch {
-      return 'retry';
+      return isDataContextValid(context) ? 'retry' : 'forbidden';
     }
 
     if (response.status === 401) {
@@ -341,45 +475,37 @@ async function performFlush(): Promise<SyncOutcome> {
         prepared,
         payload.current ?? null,
         payload.error ?? 'Сервер не принял изменение',
+        context,
       );
       continue;
     }
+    if (response.status === 403) return 'forbidden';
     if (!response.ok) return 'retry';
 
     const result = (await response.json()) as MutationResponse;
-    await applyMutationResult(prepared, result);
+    if (!isDataContextValid(context)) return 'forbidden';
+    await applyMutationResult(prepared, result, context);
   }
   return 'offline';
 }
 
-async function prepareMutation(queued: OutboxMutation) {
+async function prepareMutation(queued: OutboxMutation, context: DataContext) {
+  const db = context.database;
   if (queued.mutation.type === 'workout.update') {
     const workout = await db.workouts.get(queued.mutation.payload.workoutId);
     if (!workout) return null;
     if (workout.revision === 0) {
       if (workout.syncState === 'conflict') return null;
-      return restoreMissingWorkoutCreate(queued, workout);
-    }
-    if (queued.mutation.payload.baseRevision !== workout.revision) {
-      queued.mutation.payload.baseRevision = workout.revision;
-      await db.outbox.put(queued);
+      return restoreMissingWorkoutCreate(queued, workout, context);
     }
   }
   if (queued.mutation.type === 'set.update') {
     const set = await db.sets.get(queued.mutation.payload.setId);
     if (!set || set.revision === 0) return null;
-    if (queued.mutation.payload.baseRevision !== set.revision) {
-      queued.mutation.payload.baseRevision = set.revision;
-      await db.outbox.put(queued);
-    }
   }
   if (queued.mutation.type === 'set.delete') {
     const set = await db.sets.get(queued.mutation.payload.setId);
     if (!set || set.revision === 0) return null;
-    if (queued.mutation.payload.baseRevision !== set.revision) {
-      queued.mutation.payload.baseRevision = set.revision;
-      await db.outbox.put(queued);
-    }
   }
   if (
     queued.mutation.type === 'measurement.update' ||
@@ -387,18 +513,10 @@ async function prepareMutation(queued: OutboxMutation) {
   ) {
     const measurement = await db.measurements.get(queued.mutation.payload.measurementId);
     if (!measurement || measurement.revision === 0) return null;
-    if (queued.mutation.payload.baseRevision !== measurement.revision) {
-      queued.mutation.payload.baseRevision = measurement.revision;
-      await db.outbox.put(queued);
-    }
   }
   if (queued.mutation.type === 'exercise-preference.set') {
     const preference = await db.exercisePreferences.get(queued.mutation.payload.exerciseId);
     if (!preference) return null;
-    if (queued.mutation.payload.baseRevision !== preference.revision) {
-      queued.mutation.payload.baseRevision = preference.revision;
-      await db.outbox.put(queued);
-    }
   }
   return queued;
 }
@@ -406,7 +524,9 @@ async function prepareMutation(queued: OutboxMutation) {
 async function restoreMissingWorkoutCreate(
   blockedUpdate: OutboxMutation,
   workout: LocalWorkout,
+  context: DataContext,
 ): Promise<OutboxMutation> {
+  const db = context.database;
   const queuedCreate = await db.outbox
     .filter(
       (item) => item.mutation.type === 'workout.create' && item.mutation.payload.id === workout.id,
@@ -450,11 +570,42 @@ async function restoreMissingWorkoutCreate(
   return restoredCreate;
 }
 
-async function applyMutationResult(queued: OutboxMutation, result: MutationResponse) {
+async function applyMutationResult(
+  queued: OutboxMutation,
+  result: MutationResponse,
+  context: DataContext,
+) {
+  const db = context.database;
   await db.transaction(
     'rw',
     [db.exercises, db.exercisePreferences, db.workouts, db.sets, db.measurements, db.outbox],
     async () => {
+      const queuedNow = await db.outbox.get(queued.id);
+      if (
+        queued.mutation.type === 'workout.create' &&
+        result.entityType === 'workout' &&
+        result.entity &&
+        !queuedNow &&
+        !(await db.workouts.get(result.entity.id))
+      ) {
+        // The athlete deleted this still-local workout while its create request was
+        // in flight. Complete that deletion instead of resurrecting the late result.
+        const clientMutationId = crypto.randomUUID();
+        await db.outbox.put({
+          id: clientMutationId,
+          sequence: nextSequence(),
+          createdAt: new Date().toISOString(),
+          mutation: {
+            type: 'workout.delete',
+            payload: {
+              clientMutationId,
+              workoutId: result.entity.id,
+              baseRevision: result.entity.revision,
+            },
+          },
+        });
+        return;
+      }
       const remaining = (await db.outbox.toArray()).filter((item) => item.id !== queued.id);
       const hasNewerLocalChange = remaining.some(
         (item) => mutationEntity(item.mutation).key === mutationEntity(queued.mutation).key,
@@ -471,6 +622,29 @@ async function applyMutationResult(queued: OutboxMutation, result: MutationRespo
         }
         await db.outbox.delete(queued.id);
         return;
+      }
+
+      // Only our own acknowledged predecessor may advance another queued edit's
+      // expected revision. A newer polled cache may contain somebody else's work.
+      const previousRevision =
+        'baseRevision' in queued.mutation.payload
+          ? queued.mutation.payload.baseRevision
+          : queued.mutation.type.endsWith('.create')
+            ? 0
+            : null;
+      if (previousRevision !== null && result.entity.revision !== undefined) {
+        const entityKey = mutationEntity(queued.mutation).key;
+        for (const successor of remaining) {
+          if (
+            successor.sequence > queued.sequence &&
+            mutationEntity(successor.mutation).key === entityKey &&
+            'baseRevision' in successor.mutation.payload &&
+            successor.mutation.payload.baseRevision === previousRevision
+          ) {
+            successor.mutation.payload.baseRevision = result.entity.revision;
+            await db.outbox.put(successor);
+          }
+        }
       }
 
       if (result.entityType === 'exercise') {
@@ -543,7 +717,9 @@ async function storeConflict(
   queued: OutboxMutation,
   current: WorkoutRecord | SetRecord | MeasurementRecord | ExercisePreferenceRecord | null,
   message: string,
+  context: DataContext,
 ) {
+  const db = context.database;
   if (queued.mutation.type === 'exercise.create') return;
   const entity = mutationEntity(queued.mutation);
   if (entity.type === 'exercise') return;
@@ -551,7 +727,7 @@ async function storeConflict(
     'rw',
     [db.workouts, db.sets, db.measurements, db.exercisePreferences, db.outbox, db.conflicts],
     async () => {
-      await markSyncState(queued.mutation, 'conflict');
+      await markSyncState(queued.mutation, 'conflict', context);
       await db.conflicts.put({
         id: queued.id,
         entityType: entity.type,
@@ -566,7 +742,12 @@ async function storeConflict(
   );
 }
 
-async function markSyncState(mutation: SyncMutation, syncState: 'pending' | 'conflict') {
+async function markSyncState(
+  mutation: SyncMutation,
+  syncState: 'pending' | 'conflict',
+  context: DataContext,
+) {
+  const db = context.database;
   const entity = mutationEntity(mutation);
   if (entity.type === 'workout') {
     await db.workouts.update(entity.id, { syncState });
@@ -583,7 +764,9 @@ async function markSyncState(mutation: SyncMutation, syncState: 'pending' | 'con
 
 async function applyCurrent(
   current: WorkoutRecord | SetRecord | MeasurementRecord | ExercisePreferenceRecord,
+  context: DataContext,
 ) {
+  const db = context.database;
   if (isWorkoutRecord(current)) {
     await db.workouts.put({ ...withoutSets(current), syncState: 'synced' });
     for (const set of current.sets) {
@@ -598,7 +781,11 @@ async function applyCurrent(
   }
 }
 
-async function rebaseMutation(conflict: SyncConflict): Promise<SyncMutation | null> {
+async function rebaseMutation(
+  conflict: SyncConflict,
+  context: DataContext,
+): Promise<SyncMutation | null> {
+  const db = context.database;
   const clientMutationId = crypto.randomUUID();
   if (
     conflict.mutation.type === 'workout.create' &&
@@ -878,44 +1065,60 @@ function nextSequence() {
   return lastSequence;
 }
 
-async function finishSync(outcome: SyncOutcome) {
+async function finishSync(outcome: SyncOutcome, context: DataContext) {
+  const state = stateFor(context);
+  if (!isDataContextValid(context)) outcome = 'forbidden';
   if (outcome === 'success') {
-    retryAttempt = 0;
-    if (retryTimer) clearTimeout(retryTimer);
-    retryTimer = null;
+    state.retryAttempt = 0;
+    if (state.retryTimer) clearTimeout(state.retryTimer);
+    state.retryTimer = null;
     const completedAt = new Date().toISOString();
-    await db.meta.put({ key: 'lastSuccessfulSyncAt', value: completedAt }).catch(() => undefined);
-    updateSyncStatus({ phase: 'idle', message: null });
+    await context.database.meta
+      .put({ key: 'lastSuccessfulSyncAt', value: completedAt })
+      .catch(() => undefined);
+    updateSyncStatus({ phase: 'idle', message: null }, context);
     return;
   }
   if (outcome === 'offline') {
-    updateSyncStatus({ phase: 'offline', message: null });
+    updateSyncStatus({ phase: 'offline', message: null }, context);
     return;
   }
-  if (outcome === 'unauthorized') {
-    updateSyncStatus({ phase: 'error', message: 'Сессия истекла — войди снова.' });
+  if (outcome === 'unauthorized' || outcome === 'forbidden') {
+    if (state.retryTimer) clearTimeout(state.retryTimer);
+    state.retryTimer = null;
+    updateSyncStatus(
+      {
+        phase: 'error',
+        message:
+          outcome === 'forbidden'
+            ? 'Доступ к подопечному изменился. Неотправленные изменения сохранены отдельно.'
+            : 'Сессия истекла — войди снова.',
+      },
+      context,
+    );
     return;
   }
-
-  updateSyncStatus({
-    phase: 'error',
-    message: 'Сервер пока недоступен. Данные сохранены на этом устройстве.',
-  });
-  scheduleRetry();
+  updateSyncStatus(
+    { phase: 'error', message: 'Сервер пока недоступен. Данные сохранены на этом устройстве.' },
+    context,
+  );
+  scheduleRetry(context);
 }
 
-function scheduleRetry() {
-  if (retryTimer || !browserOnline()) return;
-  const delay = Math.min(2_000 * 2 ** retryAttempt, 60_000);
-  retryAttempt += 1;
-  retryTimer = setTimeout(() => {
-    retryTimer = null;
-    void syncAll();
+function scheduleRetry(context: DataContext) {
+  const state = stateFor(context);
+  if (state.retryTimer || !browserOnline() || !isDataContextValid(context)) return;
+  const delay = Math.min(2_000 * 2 ** state.retryAttempt, 60_000);
+  state.retryAttempt += 1;
+  state.retryTimer = setTimeout(() => {
+    state.retryTimer = null;
+    if (isDataContextValid(context)) void syncAll(context);
   }, delay);
-  if (typeof retryTimer === 'object' && 'unref' in retryTimer) retryTimer.unref();
+  if (typeof state.retryTimer === 'object' && 'unref' in state.retryTimer) state.retryTimer.unref();
 }
 
 function combineOutcomes(outcomes: SyncOutcome[]): SyncOutcome {
+  if (outcomes.includes('forbidden')) return 'forbidden';
   if (outcomes.includes('unauthorized')) return 'unauthorized';
   if (outcomes.includes('offline')) return 'offline';
   if (outcomes.includes('retry')) return 'retry';
@@ -926,8 +1129,9 @@ function browserOnline() {
   return typeof navigator === 'undefined' || navigator.onLine !== false;
 }
 
-function updateSyncStatus(next: SyncStatus) {
-  if (syncStatus.phase === next.phase && syncStatus.message === next.message) return;
-  syncStatus = next;
+function updateSyncStatus(next: SyncStatus, context: DataContext) {
+  const state = stateFor(context);
+  if (state.status.phase === next.phase && state.status.message === next.message) return;
+  state.status = next;
   for (const listener of syncListeners) listener();
 }

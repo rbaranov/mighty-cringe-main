@@ -3,9 +3,11 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { CurrentUser } from '@mighty-cringe/contracts';
 
+import type { SyncConflict } from '../lib/db';
+
 import { PreferencesProvider } from '../lib/preferences';
 import { DataExportPanel } from './DataExportPanel';
-import { SettingsView } from './SettingsView';
+import { ConflictSettings, SettingsView } from './SettingsView';
 
 const user: CurrentUser = {
   id: '70000000-0000-4000-8000-000000000001',
@@ -50,6 +52,7 @@ describe('SettingsView', () => {
     expect(preferences).toBeGreaterThan(audio);
     expect(html).not.toContain('Записи команд');
     expect(html).toContain('Локальная копия тренировок и замеров');
+    expect(html).toContain('Кто может смотреть и изменять твой журнал');
     expect(html).toContain('интенсивных силовых тренировок');
     expect(html).toContain('Минимум лишних действий — максимум честно зафиксированной работы.');
     expect(html).toContain('⚡ Mighty');
@@ -71,6 +74,62 @@ describe('SettingsView', () => {
     expect(html).toContain('tg @rbaranov');
     expect(html).toContain('rbaranov@me.com');
     expect(html).not.toContain('<select');
+  });
+
+  it('compares set values in the chosen language before resolving a conflict', () => {
+    const conflict: SyncConflict = {
+      id: 'conflict',
+      entityType: 'set',
+      entityId: 'set',
+      createdAt: '2026-10-08T10:00:00.000Z',
+      message: 'The record changed on another client',
+      mutation: {
+        type: 'set.update',
+        payload: {
+          clientMutationId: 'mutation',
+          workoutId: 'workout',
+          setId: 'set',
+          baseRevision: 1,
+          changes: { weightKg: 30, reps: 8, rir: 1, comment: 'Мой комментарий' },
+        },
+      },
+      current: {
+        id: 'set',
+        workoutId: 'workout',
+        exerciseId: 'exercise',
+        weightKg: 35,
+        reps: 10,
+        rir: 2,
+        comment: 'Правка подопечного',
+        entrySource: 'manual',
+        performedAt: '2026-10-08T09:00:00.000Z',
+        position: 0,
+        revision: 2,
+        updatedAt: '2026-10-08T10:00:00.000Z',
+      },
+    };
+    const render = (locale: 'ru' | 'en', current = conflict.current) =>
+      renderToStaticMarkup(
+        <PreferencesProvider locale={locale} unitSystem="metric">
+          <ConflictSettings conflicts={[{ ...conflict, current }]} onResolveConflict={vi.fn()} />
+        </PreferencesProvider>,
+      );
+    const html = render('ru');
+    expect(html).toContain('Запись уже изменилась в журнале');
+    expect(html).toContain('Мой вариант');
+    expect(html).toContain('Сейчас в журнале');
+    expect(html).toContain('30 кг × 8 · RIR 1');
+    expect(html).toContain('35 кг × 10 · RIR 2');
+    expect(html).toContain('Мой комментарий');
+    expect(html).toContain('Правка подопечного');
+    expect(html).not.toContain(conflict.message);
+    const deleted = render('ru', null);
+    expect(deleted).toContain('Записи больше нет в журнале');
+    expect(deleted).toContain('Записи нет');
+    const english = render('en');
+    expect(english).toContain('My version');
+    expect(english).toContain('Currently in the journal');
+    expect(english).not.toContain('Сейчас в журнале');
   });
 
   it('links the English honey-badger story to the English video', () => {

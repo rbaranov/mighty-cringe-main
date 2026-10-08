@@ -17,6 +17,7 @@ import {
   type ExercisePreferenceValue,
   type SetEntrySource,
   type SetInput,
+  type TrainerAthleteSummary,
   type WorkoutExercise,
 } from '@mighty-cringe/contracts';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -38,21 +39,35 @@ import { FavoriteWorkoutsSection } from './components/FavoriteWorkoutsSection';
 import type { MeasurementDraft } from './components/BodyMeasurementsSection';
 import { ProgressView } from './components/ProgressView';
 import { WorkoutResultView } from './components/WorkoutResultView';
-import { SettingsView } from './components/SettingsView';
+import { SettingsView, AthleteJournalSettings } from './components/SettingsView';
 import { TrainerDashboard } from './components/TrainerAccess';
+import { AthleteContextHeader } from './components/AthleteContextHeader';
+import {
+  AthleteContextProvider,
+  AthleteContextLabel,
+  useAthleteContext,
+} from './components/AthleteContext';
 import { VoicePanel } from './components/VoicePanel';
 import {
   activateLocalUser,
   cacheCurrentUser,
   clearLocalUserData,
-  db,
   disableOfflineSession,
   getCachedCurrentUser,
+  getLocalLogoutRisks,
   type LocalMeasurement,
   type LocalSet,
   type LocalWorkout,
   type SyncConflict,
 } from './lib/db';
+import {
+  getDataContext,
+  isDataContextValid,
+  initializeDataContext,
+  invalidateDataContext,
+  setAthleteDataContext,
+  setOwnDataContext,
+} from './lib/dataContext';
 import {
   advanceConfirmation,
   beginConfirmation,
@@ -102,14 +117,19 @@ import { setEntrySourceSuffix } from './lib/setEntrySource';
 import { setEntryHistory } from './lib/setEntryHistory';
 import { nextSetPosition } from './lib/setPosition';
 import { resolveSession } from './lib/session';
-import { acceptTrainerInviteFromUrl, currentLoginReturnTo } from './lib/trainer';
 import {
-  flushOutbox,
+  acceptTrainerInviteFromUrl,
+  currentLoginReturnTo,
+  getTrainerAthleteContext,
+  listTrainerAthletes,
+} from './lib/trainer';
+import {
+  flushOutbox as flushContextOutbox,
   getSyncStatus,
-  queueMutation,
-  resolveConflict,
+  queueMutation as queueContextMutation,
+  resolveConflict as resolveContextConflict,
   subscribeSyncStatus,
-  syncAll,
+  syncAll as syncContext,
 } from './lib/sync';
 import {
   applyWorkoutCommandToPlan,
@@ -155,21 +175,31 @@ type NaturalInputResult =
 
 export default function App() {
   const [auth, setAuth] = useState<AuthState>({ status: 'loading' });
+  const sessionRequest = useRef(0);
+  const loggingOut = useRef(false);
 
   const loadSession = useCallback(async () => {
+    if (loggingOut.current) return;
+    const requestId = ++sessionRequest.current;
+    const isCurrent = () => requestId === sessionRequest.current && !loggingOut.current;
     try {
       if (hasPendingRemoteLogout()) {
         const logoutCompleted = await requestRemoteLogout();
+        if (!isCurrent()) return;
         if (!logoutCompleted) {
           setAuth({ status: 'anonymous', googleEnabled: false, serverUnavailable: true });
           return;
         }
       }
       const session = await resolveSession({ request: fetch, getCachedUser: getCachedCurrentUser });
+      if (!isCurrent()) return;
       if (session.status === 'authenticated') {
+        initializeDataContext(session.user.id);
         if (session.source === 'server') {
           await activateLocalUser(session.user.id);
+          if (!isCurrent()) return;
           await cacheCurrentUser(session.user);
+          if (!isCurrent()) return;
         }
         setAuth({
           status: 'authenticated',
@@ -178,13 +208,18 @@ export default function App() {
         });
         return;
       }
-      if (session.serverRejected) await disableOfflineSession();
+      if (session.serverRejected) {
+        invalidateDataContext();
+        await disableOfflineSession();
+        if (!isCurrent()) return;
+      }
       setAuth({
         status: 'anonymous',
         googleEnabled: session.googleEnabled,
         serverUnavailable: session.serverUnavailable,
       });
     } catch (error) {
+      if (!isCurrent()) return;
       console.error('MightyCringe could not initialize the local session', error);
       setAuth({ status: 'unavailable' });
     }
@@ -200,6 +235,7 @@ export default function App() {
     window.addEventListener('pageshow', refreshWhenVisible);
     document.addEventListener('visibilitychange', refreshWhenVisible);
     return () => {
+      sessionRequest.current += 1;
       window.removeEventListener('mighty-cringe:unauthorized', loadSession);
       window.removeEventListener('online', loadSession);
       window.removeEventListener('pageshow', refreshWhenVisible);
@@ -208,13 +244,22 @@ export default function App() {
   }, [loadSession]);
 
   async function logout() {
-    await requestRemoteLogout();
-    await clearLocalUserData();
-    setAuth({ status: 'anonymous', googleEnabled: true, serverUnavailable: false });
+    loggingOut.current = true;
+    sessionRequest.current += 1;
+    invalidateDataContext();
+    try {
+      await requestRemoteLogout();
+      await clearLocalUserData();
+      setAuth({ status: 'anonymous', googleEnabled: true, serverUnavailable: false });
+    } finally {
+      loggingOut.current = false;
+    }
   }
 
   async function updateUser(user: CurrentUser) {
+    if (loggingOut.current || getDataContext().actorId !== user.id) return;
     await cacheCurrentUser(user);
+    if (loggingOut.current || getDataContext().actorId !== user.id) return;
     setAuth({ status: 'authenticated', user, restoredFromCache: false });
   }
 
@@ -243,6 +288,7 @@ export default function App() {
   }
   return (
     <AuthenticatedApp
+      key={auth.user.id}
       onLogout={logout}
       onUserUpdated={updateUser}
       restoredFromCache={auth.restoredFromCache}
@@ -259,12 +305,132 @@ type AuthenticatedAppProps = {
 };
 
 function AuthenticatedApp(props: AuthenticatedAppProps) {
+  const [athlete, setAthlete] = useState<TrainerAthleteSummary | null>(null);
+  const [athletes, setAthletes] = useState<TrainerAthleteSummary[]>([]);
+  const [switching, setSwitching] = useState(false);
+  const [contextNotice, setContextNotice] = useState<string | null>(null);
+  const contextRequest = useRef(0);
+  const views = useRef(new Map<string, View>());
+
+  useEffect(() => {
+    return () => {
+      contextRequest.current += 1;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!canUseTrainerConsole(props.user.role)) return;
+    let disposed = false;
+    const refresh = () => {
+      void listTrainerAthletes()
+        .then((result) => {
+          if (!disposed) setAthletes(result.items);
+        })
+        .catch(() => undefined);
+    };
+    refresh();
+    window.addEventListener('focus', refresh);
+    return () => {
+      disposed = true;
+      window.removeEventListener('focus', refresh);
+    };
+  }, [props.user.id, props.user.role]);
+
+  async function selectAthlete(next: TrainerAthleteSummary | null) {
+    const requestId = ++contextRequest.current;
+    if (!next) {
+      setOwnDataContext();
+      setAthlete(null);
+      setContextNotice(null);
+      setSwitching(false);
+      return;
+    }
+    setSwitching(true);
+    setContextNotice(null);
+    try {
+      if (!navigator.onLine)
+        throw new Error(
+          tr(
+            props.user.locale,
+            'Для переключения нужна сеть: проверяем разрешение подопечного.',
+            'Switching requires a connection to verify athlete permission.',
+          ),
+        );
+      const result = await getTrainerAthleteContext(next.id, (input, init) =>
+        fetch(input, { ...init, signal: AbortSignal.timeout(8_000) }),
+      );
+      if (requestId !== contextRequest.current) return;
+      if (result.athlete.access !== 'manage') {
+        throw new Error(
+          tr(
+            props.user.locale,
+            'Подопечному нужно разрешить редактирование: Настройки → Тренер и доступ. История доступна в кабинете тренера.',
+            'The athlete must allow editing in Settings → Coach and access. Read-only history is available in the coach dashboard.',
+          ),
+        );
+      }
+      setAthleteDataContext({
+        actorId: props.user.id,
+        athleteId: next.id,
+        relationshipId: result.athlete.linkId,
+      });
+      setAthletes((items) => items.map((item) => (item.id === next.id ? result.athlete : item)));
+      setAthlete(result.athlete);
+    } catch (error) {
+      if (requestId === contextRequest.current)
+        setContextNotice(
+          error instanceof Error
+            ? error.message
+            : tr(
+                props.user.locale,
+                'Не удалось проверить доступ. Для переключения нужна сеть.',
+                'Could not verify access. Switching requires a connection.',
+              ),
+        );
+    } finally {
+      if (requestId === contextRequest.current) setSwitching(false);
+    }
+  }
+
+  useEffect(() => {
+    const revoked = (event: Event) => {
+      const detail = (event as CustomEvent<{ key: string }>).detail;
+      if (detail?.key !== getDataContext().key) return;
+      contextRequest.current += 1;
+      setOwnDataContext();
+      setAthlete(null);
+      setSwitching(false);
+      setContextNotice(
+        tr(
+          props.user.locale,
+          'Доступ к редактированию подопечного отозван. Непереданные изменения остаются отдельно и не попадут в твой журнал.',
+          'Athlete editing access was revoked. Unsent changes remain separate and will not enter your journal.',
+        ),
+      );
+    };
+    window.addEventListener('mighty-cringe:trainer-access-revoked', revoked);
+    return () => window.removeEventListener('mighty-cringe:trainer-access-revoked', revoked);
+  }, [props.user.locale]);
+
   useEffect(() => {
     document.documentElement.lang = props.user.locale;
   }, [props.user.locale]);
+  const activeContextKey = getDataContext().key;
   return (
     <PreferencesProvider locale={props.user.locale} unitSystem={props.user.unitSystem}>
-      <AuthenticatedAppContent {...props} />
+      <AthleteContextProvider athlete={athlete}>
+        <AuthenticatedAppContent
+          key={activeContextKey}
+          {...props}
+          athlete={athlete}
+          athletes={athletes}
+          onSelectAthlete={selectAthlete}
+          switching={switching}
+          contextNotice={contextNotice}
+          initialView={views.current.get(activeContextKey) ?? 'workout'}
+          onViewChanged={(view) => views.current.set(activeContextKey, view)}
+        />
+      </AthleteContextProvider>
     </PreferencesProvider>
   );
 }
@@ -274,10 +440,36 @@ function AuthenticatedAppContent({
   restoredFromCache,
   onLogout,
   onUserUpdated,
-}: AuthenticatedAppProps) {
+  athlete,
+  athletes,
+  onSelectAthlete,
+  switching,
+  contextNotice,
+  initialView,
+  onViewChanged,
+}: AuthenticatedAppProps & {
+  athlete: TrainerAthleteSummary | null;
+  athletes: TrainerAthleteSummary[];
+  onSelectAthlete: (athlete: TrainerAthleteSummary | null) => Promise<void>;
+  switching: boolean;
+  contextNotice: string | null;
+  initialView: View;
+  onViewChanged: (view: View) => void;
+}) {
   useSheetViewport();
+  const dataContext = useMemo(() => getDataContext(), []);
+  const db = dataContext.database;
+  const queueMutation = (mutation: Parameters<typeof queueContextMutation>[0]) =>
+    queueContextMutation(mutation, dataContext);
+  const flushOutbox = () => flushContextOutbox(dataContext);
+  const syncAll = () => syncContext(dataContext);
+  const resolveConflict = (id: string, strategy: 'server' | 'mine') =>
+    resolveContextConflict(id, strategy, dataContext);
   const { locale, unitSystem } = usePreferences();
-  const [view, setView] = useState<View>('workout');
+  const [view, setView] = useState<View>(initialView);
+  useEffect(() => {
+    onViewChanged(view);
+  }, [view]);
   const [sheet, setSheet] = useState<{ exercise: Exercise; set: LocalSet | null } | null>(null);
   const [exercisePicker, setExercisePicker] = useState<ExercisePickerMode | null>(null);
   const [draftPlan, setDraftPlan] = useState<WorkoutExercise[] | null>(null);
@@ -297,7 +489,14 @@ function AuthenticatedAppContent({
   const [initialSyncCompleted, setInitialSyncCompleted] = useState(false);
   const inviteHandled = useRef(false);
   const syncStatusRef = useRef<HTMLDetailsElement>(null);
-  const syncStatus = useSyncExternalStore(subscribeSyncStatus, getSyncStatus, getSyncStatus);
+  const syncStatus = useSyncExternalStore(
+    useCallback(
+      (listener: () => void) => subscribeSyncStatus(listener, dataContext),
+      [dataContext],
+    ),
+    useCallback(() => getSyncStatus(dataContext), [dataContext]),
+    useCallback(() => getSyncStatus(dataContext), [dataContext]),
+  );
 
   const storedWorkouts = useLiveQuery(
     () => db.workouts.orderBy('startedAt').reverse().toArray(),
@@ -363,8 +562,30 @@ function AuthenticatedAppContent({
   const hydrationChecked = useRef(false);
   const [recoveredWorkoutId, setRecoveredWorkoutId] = useState<string | null>(null);
 
+  function requestContextSwitch(next: TrainerAthleteSummary | null) {
+    if (
+      sheet ||
+      exercisePicker ||
+      exerciseEditor ||
+      explainContext ||
+      timingWorkoutId ||
+      favoriteNameWorkoutId ||
+      confirmation
+    ) {
+      setInviteNotice(
+        tr(
+          locale,
+          'Сначала сохрани или закрой открытую форму, затем переключи журнал.',
+          'Save or close the open form before switching journals.',
+        ),
+      );
+      return;
+    }
+    void onSelectAthlete(next);
+  }
+
   useEffect(() => {
-    if (inviteHandled.current || restoredFromCache || !navigator.onLine) return;
+    if (athlete || inviteHandled.current || restoredFromCache || !navigator.onLine) return;
     if (!new URLSearchParams(window.location.search).has('trainerInvite')) return;
     inviteHandled.current = true;
     void acceptTrainerInviteFromUrl(window.location.href)
@@ -474,12 +695,13 @@ function AuthenticatedAppContent({
   const exerciseDetail = exerciseDetailId
     ? (exercises.find((exercise) => exercise.id === exerciseDetailId) ?? null)
     : null;
-  const inactivityState = activeWorkout
-    ? workoutInactivityState(activeWorkout, lifecycleNow)
-    : ({ phase: 'active', remainingSeconds: null } satisfies WorkoutInactivityState);
+  const inactivityState =
+    activeWorkout && !athlete
+      ? workoutInactivityState(activeWorkout, lifecycleNow)
+      : ({ phase: 'active', remainingSeconds: null } satisfies WorkoutInactivityState);
 
   useEffect(() => {
-    if (!activeWorkout) return;
+    if (athlete || !activeWorkout) return;
 
     const refreshLifecycleClock = () => setLifecycleNow(Date.now());
     const refreshWhenVisible = () => {
@@ -511,38 +733,16 @@ function AuthenticatedAppContent({
   }, [activeWorkout?.id, activeWorkout?.lastActivityAt, inactivityState.phase]);
 
   useEffect(() => {
-    if (!activeWorkout || inactivityState.phase !== 'expired') return;
+    if (athlete || !activeWorkout || inactivityState.phase !== 'expired') return;
     void finishWorkout('automatic', new Date(lifecycleNow).toISOString());
   }, [activeWorkout?.id, inactivityState.phase, lifecycleNow]);
 
   useEffect(() => {
-    const populateCatalog = async () => {
-      try {
-        const response = await fetch('/api/v1/exercises', { credentials: 'same-origin' });
-        if (response.status === 401) {
-          window.dispatchEvent(new Event('mighty-cringe:unauthorized'));
-          return;
-        }
-        if (!response.ok) throw new Error('Catalog is unavailable');
-        const payload = (await response.json()) as { items: Exercise[] };
-        await db.transaction('rw', db.exercises, db.outbox, async () => {
-          const pendingExerciseIds = new Set(
-            (await db.outbox.toArray()).flatMap((item) =>
-              item.mutation.type === 'exercise.create' ? [item.mutation.payload.id] : [],
-            ),
-          );
-          const pendingExercises = (await db.exercises.toArray()).filter((exercise) =>
-            pendingExerciseIds.has(exercise.id),
-          );
-          await db.exercises.clear();
-          await db.exercises.bulkPut(payload.items);
-          await db.exercises.bulkPut(pendingExercises);
-        });
-      } catch {
-        await db.exercises.bulkPut(fallbackCatalog);
-      }
-    };
-    void populateCatalog();
+    // Seed only an empty cache. The scoped sync owns all server catalog refreshes.
+    void db.transaction('rw', db.exercises, async () => {
+      if (!isDataContextValid(dataContext) || (await db.exercises.count())) return;
+      if (isDataContextValid(dataContext)) await db.exercises.bulkPut(fallbackCatalog);
+    });
   }, []);
 
   useEffect(() => {
@@ -552,6 +752,11 @@ function AuthenticatedAppContent({
     };
     window.addEventListener('online', sync);
     window.addEventListener('offline', sync);
+    const refreshVisible = () => {
+      if (document.visibilityState === 'visible') sync();
+    };
+    document.addEventListener('visibilitychange', refreshVisible);
+    const interval = window.setInterval(refreshVisible, 10_000);
     const firstSync = syncAll();
     initialSyncPromise.current = firstSync;
     void firstSync.finally(() => {
@@ -561,6 +766,8 @@ function AuthenticatedAppContent({
       disposed = true;
       window.removeEventListener('online', sync);
       window.removeEventListener('offline', sync);
+      document.removeEventListener('visibilitychange', refreshVisible);
+      window.clearInterval(interval);
     };
   }, []);
 
@@ -586,34 +793,29 @@ function AuthenticatedAppContent({
     };
   }, []);
 
+  function assertLocalContext() {
+    if (!isDataContextValid(dataContext)) throw new Error('data_context_unavailable');
+  }
+
+  async function writeLocal<T>(operation: () => Promise<T>): Promise<T> {
+    return db.transaction('rw', db.tables, async () => {
+      assertLocalContext();
+      const result = await operation();
+      assertLocalContext();
+      return result;
+    });
+  }
+
   async function createWorkoutWithPlan(workoutExercises: WorkoutExercise[]) {
+    assertLocalContext();
     await dismissWorkoutResult();
     setEditingWorkoutId(null);
     const id = crypto.randomUUID();
     const clientMutationId = crypto.randomUUID();
     const startedAt = new Date().toISOString();
-    await db.workouts.put({
-      id,
-      startedAt,
-      endedAt: null,
-      durationSeconds: 0,
-      activeSegmentStartedAt: startedAt,
-      lastActivityAt: startedAt,
-      completionReason: null,
-      isFavorite: false,
-      favoriteName: null,
-      notes: null,
-      locale,
-      exercises: workoutExercises,
-      revision: 0,
-      updatedAt: startedAt,
-      syncState: 'pending',
-    });
-    await queueMutation({
-      type: 'workout.create',
-      payload: {
+    await writeLocal(async () => {
+      await db.workouts.put({
         id,
-        clientMutationId,
         startedAt,
         endedAt: null,
         durationSeconds: 0,
@@ -625,30 +827,59 @@ function AuthenticatedAppContent({
         notes: null,
         locale,
         exercises: workoutExercises,
-        activityAt: startedAt,
-      },
+        revision: 0,
+        updatedAt: startedAt,
+        syncState: 'pending',
+      });
+      await queueMutation({
+        type: 'workout.create',
+        payload: {
+          id,
+          clientMutationId,
+          startedAt,
+          endedAt: null,
+          durationSeconds: 0,
+          activeSegmentStartedAt: startedAt,
+          lastActivityAt: startedAt,
+          completionReason: null,
+          isFavorite: false,
+          favoriteName: null,
+          notes: null,
+          locale,
+          exercises: workoutExercises,
+          activityAt: startedAt,
+        },
+      });
     });
     await flushOutbox();
   }
 
   async function updateDraftPlan(nextPlan: WorkoutExercise[]) {
+    assertLocalContext();
     const normalized = normalizeWorkoutPlan(nextPlan);
     setDraftPlan(normalized);
-    await db.meta.put({ key: 'draftWorkoutPlan', value: JSON.stringify(normalized) });
+    await writeLocal(async () => {
+      await db.meta.put({ key: 'draftWorkoutPlan', value: JSON.stringify(normalized) });
+    });
   }
 
   async function clearDraftPlan() {
+    assertLocalContext();
     setDraftPlan([]);
-    await db.meta.delete('draftWorkoutPlan');
+    await writeLocal(async () => {
+      await db.meta.delete('draftWorkoutPlan');
+    });
   }
 
   async function startWorkout() {
+    assertLocalContext();
     if (draftPlan !== null) {
       await createWorkoutWithPlan(draftPlan);
       await clearDraftPlan();
       return;
     }
     await (initialSyncPromise.current ?? syncAll());
+    assertLocalContext();
     const [latestPreferences, latestWorkouts] = await Promise.all([
       db.exercisePreferences.toArray(),
       db.workouts.toArray(),
@@ -667,6 +898,7 @@ function AuthenticatedAppContent({
   }
 
   async function repeatWorkout(workout: LocalWorkout) {
+    assertLocalContext();
     if (activeWorkout || workout.endedAt === null) return;
     await createWorkoutWithPlan(copyWorkoutPlan(workout.exercises));
     await clearDraftPlan();
@@ -679,11 +911,13 @@ function AuthenticatedAppContent({
     isFavorite: boolean,
     favoriteName: string | null = workout.favoriteName,
   ) {
-    await saveWorkoutFavorite(workout, isFavorite, favoriteName);
+    assertLocalContext();
+    await saveWorkoutFavorite(workout, isFavorite, favoriteName, dataContext);
   }
 
   async function updateWorkoutNotes(workout: LocalWorkout, notes: string) {
-    await saveWorkoutNotes(workout, notes);
+    assertLocalContext();
+    await saveWorkoutNotes(workout, notes, dataContext);
     if (workout.endedAt === null) setLifecycleNow(Date.now());
   }
 
@@ -745,18 +979,21 @@ function AuthenticatedAppContent({
     setSheet(null);
     try {
       if (activeSheet.set) {
-        await db.sets.update(activeSheet.set.id, { ...input, syncState: 'pending' });
-        await recordLocalWorkoutActivity(activeWorkout.id, activityAt);
-        await queueMutation({
-          type: 'set.update',
-          payload: {
-            clientMutationId: crypto.randomUUID(),
-            workoutId: activeWorkout.id,
-            setId: activeSheet.set.id,
-            baseRevision: activeSheet.set.revision,
-            changes: input,
-            activityAt,
-          },
+        const existingSet = activeSheet.set;
+        await writeLocal(async () => {
+          await db.sets.update(existingSet.id, { ...input, syncState: 'pending' });
+          await recordLocalWorkoutActivity(activeWorkout.id, activityAt);
+          await queueMutation({
+            type: 'set.update',
+            payload: {
+              clientMutationId: crypto.randomUUID(),
+              workoutId: activeWorkout.id,
+              setId: existingSet.id,
+              baseRevision: existingSet.revision,
+              changes: input,
+              activityAt,
+            },
+          });
         });
         return;
       }
@@ -773,34 +1010,37 @@ function AuthenticatedAppContent({
     input: NaturalSetDraft,
     entrySource: SetEntrySource = 'manual',
   ) {
+    assertLocalContext();
     if (!workoutContext) return;
     const activityAt = new Date().toISOString();
     const performedAt = editingWorkout?.endedAt ?? activityAt;
-    const set = await db.transaction('rw', db.sets, async () => {
-      const existingSets = await db.sets.where('workoutId').equals(workoutContext.id).toArray();
-      const nextSet: SetInput = {
-        id: crypto.randomUUID(),
-        exerciseId: exercise.id,
-        ...input,
-        entrySource,
-        performedAt,
-        position: nextSetPosition(existingSets, exercise.id),
-      };
-      await db.sets.put({
-        ...nextSet,
-        workoutId: workoutContext.id,
-        revision: 0,
-        updatedAt: nextSet.performedAt,
-        syncState: 'pending',
-        deleted: false,
+    await writeLocal(async () => {
+      const set = await db.transaction('rw', db.sets, async () => {
+        const existingSets = await db.sets.where('workoutId').equals(workoutContext.id).toArray();
+        const nextSet: SetInput = {
+          id: crypto.randomUUID(),
+          exerciseId: exercise.id,
+          ...input,
+          entrySource,
+          performedAt,
+          position: nextSetPosition(existingSets, exercise.id),
+        };
+        await db.sets.put({
+          ...nextSet,
+          workoutId: workoutContext.id,
+          revision: 0,
+          updatedAt: nextSet.performedAt,
+          syncState: 'pending',
+          deleted: false,
+        });
+        return nextSet;
       });
-      return nextSet;
-    });
-    const clientMutationId = crypto.randomUUID();
-    await recordLocalWorkoutActivity(workoutContext.id, activityAt);
-    await queueMutation({
-      type: 'set.create',
-      payload: { clientMutationId, workoutId: workoutContext.id, set, activityAt },
+      const clientMutationId = crypto.randomUUID();
+      await recordLocalWorkoutActivity(workoutContext.id, activityAt);
+      await queueMutation({
+        type: 'set.create',
+        payload: { clientMutationId, workoutId: workoutContext.id, set, activityAt },
+      });
     });
   }
 
@@ -809,6 +1049,7 @@ function AuthenticatedAppContent({
     input: NaturalSetDraft,
     entrySource: Extract<SetEntrySource, 'natural_text' | 'voice_ai'>,
   ) {
+    assertLocalContext();
     await createSet(exercise, input, entrySource);
     setExplainContext(null);
   }
@@ -817,6 +1058,7 @@ function AuthenticatedAppContent({
     reason: 'manual' | 'automatic' = 'manual',
     processedAt = new Date().toISOString(),
   ) {
+    assertLocalContext();
     const workoutId = activeWorkout?.id;
     if (!workoutId || finishingWorkoutId.current === workoutId) return;
     finishingWorkoutId.current = workoutId;
@@ -841,7 +1083,7 @@ function AuthenticatedAppContent({
           activityAt,
         },
       } as const;
-      await db.transaction('rw', db.workouts, db.meta, db.outbox, async () => {
+      await writeLocal(async () => {
         await db.workouts.update(workout.id, { ...changes, syncState: 'pending' });
         if (reason === 'automatic') {
           await db.meta.put({ key: 'autoFinishNoticeWorkoutId', value: workout.id });
@@ -867,58 +1109,76 @@ function AuthenticatedAppContent({
     changes: ReturnType<typeof resumeWorkoutChanges>,
     activityAt: string,
   ) {
-    await db.workouts.update(workout.id, { ...changes, syncState: 'pending' });
-    await queueMutation({
-      type: 'workout.update',
-      payload: {
-        clientMutationId: crypto.randomUUID(),
-        workoutId: workout.id,
-        baseRevision: workout.revision,
-        changes,
-        activityAt,
-      },
+    assertLocalContext();
+    await writeLocal(async () => {
+      await db.workouts.update(workout.id, { ...changes, syncState: 'pending' });
+      await queueMutation({
+        type: 'workout.update',
+        payload: {
+          clientMutationId: crypto.randomUUID(),
+          workoutId: workout.id,
+          baseRevision: workout.revision,
+          changes,
+          activityAt,
+        },
+      });
     });
   }
 
   async function recordLocalWorkoutActivity(workoutId: string, activityAt: string) {
-    const workout = await db.workouts.get(workoutId);
-    if (
-      !workout ||
-      workout.endedAt !== null ||
-      new Date(activityAt).getTime() <= new Date(workout.lastActivityAt).getTime()
-    ) {
-      return;
-    }
-    await db.workouts.update(workoutId, { lastActivityAt: activityAt });
-    setLifecycleNow(new Date(activityAt).getTime());
+    assertLocalContext();
+    await writeLocal(async () => {
+      const workout = await db.workouts.get(workoutId);
+      if (
+        !workout ||
+        workout.endedAt !== null ||
+        new Date(activityAt).getTime() <= new Date(workout.lastActivityAt).getTime()
+      ) {
+        return;
+      }
+      await db.workouts.update(workoutId, { lastActivityAt: activityAt });
+      setLifecycleNow(new Date(activityAt).getTime());
+    });
   }
 
   async function touchActiveWorkout() {
+    assertLocalContext();
     if (!activeWorkout) return;
     const activityAt = new Date().toISOString();
-    await recordLocalWorkoutActivity(activeWorkout.id, activityAt);
-    await queueMutation({
-      type: 'workout.touch',
-      payload: {
-        clientMutationId: crypto.randomUUID(),
-        workoutId: activeWorkout.id,
-        activityAt,
-      },
+    await writeLocal(async () => {
+      await recordLocalWorkoutActivity(activeWorkout.id, activityAt);
+      await queueMutation({
+        type: 'workout.touch',
+        payload: {
+          clientMutationId: crypto.randomUUID(),
+          workoutId: activeWorkout.id,
+          activityAt,
+        },
+      });
     });
     await flushOutbox();
   }
 
   async function dismissAutoFinishNotice() {
-    await db.meta.delete('autoFinishNoticeWorkoutId');
+    assertLocalContext();
+    await writeLocal(async () => {
+      await db.meta.delete('autoFinishNoticeWorkoutId');
+    });
   }
 
   async function dismissWorkoutResult() {
-    await db.meta.delete('workoutResultId');
+    assertLocalContext();
+    await writeLocal(async () => {
+      await db.meta.delete('workoutResultId');
+    });
   }
 
   async function showWorkoutResult(workout: LocalWorkout) {
+    assertLocalContext();
     if (workout.endedAt === null) return;
-    await db.meta.put({ key: 'workoutResultId', value: workout.id });
+    await writeLocal(async () => {
+      await db.meta.put({ key: 'workoutResultId', value: workout.id });
+    });
     setEditingWorkoutId(null);
     setExerciseDetailId(null);
     setView('workout');
@@ -930,18 +1190,21 @@ function AuthenticatedAppContent({
     startedAt: string,
     durationSeconds: number,
   ) {
+    assertLocalContext();
     const activityAt = new Date().toISOString();
     const changes = editWorkoutTimingChanges(startedAt, durationSeconds);
-    await db.workouts.update(workout.id, { ...changes, syncState: 'pending' });
-    await queueMutation({
-      type: 'workout.update',
-      payload: {
-        clientMutationId: crypto.randomUUID(),
-        workoutId: workout.id,
-        baseRevision: workout.revision,
-        changes,
-        activityAt,
-      },
+    await writeLocal(async () => {
+      await db.workouts.update(workout.id, { ...changes, syncState: 'pending' });
+      await queueMutation({
+        type: 'workout.update',
+        payload: {
+          clientMutationId: crypto.randomUUID(),
+          workoutId: workout.id,
+          baseRevision: workout.revision,
+          changes,
+          activityAt,
+        },
+      });
     });
     setTimingWorkoutId(null);
     await dismissAutoFinishNotice();
@@ -967,34 +1230,37 @@ function AuthenticatedAppContent({
   }
 
   async function resumeWorkout(workout: LocalWorkout) {
+    assertLocalContext();
     if (workout.endedAt === null || resumingWorkoutId.current === workout.id) return;
     resumingWorkoutId.current = workout.id;
     try {
-      const selected = await db.workouts.get(workout.id);
-      if (!selected || selected.endedAt === null) return;
-      const activityAt = new Date().toISOString();
-      if (activeWorkout && activeWorkout.id !== selected.id) {
-        const current = await db.workouts.get(activeWorkout.id);
-        if (current?.endedAt === null) {
-          const finishChanges = finishWorkoutChanges(current, activityAt, 'manual');
-          await db.workouts.update(current.id, { ...finishChanges, syncState: 'pending' });
-          await queueMutation({
-            type: 'workout.update',
-            payload: {
-              clientMutationId: crypto.randomUUID(),
-              workoutId: current.id,
-              baseRevision: current.revision,
-              changes: finishChanges,
-              activityAt,
-            },
-          });
+      await writeLocal(async () => {
+        const selected = await db.workouts.get(workout.id);
+        if (!selected || selected.endedAt === null) return;
+        const activityAt = new Date().toISOString();
+        if (activeWorkout && activeWorkout.id !== selected.id) {
+          const current = await db.workouts.get(activeWorkout.id);
+          if (current?.endedAt === null) {
+            const finishChanges = finishWorkoutChanges(current, activityAt, 'manual');
+            await db.workouts.update(current.id, { ...finishChanges, syncState: 'pending' });
+            await queueMutation({
+              type: 'workout.update',
+              payload: {
+                clientMutationId: crypto.randomUUID(),
+                workoutId: current.id,
+                baseRevision: current.revision,
+                changes: finishChanges,
+                activityAt,
+              },
+            });
+          }
         }
-      }
-      await updateWorkoutLifecycle(selected, resumeWorkoutChanges(activityAt), activityAt);
-      await dismissAutoFinishNotice();
-      await dismissWorkoutResult();
-      setEditingWorkoutId(null);
-      setView('workout');
+        await updateWorkoutLifecycle(selected, resumeWorkoutChanges(activityAt), activityAt);
+        await dismissAutoFinishNotice();
+        await dismissWorkoutResult();
+        setEditingWorkoutId(null);
+        setView('workout');
+      });
       await flushOutbox();
     } finally {
       resumingWorkoutId.current = null;
@@ -1030,6 +1296,7 @@ function AuthenticatedAppContent({
   }
 
   async function updateWorkoutPlan(nextPlan: WorkoutExercise[]) {
+    assertLocalContext();
     if (!workoutContext) return;
     const activityAt = new Date().toISOString();
     const exercises = normalizeWorkoutPlan(nextPlan);
@@ -1037,28 +1304,32 @@ function AuthenticatedAppContent({
       exercises,
       ...(workoutContext.endedAt === null ? { lastActivityAt: activityAt } : {}),
     };
-    await db.workouts.update(workoutContext.id, { ...changes, syncState: 'pending' });
-    if (workoutContext.endedAt === null) setLifecycleNow(new Date(activityAt).getTime());
-    await queueMutation({
-      type: 'workout.update',
-      payload: {
-        clientMutationId: crypto.randomUUID(),
-        workoutId: workoutContext.id,
-        baseRevision: workoutContext.revision,
-        changes,
-        activityAt,
-      },
+    await writeLocal(async () => {
+      await db.workouts.update(workoutContext.id, { ...changes, syncState: 'pending' });
+      if (workoutContext.endedAt === null) setLifecycleNow(new Date(activityAt).getTime());
+      await queueMutation({
+        type: 'workout.update',
+        payload: {
+          clientMutationId: crypto.randomUUID(),
+          workoutId: workoutContext.id,
+          baseRevision: workoutContext.revision,
+          changes,
+          activityAt,
+        },
+      });
     });
     await flushOutbox();
   }
 
   async function executeWorkoutCommand(command: NaturalWorkoutCommand) {
+    assertLocalContext();
     if (!workoutContext) return;
     await updateWorkoutPlan(applyWorkoutCommandToPlan(workoutContext.exercises, command));
     setExplainContext(null);
   }
 
   async function chooseExercise(exercise: Exercise) {
+    assertLocalContext();
     if (!exercisePicker) return;
     const picker = exercisePicker;
     setExercisePicker(null);
@@ -1097,26 +1368,31 @@ function AuthenticatedAppContent({
   }
 
   async function removeDraftExercise(itemId: string) {
+    assertLocalContext();
     if (!draftPlan) return;
     await updateDraftPlan(draftPlan.filter((item) => item.id !== itemId));
   }
 
   async function moveDraftExercise(itemId: string, direction: -1 | 1) {
+    assertLocalContext();
     if (!draftPlan) return;
     await updateDraftPlan(moveWorkoutPlanExercise(draftPlan, itemId, direction));
   }
 
   async function toggleDraftSuperset(itemId: string) {
+    assertLocalContext();
     if (!draftPlan) return;
     await updateDraftPlan(toggleWorkoutGroupLink(draftPlan, itemId));
   }
 
   async function removeExercise(itemId: string) {
+    assertLocalContext();
     if (!workoutContext) return;
     await updateWorkoutPlan(workoutContext.exercises.filter((item) => item.id !== itemId));
   }
 
   async function moveExercise(itemId: string, direction: -1 | 1) {
+    assertLocalContext();
     if (!workoutContext) return;
     const nextPlan = workoutContext.exercises
       .map((item) => ({ ...item }))
@@ -1132,23 +1408,27 @@ function AuthenticatedAppContent({
   }
 
   async function toggleSuperset(itemId: string) {
+    assertLocalContext();
     if (!workoutContext) return;
     await updateWorkoutPlan(toggleWorkoutGroupLink(workoutContext.exercises, itemId));
   }
 
   async function deleteSet(set: LocalSet) {
+    assertLocalContext();
     const activityAt = new Date().toISOString();
-    await db.sets.update(set.id, { deleted: true, syncState: 'pending' });
-    await recordLocalWorkoutActivity(set.workoutId, activityAt);
-    await queueMutation({
-      type: 'set.delete',
-      payload: {
-        clientMutationId: crypto.randomUUID(),
-        workoutId: set.workoutId,
-        setId: set.id,
-        baseRevision: set.revision,
-        activityAt,
-      },
+    await writeLocal(async () => {
+      await db.sets.update(set.id, { deleted: true, syncState: 'pending' });
+      await recordLocalWorkoutActivity(set.workoutId, activityAt);
+      await queueMutation({
+        type: 'set.delete',
+        payload: {
+          clientMutationId: crypto.randomUUID(),
+          workoutId: set.workoutId,
+          setId: set.id,
+          baseRevision: set.revision,
+          activityAt,
+        },
+      });
     });
     setSheet(null);
     await flushOutbox();
@@ -1172,25 +1452,28 @@ function AuthenticatedAppContent({
   }
 
   async function deleteWorkout(workout: LocalWorkout) {
-    const queued = await db.outbox.toArray();
-    const supersededMutationIds = queued
-      .filter((item) => mutationWorkoutId(item.mutation) === workout.id)
-      .map((item) => item.id);
-    if (workout.revision > 0) {
-      await queueMutation({
-        type: 'workout.delete',
-        payload: {
-          clientMutationId: crypto.randomUUID(),
-          workoutId: workout.id,
-          baseRevision: workout.revision,
-          activityAt: new Date().toISOString(),
-        },
+    assertLocalContext();
+    await writeLocal(async () => {
+      const queued = await db.outbox.toArray();
+      const supersededMutationIds = queued
+        .filter((item) => mutationWorkoutId(item.mutation) === workout.id)
+        .map((item) => item.id);
+      if (workout.revision > 0) {
+        await queueMutation({
+          type: 'workout.delete',
+          payload: {
+            clientMutationId: crypto.randomUUID(),
+            workoutId: workout.id,
+            baseRevision: workout.revision,
+            activityAt: new Date().toISOString(),
+          },
+        });
+      }
+      await db.transaction('rw', db.workouts, db.sets, db.outbox, async () => {
+        await db.sets.where('workoutId').equals(workout.id).delete();
+        await db.workouts.delete(workout.id);
+        await db.outbox.bulkDelete(supersededMutationIds);
       });
-    }
-    await db.transaction('rw', db.workouts, db.sets, db.outbox, async () => {
-      await db.sets.where('workoutId').equals(workout.id).delete();
-      await db.workouts.delete(workout.id);
-      await db.outbox.bulkDelete(supersededMutationIds);
     });
     if (autoFinishNoticeWorkoutId === workout.id) await dismissAutoFinishNotice();
     setEditingWorkoutId(null);
@@ -1211,29 +1494,29 @@ function AuthenticatedAppContent({
         setCount: workoutSetCount,
         synced: workout.revision > 0,
       }),
-      action: async () => {
-        const current = await db.workouts.get(workout.id);
-        if (current) await deleteWorkout(current);
-      },
+      action: () => deleteWorkout(workout),
     });
   }
 
   async function saveMeasurement(draft: MeasurementDraft, existing: LocalMeasurement | null) {
+    assertLocalContext();
     const updatedAt = new Date().toISOString();
     if (existing) {
-      await db.measurements.update(existing.id, {
-        ...draft,
-        updatedAt,
-        syncState: 'pending',
-      });
-      await queueMutation({
-        type: 'measurement.update',
-        payload: {
-          clientMutationId: crypto.randomUUID(),
-          measurementId: existing.id,
-          baseRevision: existing.revision,
-          changes: draft,
-        },
+      await writeLocal(async () => {
+        await db.measurements.update(existing.id, {
+          ...draft,
+          updatedAt,
+          syncState: 'pending',
+        });
+        await queueMutation({
+          type: 'measurement.update',
+          payload: {
+            clientMutationId: crypto.randomUUID(),
+            measurementId: existing.id,
+            baseRevision: existing.revision,
+            changes: draft,
+          },
+        });
       });
       await flushOutbox();
       return;
@@ -1244,40 +1527,47 @@ function AuthenticatedAppContent({
   }
 
   async function createLocalMeasurement(draft: MeasurementDraft) {
+    assertLocalContext();
     const id = crypto.randomUUID();
     const updatedAt = new Date().toISOString();
-    await db.measurements.put({
-      id,
-      ...draft,
-      revision: 0,
-      updatedAt,
-      syncState: 'pending',
-      deleted: false,
-    });
-    await queueMutation({
-      type: 'measurement.create',
-      payload: {
+    await writeLocal(async () => {
+      await db.measurements.put({
         id,
-        clientMutationId: crypto.randomUUID(),
         ...draft,
-      },
+        revision: 0,
+        updatedAt,
+        syncState: 'pending',
+        deleted: false,
+      });
+      await queueMutation({
+        type: 'measurement.create',
+        payload: {
+          id,
+          clientMutationId: crypto.randomUUID(),
+          ...draft,
+        },
+      });
     });
   }
 
   async function importMeasurements(drafts: MeasurementDraft[]) {
+    assertLocalContext();
     for (const draft of drafts) await createLocalMeasurement(draft);
     await flushOutbox();
   }
 
   async function deleteMeasurement(measurement: LocalMeasurement) {
-    await db.measurements.update(measurement.id, { deleted: true, syncState: 'pending' });
-    await queueMutation({
-      type: 'measurement.delete',
-      payload: {
-        clientMutationId: crypto.randomUUID(),
-        measurementId: measurement.id,
-        baseRevision: measurement.revision,
-      },
+    assertLocalContext();
+    await writeLocal(async () => {
+      await db.measurements.update(measurement.id, { deleted: true, syncState: 'pending' });
+      await queueMutation({
+        type: 'measurement.delete',
+        payload: {
+          clientMutationId: crypto.randomUUID(),
+          measurementId: measurement.id,
+          baseRevision: measurement.revision,
+        },
+      });
     });
     await flushOutbox();
   }
@@ -1321,17 +1611,24 @@ function AuthenticatedAppContent({
   }
 
   async function deleteCatalogExercise(exercise: Exercise) {
+    assertLocalContext();
     try {
-      const deleted = await softDeletePersonalExercise(exercise.id);
-      await db.exercises.put(deleted);
+      const deleted = await softDeletePersonalExercise(exercise.id, dataContext, exercise.revision);
+      await cacheExercise(deleted, dataContext);
       setExerciseDetailId(null);
-    } catch {
+    } catch (error) {
       setInviteNotice(
-        tr(
-          locale,
-          'Не удалось удалить упражнение из каталога. Проверь подключение и попробуй ещё раз.',
-          'Could not remove the exercise from the catalog. Check your connection and try again.',
-        ),
+        error instanceof Error && error.message === 'exercise_revision_conflict'
+          ? tr(
+              locale,
+              'Упражнение уже изменено с другого устройства. Открой его заново и проверь актуальную версию перед удалением.',
+              'This exercise changed on another device. Reopen it and review the current version before deleting.',
+            )
+          : tr(
+              locale,
+              'Не удалось удалить упражнение из каталога. Проверь подключение и попробуй ещё раз.',
+              'Could not remove the exercise from the catalog. Check your connection and try again.',
+            ),
       );
     }
   }
@@ -1354,19 +1651,9 @@ function AuthenticatedAppContent({
   }
 
   async function requestLogoutWithSafety() {
-    const [pendingMutations, conflictCount, voiceEntries] = await Promise.all([
-      db.outbox.count(),
-      db.conflicts.count(),
-      db.voiceEntries.toArray(),
-    ]);
-    const risks: LogoutRisks = {
-      pendingMutations,
-      conflicts: conflictCount,
-      localVoiceEntries: voiceEntries.filter(
-        (entry) => !entry.serverStored && entry.status !== 'deleting',
-      ).length,
-      pendingVoiceDeletions: voiceEntries.filter((entry) => entry.status === 'deleting').length,
-    };
+    assertLocalContext();
+    const risks: LogoutRisks = await getLocalLogoutRisks();
+    assertLocalContext();
     if (!hasLogoutRisks(risks)) {
       onLogout();
       return;
@@ -1412,6 +1699,7 @@ function AuthenticatedAppContent({
   }
 
   async function moveSet(set: LocalSet, direction: -1 | 1) {
+    assertLocalContext();
     const ordered = sets
       .filter(
         (item) =>
@@ -1424,27 +1712,29 @@ function AuthenticatedAppContent({
     const activityAt = new Date().toISOString();
 
     const firstPosition = set.position;
-    await db.transaction('rw', db.sets, async () => {
-      await db.sets.update(set.id, { position: other.position, syncState: 'pending' });
-      await db.sets.update(other.id, { position: firstPosition, syncState: 'pending' });
-    });
-    for (const [item, position] of [
-      [set, other.position],
-      [other, firstPosition],
-    ] as const) {
-      await queueMutation({
-        type: 'set.update',
-        payload: {
-          clientMutationId: crypto.randomUUID(),
-          workoutId: item.workoutId,
-          setId: item.id,
-          baseRevision: item.revision,
-          changes: { position },
-          activityAt,
-        },
+    await writeLocal(async () => {
+      await db.transaction('rw', db.sets, async () => {
+        await db.sets.update(set.id, { position: other.position, syncState: 'pending' });
+        await db.sets.update(other.id, { position: firstPosition, syncState: 'pending' });
       });
-    }
-    await recordLocalWorkoutActivity(set.workoutId, activityAt);
+      for (const [item, position] of [
+        [set, other.position],
+        [other, firstPosition],
+      ] as const) {
+        await queueMutation({
+          type: 'set.update',
+          payload: {
+            clientMutationId: crypto.randomUUID(),
+            workoutId: item.workoutId,
+            setId: item.id,
+            baseRevision: item.revision,
+            changes: { position },
+            activityAt,
+          },
+        });
+      }
+      await recordLocalWorkoutActivity(set.workoutId, activityAt);
+    });
     await flushOutbox();
   }
 
@@ -1452,6 +1742,7 @@ function AuthenticatedAppContent({
     <main
       className={[
         'app-shell',
+        athlete && 'app-shell-athlete',
         `app-shell-${view}`,
         view === 'workout' &&
           workoutContext &&
@@ -1464,12 +1755,17 @@ function AuthenticatedAppContent({
         .join(' ')}
     >
       <header className="topbar">
-        <div>
-          <p className="brand">MightyCringe</p>
-          <p className="subtle">
-            {tr(locale, 'Привет', 'Hi')}, {firstName(user.displayName, locale)} 👋
-          </p>
-        </div>
+        <AthleteContextHeader
+          user={user}
+          athlete={athlete}
+          athletes={athletes}
+          onSelectAthlete={requestContextSwitch}
+          onReturnToSelf={() => requestContextSwitch(null)}
+          onManageAthletes={
+            canUseTrainerConsole(user.role) && !athlete ? () => setView('trainer') : undefined
+          }
+          switching={switching}
+        />
         <details
           className={conflicts.length ? 'sync-status conflict' : `sync-status ${syncStatus.phase}`}
           ref={syncStatusRef}
@@ -1504,13 +1800,26 @@ function AuthenticatedAppContent({
       </header>
 
       <div className="app-content">
+        {contextNotice && (
+          <p className="connectivity-notice" role="status">
+            {contextNotice}
+          </p>
+        )}
         {inviteNotice && (
           <p className="connectivity-notice" role="status">
             {inviteNotice}
           </p>
         )}
 
-        {restoredFromCache ? (
+        {athlete && (syncStatus.phase === 'offline' || outboxCount > 0) ? (
+          <p className="connectivity-notice" role="status">
+            {tr(
+              locale,
+              `Изменения для ${athlete.displayName} сохранены на этом устройстве и ещё не переданы подопечному.`,
+              `Changes for ${athlete.displayName} are saved on this device and have not reached the athlete yet.`,
+            )}
+          </p>
+        ) : restoredFromCache ? (
           <p className="connectivity-notice" role="status">
             {tr(
               locale,
@@ -1562,7 +1871,9 @@ function AuthenticatedAppContent({
             onEditExercise={setExerciseEditor}
             onEditSet={(exercise, set) => setSheet({ exercise, set })}
             onMoveSet={moveSet}
-            onTogglePreference={(value) => toggleExercisePreference(exerciseDetail.id, value)}
+            onTogglePreference={(value) =>
+              toggleExercisePreference(exerciseDetail.id, value, dataContext)
+            }
             onReplaceExercise={() => {
               const target = workoutContext ? 'current' : 'draft';
               const item = (workoutContext?.exercises ?? draftPlan ?? []).find(
@@ -1661,7 +1972,7 @@ function AuthenticatedAppContent({
               <CatalogView
                 exercises={catalogChoices}
                 onOpenExercise={(exercise) => setExerciseDetailId(exercise.id)}
-                onTogglePreference={toggleExercisePreference}
+                onTogglePreference={(id, value) => toggleExercisePreference(id, value, dataContext)}
                 preferences={preferenceByExerciseId}
               />
             )}
@@ -1683,7 +1994,14 @@ function AuthenticatedAppContent({
                 workouts={workouts}
               />
             )}
-            {view === 'settings' && (
+            {view === 'settings' && athlete && (
+              <AthleteJournalSettings
+                athlete={athlete}
+                conflicts={conflicts}
+                onResolveConflict={requestResolveSyncConflict}
+              />
+            )}
+            {view === 'settings' && !athlete && (
               <SettingsView
                 conflicts={conflicts}
                 onLogout={requestLogoutWithSafety}
@@ -1701,7 +2019,12 @@ function AuthenticatedAppContent({
                 user={user}
               />
             )}
-            {view === 'trainer' && <TrainerDashboard onBack={() => setView('settings')} />}
+            {view === 'trainer' && !athlete && (
+              <TrainerDashboard
+                onBack={() => setView('settings')}
+                onOpenAthlete={requestContextSwitch}
+              />
+            )}
           </>
         )}
       </div>
@@ -1738,7 +2061,20 @@ function AuthenticatedAppContent({
             type="button"
           >
             <span className="explain-orb">
-              <NavIcon name="explain" />
+              {athlete ? (
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                >
+                  <path d="M5 4h14v12H9l-4 4V4Z" />
+                  <path d="M8 8h8M8 12h5" />
+                </svg>
+              ) : (
+                <NavIcon name="explain" />
+              )}
               <i aria-hidden="true">✦</i>
             </span>
             <span className="tab-label">{tr(locale, 'Пояснить', 'Describe')}</span>
@@ -1789,9 +2125,8 @@ function AuthenticatedAppContent({
       />
       <WorkoutTimingSheet
         onClose={() => setTimingWorkoutId(null)}
-        onSave={(startedAt, durationSeconds) => {
-          if (!timingWorkout) return;
-          return saveWorkoutTiming(timingWorkout, startedAt, durationSeconds);
+        onSave={(startedAt, durationSeconds, sourceWorkout) => {
+          return saveWorkoutTiming(sourceWorkout, startedAt, durationSeconds);
         }}
         workout={timingWorkout ?? null}
       />
@@ -2603,6 +2938,7 @@ function ExerciseOptionsSheet({
         role="dialog"
       >
         <div className="sheet-handle" />
+        <AthleteContextLabel />
         <p className="eyebrow">{tr(locale, 'Упражнение', 'Exercise')}</p>
         <h2>{exerciseName(exercise, locale)}</h2>
         <div className="exercise-actions-grid">
@@ -3000,6 +3336,7 @@ function CatalogView({
   onTogglePreference: (exerciseId: string, value: ExercisePreferenceValue) => Promise<void>;
   preferences: ReadonlyMap<string, ExercisePreferenceValue | null>;
 }) {
+  const dataContext = useMemo(() => getDataContext(), []);
   const { locale } = usePreferences();
   const [showAddOptions, setShowAddOptions] = useState(false);
   const [query, setQuery] = useState('');
@@ -3072,7 +3409,7 @@ function CatalogView({
             hasMatches={!unresolvedCatalogQuery}
             locale={locale}
             onExerciseSaved={async (exercise) => {
-              await cacheExercise(exercise);
+              await cacheExercise(exercise, dataContext);
             }}
             query={unresolvedCatalogQuery ?? query}
           />
@@ -3233,6 +3570,7 @@ function ExercisePickerSheet({
   onClose: () => void;
   preferences: ReadonlyMap<string, ExercisePreferenceValue | null>;
 }) {
+  const dataContext = useMemo(() => getDataContext(), []);
   const { locale } = usePreferences();
   const [query, setQuery] = useState('');
   const [showAddOptions, setShowAddOptions] = useState(false);
@@ -3299,6 +3637,7 @@ function ExercisePickerSheet({
         role="dialog"
       >
         <div className="sheet-handle" />
+        <AthleteContextLabel />
         <p className="eyebrow">
           {mode.mode === 'add'
             ? tr(locale, 'Каталог', 'Catalog')
@@ -3472,7 +3811,7 @@ function ExercisePickerSheet({
                     existingExercises={catalog}
                     locale={locale}
                     onExerciseSaved={async (exercise) => {
-                      await cacheExercise(exercise);
+                      await cacheExercise(exercise, dataContext);
                       await onChoose(exercise);
                     }}
                     query={query}
@@ -3500,7 +3839,7 @@ function ExercisePickerSheet({
               hasMatches
               locale={locale}
               onExerciseSaved={async (exercise) => {
-                await cacheExercise(exercise);
+                await cacheExercise(exercise, dataContext);
                 await onChoose(exercise);
               }}
               query={query}
@@ -3620,8 +3959,10 @@ function ExplainSheet({
     entrySource: Extract<SetEntrySource, 'natural_text' | 'voice_ai'>,
   ) => Promise<void>;
 }) {
+  const dataContext = useMemo(() => getDataContext(), []);
   const { locale, unitSystem } = usePreferences();
-  const [mode, setMode] = useState<'text' | 'voice'>(() => loadInputMode());
+  const athlete = useAthleteContext();
+  const [mode, setMode] = useState<'text' | 'voice'>(() => (athlete ? 'text' : loadInputMode()));
   const [text, setText] = useState('');
   const [result, setResult] = useState<NaturalInputResult | null>(null);
   const [commandOverrides, setCommandOverrides] = useState<WorkoutCommandOverrides>({});
@@ -3632,6 +3973,7 @@ function ExplainSheet({
   const autoStartVoice = useRef(mode === 'voice').current;
 
   function chooseMode(next: 'text' | 'voice') {
+    if (athlete && next === 'voice') return;
     setMode(next);
     saveInputMode(next);
     setResult(null);
@@ -3769,6 +4111,7 @@ function ExplainSheet({
           role="dialog"
         >
           <div className="sheet-handle" />
+          <AthleteContextLabel />
           <p className="eyebrow">{tr(locale, 'Пояснить', 'Describe')}</p>
           <h2>
             {tr(locale, 'Команды работают во время тренировки', 'Commands work during a workout')}
@@ -3812,6 +4155,7 @@ function ExplainSheet({
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="sheet-handle" />
+        <AthleteContextLabel />
         <p className="eyebrow">{tr(locale, 'Пояснить', 'Describe')}</p>
         <h2>
           {scopedExercise
@@ -3844,6 +4188,7 @@ function ExplainSheet({
             ⌨️ {tr(locale, 'Текст', 'Text')}
           </button>
           <button
+            disabled={Boolean(athlete)}
             aria-selected={mode === 'voice'}
             className={mode === 'voice' ? 'active' : ''}
             onClick={() => chooseMode('voice')}
@@ -3999,7 +4344,7 @@ function ExplainSheet({
                       initialQuery={result.unresolvedPhrase}
                       locale={locale}
                       onExerciseSaved={async (exercise) => {
-                        await cacheExercise(exercise);
+                        await cacheExercise(exercise, dataContext);
                         const nextOverrides = { ...commandOverrides, target: exercise };
                         setCommandOverrides(nextOverrides);
                         setResult(
@@ -4313,10 +4658,6 @@ function youtubeVideoId(url: string) {
   return null;
 }
 
-function firstName(displayName: string, locale: CurrentUser['locale']) {
-  return displayName.trim().split(/\s+/)[0] || tr(locale, 'спортсмен', 'athlete');
-}
-
 function canUseTrainerConsole(role: CurrentUser['role']) {
   return role === 'trainer' || role === 'admin' || role === 'superadmin';
 }
@@ -4331,7 +4672,7 @@ function parseDraftWorkoutPlan(value: string | null) {
   }
 }
 
-function mutationWorkoutId(mutation: Parameters<typeof queueMutation>[0]) {
+function mutationWorkoutId(mutation: Parameters<typeof queueContextMutation>[0]) {
   switch (mutation.type) {
     case 'workout.create':
       return mutation.payload.id;

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type {
   Exercise,
@@ -6,7 +6,7 @@ import type {
   UpdateExerciseInput,
 } from '@mighty-cringe/contracts';
 
-import { db } from '../lib/db';
+import { getDataContext } from '../lib/dataContext';
 import { updatePersonalExercise } from '../lib/exercises';
 import { exerciseName, tr, usePreferences } from '../lib/preferences';
 import { ExerciseDiscoveryPanel } from './ExerciseDiscoveryPanel';
@@ -18,34 +18,63 @@ export function ExerciseEnrichmentPanel({
   exercise: Exercise;
   onClose: () => void;
 }) {
+  return <ExerciseEnrichmentSession key={exercise.id} exercise={exercise} onClose={onClose} />;
+}
+
+function ExerciseEnrichmentSession({
+  exercise,
+  onClose,
+}: {
+  exercise: Exercise;
+  onClose: () => void;
+}) {
   const { locale } = usePreferences();
+  const [context] = useState(getDataContext);
+  const [baseline] = useState(exercise);
+  const active = useRef(true);
   const [candidate, setCandidate] = useState<ExerciseDiscoveryCandidate | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const merged = useMemo(
-    () => (candidate ? mergeExerciseDetails(exercise, candidate) : null),
-    [candidate, exercise],
+    () => (candidate ? mergeExerciseDetails(baseline, candidate) : null),
+    [candidate, baseline],
   );
   const changes = useMemo(
-    () => (merged ? enrichmentChanges(exercise, merged, locale) : []),
-    [exercise, locale, merged],
+    () => (merged ? enrichmentChanges(baseline, merged, locale) : []),
+    [baseline, locale, merged],
   );
+
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
 
   async function applyCandidate() {
     if (!merged || saving) return;
     setSaving(true);
     setError(null);
     try {
-      const updated = await updatePersonalExercise(exercise.id, merged);
-      await db.exercises.put({ ...updated, syncState: 'synced' });
-      onClose();
-    } catch {
+      const updated = await updatePersonalExercise(baseline.id, merged, context, baseline.revision);
+      await context.database.exercises.put({ ...updated, syncState: 'synced' });
+      if (active.current) onClose();
+    } catch (requestError) {
+      const conflict =
+        requestError instanceof Error &&
+        ['exercise_revision_conflict', 'exercise_revision_required'].includes(requestError.message);
       setError(
-        tr(
-          locale,
-          'Не удалось заполнить карточку. Найденные данные остались на экране — попробуй ещё раз.',
-          'Could not fill the details. The found data is still here — try again.',
-        ),
+        conflict
+          ? tr(
+              locale,
+              'Карточка уже изменилась на другом устройстве или требует обновления. Найденные данные остались на экране. Закрой и снова открой заполнение, чтобы проверить их по актуальной версии.',
+              'This exercise changed on another device or needs refreshing. The found data is still on screen. Close and reopen enrichment to review it against the latest version.',
+            )
+          : tr(
+              locale,
+              'Не удалось заполнить карточку. Найденные данные остались на экране — попробуй ещё раз.',
+              'Could not fill the details. The found data is still here — try again.',
+            ),
       );
     } finally {
       setSaving(false);

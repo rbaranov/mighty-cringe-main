@@ -1,12 +1,14 @@
 import type { ExercisePreferenceValue } from '@mighty-cringe/contracts';
 
-import { db } from './db';
+import { getDataContext } from './dataContext';
 import { flushOutbox, queueMutation } from './sync';
 
 export async function toggleExercisePreference(
   exerciseId: string,
   selectedValue: ExercisePreferenceValue,
+  context = getDataContext(),
 ) {
+  const db = context.database;
   const current = await db.exercisePreferences.get(exerciseId);
   const value = current?.value === selectedValue ? null : selectedValue;
   const updatedAt = new Date().toISOString();
@@ -18,15 +20,18 @@ export async function toggleExercisePreference(
       updatedAt,
       syncState: 'pending',
     });
-    await queueMutation({
-      type: 'exercise-preference.set',
-      payload: {
-        clientMutationId: crypto.randomUUID(),
-        exerciseId,
-        value,
-        baseRevision: current?.revision ?? 0,
+    await queueMutation(
+      {
+        type: 'exercise-preference.set',
+        payload: {
+          clientMutationId: crypto.randomUUID(),
+          exerciseId,
+          value,
+          baseRevision: current?.revision ?? 0,
+        },
       },
-    });
+      context,
+    );
   });
-  void flushOutbox();
+  void flushOutbox(context);
 }

@@ -1,8 +1,9 @@
 import 'fake-indexeddb/auto';
 
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { db } from './db';
+import { getDataContext, initializeDataContext, setAthleteDataContext } from './dataContext';
 import {
   acceptVoiceConsent,
   classifyVoiceLocalSaveFailure,
@@ -19,16 +20,22 @@ import {
 const id = '82000000-0000-4000-8000-000000000001';
 const workoutId = '83000000-0000-4000-8000-000000000001';
 const createdAt = '2026-07-22T08:00:00.000Z';
+let actorSequence = 0;
 
 describe('private durable voice queue', () => {
   beforeEach(async () => {
+    initializeDataContext(`voice-actor-${++actorSequence}`);
     await db.transaction('rw', db.tables, async () => {
       await Promise.all(db.tables.map((table) => table.clear()));
     });
     vi.restoreAllMocks();
     vi.stubGlobal('navigator', { onLine: true });
   });
-  afterAll(async () => db.delete());
+  afterEach(() => vi.useRealTimers());
+  afterAll(async () => {
+    initializeDataContext('voice-test-cleanup');
+    await db.delete();
+  });
 
   it('caches the server consent boundary', async () => {
     vi.stubGlobal(
@@ -81,10 +88,11 @@ describe('private durable voice queue', () => {
 
     const [url, init] = request.mock.calls[0];
     expect(url).toBe(`/api/v1/voice-entries/${id}/audio?workoutId=${workoutId}`);
-    expect(init?.headers).toMatchObject({
-      'content-type': 'audio/webm',
-      'x-voice-consent-version': '2026-07-22',
-    });
+    const headers = new Headers(init?.headers);
+    expect(headers.get('content-type')).toBe('audio/webm');
+    expect(headers.get('x-voice-consent-version')).toBe('2026-07-22');
+    expect(headers.get('x-actor-id')).toBe(getDataContext().actorId);
+    expect(headers.has('x-athlete-id')).toBe(false);
     expect(await db.voiceEntries.get(id)).toMatchObject({ status: 'pending', serverStored: true });
   });
 
@@ -149,10 +157,14 @@ describe('private durable voice queue', () => {
       transcript: 'жим 40 на 12',
     });
     expect(request).toHaveBeenCalledTimes(2);
-    expect(request).toHaveBeenNthCalledWith(1, '/api/v1/voice-entries', {
-      cache: 'no-store',
-      credentials: 'same-origin',
-    });
+    expect(request).toHaveBeenNthCalledWith(
+      1,
+      '/api/v1/voice-entries',
+      expect.objectContaining({
+        cache: 'no-store',
+        credentials: 'same-origin',
+      }),
+    );
   });
 
   it('stops polling immediately when the voice panel is closed', async () => {
@@ -225,7 +237,117 @@ describe('private durable voice queue', () => {
     await expect(flushVoiceQueue()).resolves.toBe('success');
     expect(await db.voiceEntries.get(id)).toBeUndefined();
   });
+
+  it('discards an old account transcript response after a different actor signs in', async () => {
+    const response = deferred<Response>();
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockReturnValue(response.promise));
+    const refresh = refreshVoiceEntries();
+    initializeDataContext('next-actor');
+    response.resolve(
+      Response.json({
+        items: [{ ...serverEntry('confirmed'), transcript: 'private old transcript' }],
+      }),
+    );
+    await expect(refresh).resolves.toBe('unauthorized');
+    expect(await db.voiceEntries.count()).toBe(0);
+  });
+
+  it('does not cache old-account configuration or accept a late recording callback', async () => {
+    const context = getDataContext();
+    const response = deferred<Response>();
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockReturnValue(response.promise));
+    const config = loadVoiceConfig(context);
+    initializeDataContext('next-actor');
+    response.resolve(
+      Response.json({
+        enabled: true,
+        consentVersion: 'old-consent',
+        maximumBytes: 1000,
+        maximumSeconds: 60,
+        provider: null,
+      }),
+    );
+    await expect(config).resolves.toBeNull();
+    expect(await db.meta.get('voiceConfig')).toBeUndefined();
+    await expect(
+      queueVoiceRecording(
+        { audio: new Blob(['old audio']), workoutId, consentVersion: 'old-consent' },
+        context,
+      ),
+    ).rejects.toThrow('data_context_unavailable');
+    expect(await db.voiceEntries.count()).toBe(0);
+  });
+
+  it('does not upload an old queue after an awaited local read crosses an account change', async () => {
+    await queueVoiceRecording({
+      id,
+      workoutId,
+      audio: new Blob(['old audio']),
+      consentVersion: 'old-consent',
+    });
+    const entry = (await db.voiceEntries.get(id))!;
+    const read = deferred<LocalVoiceEntries>();
+    vi.spyOn(db.voiceEntries, 'orderBy').mockReturnValueOnce({
+      toArray: () => read.promise,
+    } as ReturnType<typeof db.voiceEntries.orderBy>);
+    const request = vi.fn<typeof fetch>();
+    vi.stubGlobal('fetch', request);
+    const flushing = flushVoiceQueue();
+    initializeDataContext('next-actor');
+    read.resolve([entry]);
+    await expect(flushing).resolves.toBe('unauthorized');
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('retains the original actor in a retry timer instead of adopting the next login', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    await queueVoiceRecording({
+      id,
+      workoutId,
+      audio: new Blob(['old audio']),
+      consentVersion: 'old-consent',
+    });
+    const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 503 }));
+    vi.stubGlobal('fetch', request);
+    await expect(flushVoiceQueue()).resolves.toBe('retry');
+    initializeDataContext('next-actor');
+    request.mockClear();
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('keeps every voice entry point unavailable for an athlete context', async () => {
+    const actor = getDataContext().actorId;
+    const context = setAthleteDataContext({
+      actorId: actor,
+      athleteId: 'athlete',
+      relationshipId: 'relationship',
+    });
+    const request = vi.fn<typeof fetch>();
+    vi.stubGlobal('fetch', request);
+    await expect(loadVoiceConfig(context)).resolves.toBeNull();
+    await expect(refreshVoiceEntries(context)).resolves.toBe('success');
+    await expect(flushVoiceQueue(context)).resolves.toBe('success');
+    await expect(
+      queueVoiceRecording(
+        { audio: new Blob(['audio']), workoutId, consentVersion: 'consent' },
+        context,
+      ),
+    ).rejects.toThrow('voice_context_unavailable');
+    expect(request).not.toHaveBeenCalled();
+    await context.database.delete();
+  });
 });
+
+type LocalVoiceEntries = Awaited<ReturnType<typeof db.voiceEntries.toArray>>;
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
 
 function serverEntry(status: 'pending' | 'processing' | 'confirmed' | 'failed') {
   return {

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
 
 import type {
   CreateExerciseInput,
@@ -18,6 +19,8 @@ import type {
   SetRecord,
   SetExercisePreferenceInput,
   TrainerAthleteSummary,
+  TrainerAccess,
+  JournalActivity,
   TrainerInviteRecord,
   TrainerSummary,
   TouchWorkoutInput,
@@ -47,6 +50,7 @@ import {
   isNull,
   lt,
   measurementEntries,
+  ne,
   notificationPreferences,
   notificationJobs,
   pushSubscriptions,
@@ -54,6 +58,7 @@ import {
   sessions,
   sets,
   trainerAthleteLinks,
+  trainerAuditEvents,
   trainerInvites,
   users,
   voiceEntries,
@@ -139,7 +144,7 @@ export type MutationResult = EntityMutationResult | DeleteMutationResult;
 export class RepositoryConflictError extends Error {
   constructor(
     readonly current:
-      WorkoutRecord | SetRecord | MeasurementRecord | ExercisePreferenceRecord | null,
+      WorkoutRecord | SetRecord | MeasurementRecord | ExercisePreferenceRecord | Exercise | null,
   ) {
     super('The record changed on another client');
   }
@@ -160,11 +165,41 @@ export class RepositoryInviteError extends Error {
   }
 }
 
+export class RepositoryTrainerAccessError extends Error {
+  constructor(readonly code: 'trainer_access_revoked' | 'trainer_manage_required') {
+    super(
+      code === 'trainer_access_revoked'
+        ? 'Trainer access is no longer available'
+        : 'Athlete permission to manage training is required',
+    );
+  }
+}
+
+export type TrainerDataScope = {
+  actorId: string;
+  athleteId: string;
+  linkId: string;
+  write: boolean;
+  operation: string;
+  details: Record<string, unknown>;
+};
+
 export interface WorkoutRepository {
   listExercises(userId: string): Promise<Exercise[]>;
+  listJournalActivity(userId: string): Promise<JournalActivity[]>;
   createExercise(userId: string, input: CreateExerciseInput): Promise<Exercise>;
-  updateExercise(userId: string, exerciseId: string, input: UpdateExerciseInput): Promise<Exercise>;
-  deleteExercise(userId: string, exerciseId: string, now: Date): Promise<Exercise>;
+  updateExercise(
+    userId: string,
+    exerciseId: string,
+    input: UpdateExerciseInput,
+    baseRevision?: number,
+  ): Promise<Exercise>;
+  deleteExercise(
+    userId: string,
+    exerciseId: string,
+    now: Date,
+    baseRevision?: number,
+  ): Promise<Exercise>;
   listExercisePreferences(userId: string): Promise<ExercisePreferenceRecord[]>;
   setExercisePreference(
     userId: string,
@@ -226,6 +261,11 @@ export interface WorkoutRepository {
   ): Promise<TrainerSummary>;
   getAthleteTrainer(athleteId: string): Promise<TrainerSummary | null>;
   listTrainerAthletes(trainerId: string): Promise<TrainerAthleteSummary[]>;
+  updateTrainerAccess(athleteId: string, access: TrainerAccess, now: Date): Promise<TrainerSummary>;
+  withTrainerAccess<T>(
+    scope: TrainerDataScope,
+    operation: () => Promise<{ value: T; successful: boolean }>,
+  ): Promise<T>;
   listSharedWorkouts(trainerId: string, athleteId: string): Promise<WorkoutRecord[]>;
   listSharedMeasurements(trainerId: string, athleteId: string): Promise<MeasurementRecord[]>;
   revokeAthleteTrainer(athleteId: string, now: Date): Promise<boolean>;
@@ -254,6 +294,7 @@ type MemoryTrainerInvite = {
   createdAt: Date;
 };
 type MemoryTrainerLink = {
+  access: TrainerAccess;
   id: string;
   trainerId: string;
   athleteId: string;
@@ -277,10 +318,24 @@ export class MemoryRepository implements WorkoutRepository {
   private readonly sessions = new Map<string, MemorySession>();
   private readonly trainerInvites = new Map<string, MemoryTrainerInvite>();
   private readonly trainerLinks = new Map<string, MemoryTrainerLink>();
+  readonly trainerAudit: Array<TrainerDataScope & { id: string; createdAt: string }> = [];
   private readonly notificationPreferences = new Map<string, NotificationPreferences>();
   private readonly pushSubscriptions = new Map<string, MemoryPushSubscription>();
   private readonly personalExercises = new Map<string, MemoryExercise>();
   private readonly exercisePreferences = new Map<string, MemoryExercisePreference>();
+
+  async listJournalActivity(userId: string): Promise<JournalActivity[]> {
+    return this.trainerAudit
+      .filter((item) => item.athleteId === userId && item.actorId !== userId)
+      .slice(-50)
+      .reverse()
+      .map((item) => ({
+        id: item.id,
+        actorDisplayName: this.users.get(item.actorId)?.displayName ?? 'Тренер',
+        action: item.operation,
+        createdAt: item.createdAt,
+      }));
+  }
 
   async listExercises(userId: string) {
     return [
@@ -301,7 +356,13 @@ export class MemoryRepository implements WorkoutRepository {
     if (catalog.some((exercise) => exercise.id === input.id)) {
       throw new RepositoryConflictError(null);
     }
-    const exercise: MemoryExercise = { ...input, scope: 'user', deletedAt: null, userId };
+    const exercise: MemoryExercise = {
+      ...input,
+      scope: 'user',
+      revision: 1,
+      deletedAt: null,
+      userId,
+    };
     this.personalExercises.set(input.id, exercise);
     const { userId: _userId, ...publicExercise } = exercise;
     return publicExercise;
@@ -311,20 +372,37 @@ export class MemoryRepository implements WorkoutRepository {
     userId: string,
     exerciseId: string,
     input: UpdateExerciseInput,
+    baseRevision?: number,
   ): Promise<Exercise> {
     const exercise = this.personalExercises.get(exerciseId);
     if (!exercise || exercise.userId !== userId || exercise.deletedAt) {
       throw new RepositoryNotFoundError();
     }
-    Object.assign(exercise, input);
+    if (baseRevision !== undefined && exercise.revision !== baseRevision) {
+      const { userId: _userId, ...current } = exercise;
+      throw new RepositoryConflictError(current);
+    }
+    Object.assign(exercise, input, { revision: (exercise.revision ?? 1) + 1 });
     const { userId: _userId, ...publicExercise } = exercise;
     return publicExercise;
   }
 
-  async deleteExercise(userId: string, exerciseId: string, now: Date): Promise<Exercise> {
+  async deleteExercise(
+    userId: string,
+    exerciseId: string,
+    now: Date,
+    baseRevision?: number,
+  ): Promise<Exercise> {
     const exercise = this.personalExercises.get(exerciseId);
     if (!exercise || exercise.userId !== userId) throw new RepositoryNotFoundError();
-    exercise.deletedAt ??= now.toISOString();
+    if (baseRevision !== undefined && exercise.revision !== baseRevision) {
+      const { userId: _userId, ...current } = exercise;
+      throw new RepositoryConflictError(current);
+    }
+    if (!exercise.deletedAt) {
+      exercise.deletedAt = now.toISOString();
+      exercise.revision = (exercise.revision ?? 1) + 1;
+    }
     const { userId: _userId, ...publicExercise } = exercise;
     return publicExercise;
   }
@@ -591,8 +669,15 @@ export class MemoryRepository implements WorkoutRepository {
       return { entityType: 'set', entity: toPublicSet(existing), duplicate: true };
     }
 
+    const peerSets = [...this.sets.values()].filter(
+      (set) => set.workoutId === input.workoutId && set.exerciseId === input.set.exerciseId,
+    );
+    const position = peerSets.some((set) => set.position === input.set.position)
+      ? Math.max(...peerSets.map((set) => set.position)) + 1
+      : input.set.position;
     const set: MemorySet = {
       ...input.set,
+      position,
       workoutId: input.workoutId,
       userId,
       revision: 1,
@@ -972,6 +1057,7 @@ export class MemoryRepository implements WorkoutRepository {
       trainerId: trainer.id,
       athleteId,
       active: true,
+      access: 'read',
       revokedAt: null,
       createdAt: now,
       updatedAt: now,
@@ -979,7 +1065,7 @@ export class MemoryRepository implements WorkoutRepository {
     this.trainerLinks.set(link.id, link);
     invite.acceptedByUserId = athleteId;
     invite.acceptedAt = now;
-    return toTrainerSummary(trainer);
+    return toTrainerSummary(trainer, link);
   }
 
   async getAthleteTrainer(athleteId: string) {
@@ -987,7 +1073,7 @@ export class MemoryRepository implements WorkoutRepository {
       (item) => item.athleteId === athleteId && item.active,
     );
     const trainer = link ? this.users.get(link.trainerId) : null;
-    return trainer ? toTrainerSummary(trainer) : null;
+    return trainer && link ? toTrainerSummary(trainer, link) : null;
   }
 
   async listTrainerAthletes(trainerId: string) {
@@ -1002,11 +1088,62 @@ export class MemoryRepository implements WorkoutRepository {
                 displayName: athlete.displayName,
                 avatarUrl: athlete.avatarUrl,
                 linkedAt: link.createdAt.toISOString(),
+                access: link.access,
+                linkId: link.id,
               },
             ]
           : [];
       })
       .sort((left, right) => left.displayName.localeCompare(right.displayName));
+  }
+
+  async updateTrainerAccess(athleteId: string, access: TrainerAccess, now: Date) {
+    const link = [...this.trainerLinks.values()].find(
+      (item) => item.athleteId === athleteId && item.active,
+    );
+    const trainer = link ? this.users.get(link.trainerId) : null;
+    if (!link || !trainer) throw new RepositoryNotFoundError();
+    if (link.access !== access) {
+      this.trainerLinks.delete(link.id);
+      link.id = randomUUID();
+      link.access = access;
+      link.updatedAt = now;
+      this.trainerLinks.set(link.id, link);
+      this.trainerAudit.push({
+        id: randomUUID(),
+        actorId: athleteId,
+        athleteId,
+        linkId: link.id,
+        write: true,
+        operation: 'trainer.access.update',
+        details: { access },
+        createdAt: now.toISOString(),
+      });
+    }
+    return toTrainerSummary(trainer, link);
+  }
+
+  async withTrainerAccess<T>(
+    scope: TrainerDataScope,
+    operation: () => Promise<{ value: T; successful: boolean }>,
+  ): Promise<T> {
+    const actor = this.users.get(scope.actorId);
+    const link = this.trainerLinks.get(scope.linkId);
+    if (
+      !actor ||
+      !canUseTrainerConsole(actor.role) ||
+      !link?.active ||
+      link.trainerId !== actor.id ||
+      link.athleteId !== scope.athleteId
+    ) {
+      throw new RepositoryTrainerAccessError('trainer_access_revoked');
+    }
+    if (scope.write && link.access !== 'manage')
+      throw new RepositoryTrainerAccessError('trainer_manage_required');
+    const result = await operation();
+    if (scope.write && result.successful)
+      this.trainerAudit.push({ id: randomUUID(), ...scope, createdAt: new Date().toISOString() });
+    return result.value;
   }
 
   async listSharedWorkouts(trainerId: string, athleteId: string) {
@@ -1089,10 +1226,15 @@ export class MemoryRepository implements WorkoutRepository {
 }
 
 export class PostgresRepository implements WorkoutRepository {
-  private readonly db;
+  private readonly database: ReturnType<typeof createDatabase>;
+  private readonly transactionContext = new AsyncLocalStorage<ReturnType<typeof createDatabase>>();
+
+  private get db() {
+    return this.transactionContext.getStore() ?? this.database;
+  }
 
   constructor(connectionString: string) {
-    this.db = createDatabase(connectionString);
+    this.database = createDatabase(connectionString);
   }
 
   async initialize() {
@@ -1123,6 +1265,29 @@ export class PostgresRepository implements WorkoutRepository {
           },
         });
     }
+  }
+
+  async listJournalActivity(userId: string): Promise<JournalActivity[]> {
+    const records = await this.db
+      .select({
+        id: trainerAuditEvents.id,
+        actorId: trainerAuditEvents.actorId,
+        actorDisplayName: users.displayName,
+        action: trainerAuditEvents.operation,
+        createdAt: trainerAuditEvents.createdAt,
+      })
+      .from(trainerAuditEvents)
+      .innerJoin(users, eq(trainerAuditEvents.actorId, users.id))
+      .where(and(eq(trainerAuditEvents.athleteId, userId), ne(trainerAuditEvents.actorId, userId)))
+      .orderBy(desc(trainerAuditEvents.createdAt))
+      .limit(50);
+    return records
+      .filter((item) => item.actorId !== userId)
+      .slice(0, 50)
+      .map(({ actorId: _actorId, ...item }) => ({
+        ...item,
+        createdAt: item.createdAt.toISOString(),
+      }));
   }
 
   async listExercises(userId: string): Promise<Exercise[]> {
@@ -1161,43 +1326,62 @@ export class PostgresRepository implements WorkoutRepository {
     userId: string,
     exerciseId: string,
     input: UpdateExerciseInput,
+    baseRevision?: number,
   ): Promise<Exercise> {
-    const records = await this.db
-      .update(exercises)
-      .set({ ...input, updatedAt: new Date() })
-      .where(
-        and(
-          eq(exercises.id, exerciseId),
-          eq(exercises.scope, 'user'),
-          eq(exercises.ownerId, userId),
-          isNull(exercises.deletedAt),
-        ),
-      )
-      .returning();
-    if (!records[0]) throw new RepositoryNotFoundError();
-    return toExercise(records[0]);
+    return this.db.transaction(async (transaction) => {
+      const [existing] = await transaction
+        .select()
+        .from(exercises)
+        .where(
+          and(
+            eq(exercises.id, exerciseId),
+            eq(exercises.scope, 'user'),
+            eq(exercises.ownerId, userId),
+            isNull(exercises.deletedAt),
+          ),
+        )
+        .for('update');
+      if (!existing) throw new RepositoryNotFoundError();
+      if (baseRevision !== undefined && existing.revision !== baseRevision)
+        throw new RepositoryConflictError(toExercise(existing));
+      const [updated] = await transaction
+        .update(exercises)
+        .set({ ...input, revision: existing.revision + 1, updatedAt: new Date() })
+        .where(eq(exercises.id, exerciseId))
+        .returning();
+      return toExercise(updated);
+    });
   }
 
-  async deleteExercise(userId: string, exerciseId: string, now: Date): Promise<Exercise> {
-    const existing = await this.db
-      .select()
-      .from(exercises)
-      .where(
-        and(
-          eq(exercises.id, exerciseId),
-          eq(exercises.scope, 'user'),
-          eq(exercises.ownerId, userId),
-        ),
-      )
-      .limit(1);
-    if (!existing[0]) throw new RepositoryNotFoundError();
-    if (existing[0].deletedAt) return toExercise(existing[0]);
-    const records = await this.db
-      .update(exercises)
-      .set({ deletedAt: now, updatedAt: now })
-      .where(eq(exercises.id, exerciseId))
-      .returning();
-    return toExercise(records[0]);
+  async deleteExercise(
+    userId: string,
+    exerciseId: string,
+    now: Date,
+    baseRevision?: number,
+  ): Promise<Exercise> {
+    return this.db.transaction(async (transaction) => {
+      const [existing] = await transaction
+        .select()
+        .from(exercises)
+        .where(
+          and(
+            eq(exercises.id, exerciseId),
+            eq(exercises.scope, 'user'),
+            eq(exercises.ownerId, userId),
+          ),
+        )
+        .for('update');
+      if (!existing) throw new RepositoryNotFoundError();
+      if (baseRevision !== undefined && existing.revision !== baseRevision)
+        throw new RepositoryConflictError(toExercise(existing));
+      if (existing.deletedAt) return toExercise(existing);
+      const [updated] = await transaction
+        .update(exercises)
+        .set({ deletedAt: now, revision: existing.revision + 1, updatedAt: now })
+        .where(eq(exercises.id, exerciseId))
+        .returning();
+      return toExercise(updated);
+    });
   }
 
   async listExercisePreferences(userId: string): Promise<ExercisePreferenceRecord[]> {
@@ -1608,8 +1792,15 @@ export class PostgresRepository implements WorkoutRepository {
       const workoutRows = await transaction
         .select({ id: workouts.id })
         .from(workouts)
-        .where(and(eq(workouts.id, input.workoutId), eq(workouts.userId, userId)))
-        .limit(1);
+        .where(
+          and(
+            eq(workouts.id, input.workoutId),
+            eq(workouts.userId, userId),
+            isNull(workouts.deletedAt),
+          ),
+        )
+        .limit(1)
+        .for('update');
       if (!workoutRows.length) throw new RepositoryNotFoundError();
 
       const existingRows = await transaction
@@ -1627,6 +1818,13 @@ export class PostgresRepository implements WorkoutRepository {
         return true;
       }
 
+      const peerSets = await transaction
+        .select({ position: sets.position })
+        .from(sets)
+        .where(and(eq(sets.workoutId, input.workoutId), eq(sets.exerciseId, input.set.exerciseId)));
+      const position = peerSets.some((set) => set.position === input.set.position)
+        ? Math.max(...peerSets.map((set) => set.position)) + 1
+        : input.set.position;
       await transaction.insert(sets).values({
         id: input.set.id,
         workoutId: input.workoutId,
@@ -1637,7 +1835,7 @@ export class PostgresRepository implements WorkoutRepository {
         comment: input.set.comment,
         entrySource: input.set.entrySource,
         performedAt: new Date(input.set.performedAt),
-        position: input.set.position,
+        position,
       });
       await touchWorkoutActivity(
         transaction,
@@ -2298,24 +2496,32 @@ export class PostgresRepository implements WorkoutRepository {
           updatedAt: now,
         })
         .onConflictDoNothing()
-        .returning({ id: trainerAthleteLinks.id });
+        .returning();
       if (!linked.length) {
         throw new RepositoryInviteError('invite_used', 'Athlete already has an active trainer');
       }
-      return toTrainerSummary(trainer);
+      return toTrainerSummary(trainer, linked[0]);
     });
   }
 
   async getAthleteTrainer(athleteId: string) {
     const records = await this.db
-      .select({ id: users.id, displayName: users.displayName, avatarUrl: users.avatarUrl })
+      .select({
+        id: users.id,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+        linkId: trainerAthleteLinks.id,
+        access: trainerAthleteLinks.access,
+      })
       .from(trainerAthleteLinks)
       .innerJoin(users, eq(trainerAthleteLinks.trainerId, users.id))
       .where(
         and(eq(trainerAthleteLinks.athleteId, athleteId), eq(trainerAthleteLinks.active, true)),
       )
       .limit(1);
-    return records[0] ? toTrainerSummary(records[0]) : null;
+    return records[0]
+      ? toTrainerSummary(records[0], { id: records[0].linkId, access: records[0].access })
+      : null;
   }
 
   async listTrainerAthletes(trainerId: string) {
@@ -2325,6 +2531,8 @@ export class PostgresRepository implements WorkoutRepository {
         displayName: users.displayName,
         avatarUrl: users.avatarUrl,
         linkedAt: trainerAthleteLinks.createdAt,
+        access: trainerAthleteLinks.access,
+        linkId: trainerAthleteLinks.id,
       })
       .from(trainerAthleteLinks)
       .innerJoin(users, eq(trainerAthleteLinks.athleteId, users.id))
@@ -2337,7 +2545,87 @@ export class PostgresRepository implements WorkoutRepository {
       displayName: record.displayName,
       avatarUrl: record.avatarUrl,
       linkedAt: record.linkedAt.toISOString(),
+      access: record.access,
+      linkId: record.linkId,
     }));
+  }
+
+  async updateTrainerAccess(athleteId: string, access: TrainerAccess, now: Date) {
+    await this.db.transaction(async (transaction) => {
+      const [link] = await transaction
+        .select()
+        .from(trainerAthleteLinks)
+        .where(
+          and(eq(trainerAthleteLinks.athleteId, athleteId), eq(trainerAthleteLinks.active, true)),
+        )
+        .for('update');
+      if (!link) throw new RepositoryNotFoundError();
+      if (link.access === access) return;
+      const linkId = randomUUID();
+      await transaction
+        .update(trainerAthleteLinks)
+        .set({ id: linkId, access, accessChangedAt: now, updatedAt: now })
+        .where(eq(trainerAthleteLinks.id, link.id));
+      await transaction.insert(trainerAuditEvents).values({
+        id: randomUUID(),
+        actorId: athleteId,
+        athleteId,
+        linkId,
+        operation: 'trainer.access.update',
+        details: { access, previousAccess: link.access },
+        createdAt: now,
+      });
+    });
+    const trainer = await this.getAthleteTrainer(athleteId);
+    if (!trainer) throw new RepositoryNotFoundError();
+    return trainer;
+  }
+
+  async withTrainerAccess<T>(
+    scope: TrainerDataScope,
+    operation: () => Promise<{ value: T; successful: boolean }>,
+  ): Promise<T> {
+    return this.database.transaction(async (transaction) => {
+      // Serialize consent changes/revocation with writes, including retry/idempotency checks.
+      const [actor] = await transaction
+        .select({ role: users.role })
+        .from(users)
+        .where(eq(users.id, scope.actorId))
+        .for('share');
+      const [link] = await transaction
+        .select()
+        .from(trainerAthleteLinks)
+        .where(
+          and(
+            eq(trainerAthleteLinks.id, scope.linkId),
+            eq(trainerAthleteLinks.trainerId, scope.actorId),
+            eq(trainerAthleteLinks.athleteId, scope.athleteId),
+            eq(trainerAthleteLinks.active, true),
+          ),
+        )
+        .for('update');
+      if (!actor || !canUseTrainerConsole(actor.role) || !link)
+        throw new RepositoryTrainerAccessError('trainer_access_revoked');
+      if (scope.write && link.access !== 'manage')
+        throw new RepositoryTrainerAccessError('trainer_manage_required');
+      return this.transactionContext.run(
+        transaction as unknown as ReturnType<typeof createDatabase>,
+        async () => {
+          const result = await operation();
+          if (scope.write && result.successful) {
+            await transaction.insert(trainerAuditEvents).values({
+              id: randomUUID(),
+              actorId: scope.actorId,
+              athleteId: scope.athleteId,
+              linkId: scope.linkId,
+              operation: scope.operation,
+              details: scope.details,
+            });
+          }
+          return result.value;
+        },
+      );
+    });
   }
 
   async listSharedWorkouts(trainerId: string, athleteId: string) {
@@ -2408,7 +2696,7 @@ export class PostgresRepository implements WorkoutRepository {
   }
 
   async close() {
-    await this.db.$client.end();
+    await this.database.$client.end();
   }
 
   private async getWorkout(userId: string, workoutId: string) {
@@ -2800,6 +3088,7 @@ function toCurrentUser(user: {
 function toExercise(record: typeof exercises.$inferSelect): Exercise {
   return {
     id: record.id,
+    revision: record.revision,
     scope: record.scope,
     deletedAt: record.deletedAt?.toISOString() ?? null,
     nameRu: record.nameRu,
@@ -2841,12 +3130,21 @@ function exercisePreferenceKey(userId: string, exerciseId: string) {
   return `${userId}:${exerciseId}`;
 }
 
-function toTrainerSummary(user: {
-  id: string;
-  displayName: string;
-  avatarUrl: string | null;
-}): TrainerSummary {
-  return { id: user.id, displayName: user.displayName, avatarUrl: user.avatarUrl };
+function toTrainerSummary(
+  user: {
+    id: string;
+    displayName: string;
+    avatarUrl: string | null;
+  },
+  link: { id: string; access: TrainerAccess },
+): TrainerSummary {
+  return {
+    id: user.id,
+    displayName: user.displayName,
+    avatarUrl: user.avatarUrl,
+    linkId: link.id,
+    access: link.access,
+  };
 }
 
 function toTrainerInviteRecord(

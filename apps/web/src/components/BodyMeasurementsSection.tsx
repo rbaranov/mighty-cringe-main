@@ -1,3 +1,4 @@
+import { AthleteContextLabel, useAthleteContext } from './AthleteContext';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -215,6 +216,7 @@ function MeasurementImportSheet({
           role="dialog"
         >
           <div className="sheet-handle" />
+          <AthleteContextLabel />
           <p className="eyebrow">{tr(locale, 'История тела', 'Body history')}</p>
           <h2 id="measurement-import-title">{tr(locale, 'Импорт таблицы', 'Import table')}</h2>
           <p className="intro">
@@ -547,7 +549,7 @@ function MeasurementDetail({
 
 function MeasurementSheet({
   existing,
-  initial,
+  initial: openedMeasurement,
   onClose,
   onSave,
 }: {
@@ -556,6 +558,7 @@ function MeasurementSheet({
   onClose: () => void;
   onSave: (draft: MeasurementDraft, existing: LocalMeasurement | null) => Promise<void>;
 }) {
+  const [initial] = useState(openedMeasurement);
   const { locale, unitSystem } = usePreferences();
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
   const today = dateKeyInTimeZone(new Date(), timeZone);
@@ -608,6 +611,7 @@ function MeasurementSheet({
           role="dialog"
         >
           <div className="sheet-handle" />
+          <AthleteContextLabel />
           <p className="eyebrow">{tr(locale, 'История тела', 'Body history')}</p>
           <h2 id="measurement-sheet-title">
             {initial
@@ -767,7 +771,9 @@ function MeasurementSheet({
 }
 
 function SheetPortal({ children }: { children: ReactNode }) {
-  return typeof document === 'undefined' ? children : createPortal(children, document.body);
+  const athlete = useAthleteContext();
+  const content = athlete ? <div className="athlete-context-sheet">{children}</div> : children;
+  return typeof document === 'undefined' ? content : createPortal(content, document.body);
 }
 
 function SyncBadge({ measurement }: { measurement: LocalMeasurement }) {
