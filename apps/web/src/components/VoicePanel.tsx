@@ -2,10 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 
 import { useLiveQuery } from 'dexie-react-hooks';
 
-import { db, type LocalVoiceEntry } from '../lib/db';
+import type { LocalVoiceEntry } from '../lib/db';
+import { getDataContext } from '../lib/dataContext';
 import { tr, usePreferences } from '../lib/preferences';
 import {
   acceptVoiceConsent,
+  assertVoiceContext,
+  isVoiceContextValid,
   classifyVoiceLocalSaveFailure,
   flushVoiceQueue,
   hasAcceptedVoiceConsent,
@@ -36,6 +39,8 @@ export function VoicePanel({
   onTranscript: (transcript: string) => void;
 }) {
   const { locale } = usePreferences();
+  const [context] = useState(getDataContext);
+  const db = context.database;
   const [config, setConfig] = useState<VoiceConfig | null | undefined>(undefined);
   const [consented, setConsented] = useState(false);
   const [captureState, setCaptureState] = useState<
@@ -55,6 +60,10 @@ export function VoicePanel({
     [latestEntryId],
   );
 
+  function canUseVoice() {
+    return mounted.current && isVoiceContextValid(context) && getDataContext().key === context.key;
+  }
+
   useEffect(() => {
     transcriptHandler.current = onTranscript;
   }, [onTranscript]);
@@ -62,13 +71,15 @@ export function VoicePanel({
   useEffect(() => {
     mounted.current = true;
     void (async () => {
-      const next = await loadVoiceConfig();
-      const accepted = next ? await hasAcceptedVoiceConsent(next.consentVersion) : false;
-      if (!mounted.current) return;
+      const next = await loadVoiceConfig(context);
+      const accepted = next ? await hasAcceptedVoiceConsent(next.consentVersion, context) : false;
+      if (!canUseVoice()) return;
       setConsented(accepted);
       setConfig(next);
-    })();
-    void refreshVoiceEntries();
+    })().catch(() => {
+      if (canUseVoice()) setConfig(null);
+    });
+    void refreshVoiceEntries(context);
     return () => {
       mounted.current = false;
       const current = capture.current;
@@ -83,18 +94,21 @@ export function VoicePanel({
   useEffect(() => {
     if (!latestEntryId) return;
     const controller = new AbortController();
-    void waitForVoiceEntry(latestEntryId, { signal: controller.signal }).then((entry) => {
-      if (
-        controller.signal.aborted ||
-        entry?.status !== 'confirmed' ||
-        !entry.transcript ||
-        deliveredTranscriptId.current === entry.id
-      ) {
-        return;
-      }
-      deliveredTranscriptId.current = entry.id;
-      transcriptHandler.current(entry.transcript);
-    });
+    void waitForVoiceEntry(latestEntryId, { signal: controller.signal }, context)
+      .then((entry) => {
+        if (
+          !canUseVoice() ||
+          controller.signal.aborted ||
+          entry?.status !== 'confirmed' ||
+          !entry.transcript ||
+          deliveredTranscriptId.current === entry.id
+        ) {
+          return;
+        }
+        deliveredTranscriptId.current = entry.id;
+        transcriptHandler.current(entry.transcript);
+      })
+      .catch(() => {});
     return () => controller.abort();
   }, [latestEntryId]);
 
@@ -127,7 +141,8 @@ export function VoicePanel({
   }, [captureState]);
 
   async function startRecording() {
-    if (!config?.enabled || !consented || !activeWorkoutId || capture.current) return;
+    if (!canUseVoice() || !config?.enabled || !consented || !activeWorkoutId || capture.current)
+      return;
     cancelRequested.current = false;
     setLatestEntryId(null);
     setError(null);
@@ -139,7 +154,7 @@ export function VoicePanel({
       }
       const activeStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       stream = activeStream;
-      if (!mounted.current) {
+      if (!canUseVoice()) {
         activeStream.getTracks().forEach((track) => track.stop());
         return;
       }
@@ -158,7 +173,7 @@ export function VoicePanel({
           const current = capture.current;
           capture.current = null;
           activeStream.getTracks().forEach((track) => track.stop());
-          if (!current || current.discard) {
+          if (!current || current.discard || !canUseVoice()) {
             setCaptureState('idle');
             return;
           }
@@ -203,14 +218,19 @@ export function VoicePanel({
   }
 
   async function persistRecording(audio: Blob, currentConfig: VoiceConfig) {
+    if (!canUseVoice()) return;
     let entry: LocalVoiceEntry;
     try {
-      entry = await queueVoiceRecording({
-        workoutId: activeWorkoutId,
-        audio,
-        consentVersion: currentConfig.consentVersion,
-      });
+      entry = await queueVoiceRecording(
+        {
+          workoutId: activeWorkoutId,
+          audio,
+          consentVersion: currentConfig.consentVersion,
+        },
+        context,
+      );
     } catch (saveError) {
+      if (!canUseVoice()) return;
       setCaptureState('idle');
       setError(
         classifyVoiceLocalSaveFailure(saveError) === 'quota'
@@ -228,9 +248,10 @@ export function VoicePanel({
       return;
     }
 
+    if (!canUseVoice()) return;
     if (cancelRequested.current) {
       try {
-        await requestVoiceDeletion(entry.id);
+        await requestVoiceDeletion(entry.id, context);
       } catch {
         setError(
           tr(
@@ -247,6 +268,7 @@ export function VoicePanel({
     setLatestEntryId(entry.id);
     if (audio.size > currentConfig.maximumBytes) {
       try {
+        assertVoiceContext(context);
         await db.voiceEntries.update(entry.id, {
           status: 'failed',
           retryable: false,
@@ -270,13 +292,15 @@ export function VoicePanel({
       return;
     }
 
-    const syncOutcome = await flushVoiceQueue();
+    const syncOutcome = await flushVoiceQueue(context);
+    if (!canUseVoice()) return;
     if (syncOutcome === 'success') {
-      await refreshVoiceEntries();
+      await refreshVoiceEntries(context);
     }
+    if (!canUseVoice()) return;
     if (cancelRequested.current) {
       try {
-        await requestVoiceDeletion(entry.id);
+        await requestVoiceDeletion(entry.id, context);
       } catch {
         setError(
           tr(
@@ -293,6 +317,7 @@ export function VoicePanel({
   }
 
   async function cancelProcessing() {
+    if (!canUseVoice()) return;
     cancelRequested.current = true;
     const entryId = latestEntryId;
     const saveInProgress = captureState === 'saving';
@@ -304,7 +329,7 @@ export function VoicePanel({
     if (!entryId || saveInProgress) return;
 
     try {
-      await requestVoiceDeletion(entryId);
+      await requestVoiceDeletion(entryId, context);
     } catch {
       setError(
         tr(
@@ -380,7 +405,20 @@ export function VoicePanel({
           <button
             className="button primary full"
             onClick={() =>
-              void acceptVoiceConsent(config.consentVersion).then(() => setConsented(true))
+              void acceptVoiceConsent(config.consentVersion, context)
+                .then(() => {
+                  if (canUseVoice()) setConsented(true);
+                })
+                .catch(() => {
+                  if (canUseVoice())
+                    setError(
+                      tr(
+                        locale,
+                        'Не удалось сохранить согласие. Попробуй ещё раз.',
+                        'Could not save consent. Try again.',
+                      ),
+                    );
+                })
             }
             type="button"
           >
@@ -516,16 +554,25 @@ export function VoiceProcessingStage({
 
 export function VoiceCommandSettingsPanel() {
   const { locale } = usePreferences();
+  const [context] = useState(getDataContext);
   const [config, setConfig] = useState<VoiceConfig | null | undefined>(undefined);
   const [consented, setConsented] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let active = true;
     void (async () => {
-      const next = await loadVoiceConfig();
-      const accepted = next ? await hasAcceptedVoiceConsent(next.consentVersion) : false;
+      const next = await loadVoiceConfig(context);
+      const accepted = next ? await hasAcceptedVoiceConsent(next.consentVersion, context) : false;
+      if (!active || !isVoiceContextValid(context)) return;
       setConsented(accepted);
       setConfig(next);
-    })();
+    })().catch(() => {
+      if (active) setConfig(null);
+    });
+    return () => {
+      active = false;
+    };
   }, []);
 
   return (
@@ -550,6 +597,11 @@ export function VoiceCommandSettingsPanel() {
           'Recording starts only after your action. Audio stays private until deletion and is used to transcribe the command.',
         )}
       </p>
+      {error && (
+        <p className="auth-error" role="status">
+          {error}
+        </p>
+      )}
       {config === undefined && (
         <p className="detail-empty">{tr(locale, 'Проверяем настройки…', 'Checking settings…')}</p>
       )}
@@ -581,9 +633,20 @@ export function VoiceCommandSettingsPanel() {
           <button
             className="button ghost small"
             onClick={() =>
-              void revokeVoiceConsent().then(() => {
-                setConsented(false);
-              })
+              void revokeVoiceConsent(context)
+                .then(() => {
+                  if (isVoiceContextValid(context)) setConsented(false);
+                })
+                .catch(() => {
+                  if (isVoiceContextValid(context))
+                    setError(
+                      tr(
+                        locale,
+                        'Не удалось отозвать согласие. Попробуй ещё раз.',
+                        'Could not revoke consent. Try again.',
+                      ),
+                    );
+                })
             }
             type="button"
           >
@@ -593,9 +656,20 @@ export function VoiceCommandSettingsPanel() {
           <button
             className="button primary small"
             onClick={() =>
-              void acceptVoiceConsent(config.consentVersion).then(() => {
-                setConsented(true);
-              })
+              void acceptVoiceConsent(config.consentVersion, context)
+                .then(() => {
+                  if (isVoiceContextValid(context)) setConsented(true);
+                })
+                .catch(() => {
+                  if (isVoiceContextValid(context))
+                    setError(
+                      tr(
+                        locale,
+                        'Не удалось сохранить согласие. Попробуй ещё раз.',
+                        'Could not save consent. Try again.',
+                      ),
+                    );
+                })
             }
             type="button"
           >
@@ -608,7 +682,10 @@ export function VoiceCommandSettingsPanel() {
 
 export function VoiceRecordingsPanel() {
   const { locale } = usePreferences();
+  const [context] = useState(getDataContext);
+  const db = context.database;
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const entries = useLiveQuery(
     () => db.voiceEntries.orderBy('createdAt').reverse().toArray(),
     [],
@@ -616,12 +693,23 @@ export function VoiceRecordingsPanel() {
   );
 
   useEffect(() => {
-    void refreshVoiceEntries();
+    void refreshVoiceEntries(context);
   }, []);
 
   async function deleteEntry(id: string) {
+    if (!isVoiceContextValid(context)) return;
     setConfirmDeleteId(null);
-    await requestVoiceDeletion(id);
+    setError(null);
+    await requestVoiceDeletion(id, context).catch(() => {
+      if (isVoiceContextValid(context))
+        setError(
+          tr(
+            locale,
+            'Не удалось удалить запись. Попробуй ещё раз.',
+            'Could not delete the recording. Try again.',
+          ),
+        );
+    });
   }
 
   return (
@@ -648,6 +736,11 @@ export function VoiceRecordingsPanel() {
         )}
       </p>
       <div className="voice-history">
+        {error && (
+          <p className="auth-error" role="status">
+            {error}
+          </p>
+        )}
         {!entries.length && (
           <p className="detail-empty">{tr(locale, 'Записей пока нет.', 'No recordings yet.')}</p>
         )}

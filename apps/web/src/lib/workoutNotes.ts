@@ -1,9 +1,15 @@
-import { db, type LocalWorkout } from './db';
+import { type LocalWorkout } from './db';
+import { getDataContext } from './dataContext';
 import { flushOutbox, queueMutation } from './sync';
 
 export const workoutNotesMaxLength = 10_000;
 
-export async function saveWorkoutNotes(workout: LocalWorkout, draft: string) {
+export async function saveWorkoutNotes(
+  workout: LocalWorkout,
+  draft: string,
+  context = getDataContext(),
+) {
+  const db = context.database;
   const notes = draft.trim() || null;
   if (notes === workout.notes) return;
 
@@ -15,16 +21,19 @@ export async function saveWorkoutNotes(workout: LocalWorkout, draft: string) {
 
   await db.transaction('rw', db.workouts, db.outbox, async () => {
     await db.workouts.update(workout.id, { ...changes, syncState: 'pending' });
-    await queueMutation({
-      type: 'workout.update',
-      payload: {
-        clientMutationId: crypto.randomUUID(),
-        workoutId: workout.id,
-        baseRevision: workout.revision,
-        changes,
-        activityAt,
+    await queueMutation(
+      {
+        type: 'workout.update',
+        payload: {
+          clientMutationId: crypto.randomUUID(),
+          workoutId: workout.id,
+          baseRevision: workout.revision,
+          changes,
+          activityAt,
+        },
       },
-    });
+      context,
+    );
   });
-  await flushOutbox();
+  await flushOutbox(context);
 }

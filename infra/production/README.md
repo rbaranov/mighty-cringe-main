@@ -54,6 +54,19 @@ Caddy obtains and renews TLS certificates after the domain records resolve to th
 private and has no published host port. The worker also publishes no port, but has outbound access
 to encrypted Object Storage and OpenRouter.
 
+### Trainer journal rollout and rollback
+
+Migrations `0016` and `0017` are additive: existing trainer links retain `read` access and exercises
+receive revision `1`. They do not grant management permission or delete sporting data.
+The PWA requires a fresh context endpoint response before entering an athlete journal.
+
+Do not roll the API back to a version that ignores `X-Athlete-Id`, `X-Trainer-Link-Id`, or `X-Actor-Id`
+while the new PWA can still be open or cached on devices. An older API could interpret a delegated
+write as a write to the trainer's own journal. Preserve the actor/scope guards and use a forward fix;
+keep the added schema and audit records. Reloading only the web container does not invalidate cached
+PWAs. The workflow's optional backup/restore verification runs after Compose applies migrations,
+so it must not be described as a pre-migration backup. See [ADR 0022](../../docs/adr/0022-trainer-journal-context.md).
+
 ## Backup policy before admitting real data
 
 Production installs two systemd timers during every deployment:

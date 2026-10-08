@@ -1,3 +1,4 @@
+import { AthleteContextLabel } from './AthleteContext';
 import { useEffect, useRef, useState } from 'react';
 
 import type { LocalWorkout } from '../lib/db';
@@ -15,16 +16,18 @@ export function WorkoutNotesSheet({
   workout: LocalWorkout | null;
 }) {
   const { locale } = usePreferences();
+  const [source, setSource] = useState(workout);
   const [draft, setDraft] = useState(workout?.notes ?? '');
   const [saving, setSaving] = useState(false);
   const sheetRef = useRef<HTMLElement>(null);
   const viewportStyle = useKeyboardViewport(Boolean(workout), sheetRef);
 
   useEffect(() => {
+    setSource(workout);
     if (!workout) return;
     setDraft(workout.notes ?? '');
     setSaving(false);
-  }, [workout?.id, workout?.notes]);
+  }, [workout?.id]);
 
   useEffect(() => {
     if (!workout) return;
@@ -37,7 +40,7 @@ export function WorkoutNotesSheet({
 
   if (!workout) return null;
 
-  const currentWorkout = workout;
+  const currentWorkout = source?.id === workout.id ? source : workout;
   const changed = (draft.trim() || null) !== currentWorkout.notes;
 
   function save() {
@@ -64,6 +67,7 @@ export function WorkoutNotesSheet({
         role="dialog"
       >
         <div className="sheet-handle" />
+        <AthleteContextLabel />
         <p className="eyebrow">{tr(locale, 'Тренировка', 'Workout')}</p>
         <h2>{tr(locale, 'Комментарий по тренировке', 'Workout note')}</h2>
         <p className="workout-notes-hint">

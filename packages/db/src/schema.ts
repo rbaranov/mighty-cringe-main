@@ -15,6 +15,8 @@ import {
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
+export const trainerAccessEnum = pgEnum('trainer_access', ['read', 'manage']);
+
 export const roleEnum = pgEnum('role', ['athlete', 'admin', 'trainer', 'superadmin']);
 export const exerciseScopeEnum = pgEnum('exercise_scope', ['global', 'user']);
 export const exerciseTagEnum = pgEnum('exercise_tag', ['mighty', 'normal', 'cringe']);
@@ -106,6 +108,8 @@ export const trainerAthleteLinks = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     active: boolean('active').notNull().default(true),
+    access: trainerAccessEnum('access').notNull().default('read'),
+    accessChangedAt: timestamp('access_changed_at', { withTimezone: true }),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -146,6 +150,7 @@ export const exercises = pgTable(
   {
     id: uuid('id').primaryKey(),
     scope: exerciseScopeEnum('scope').notNull().default('global'),
+    revision: integer('revision').notNull().default(1),
     ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'cascade' }),
     nameRu: varchar('name_ru', { length: 255 }).notNull(),
     nameEn: varchar('name_en', { length: 255 }).notNull(),
@@ -360,4 +365,23 @@ export const clientMutations = pgTable(
     appliedAt: timestamp('applied_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [primaryKey({ columns: [table.id, table.userId] })],
+);
+
+// Actor identity is separate from the athlete who owns the affected sporting data.
+export const trainerAuditEvents = pgTable(
+  'trainer_audit_events',
+  {
+    id: uuid('id').primaryKey(),
+    actorId: uuid('actor_id')
+      .notNull()
+      .references(() => users.id),
+    athleteId: uuid('athlete_id')
+      .notNull()
+      .references(() => users.id),
+    linkId: uuid('link_id').notNull(),
+    operation: text('operation').notNull(),
+    details: jsonb('details').notNull().$type<Record<string, unknown>>(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('trainer_audit_athlete_created_idx').on(table.athleteId, table.createdAt)],
 );

@@ -1,16 +1,18 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { useLiveQuery } from 'dexie-react-hooks';
 
 import { deliverLocalDataExport, loadLocalDataExport } from '../lib/dataExport';
+import { getDataContext } from '../lib/dataContext';
 import { tr, usePreferences } from '../lib/preferences';
 
 type ExportStatus = { kind: 'success' | 'error'; message: string } | null;
 
 export function DataExportPanel() {
+  const context = useMemo(() => getDataContext(), []);
   const { locale, unitSystem } = usePreferences();
   const data = useLiveQuery(
-    () => loadLocalDataExport({ locale, unitSystem }),
+    () => loadLocalDataExport({ locale, unitSystem }, context),
     [locale, unitSystem],
     null,
   );
@@ -23,10 +25,14 @@ export function DataExportPanel() {
     setExporting(true);
     setStatus(null);
     try {
-      const delivery = await deliverLocalDataExport({
-        ...data,
-        exportedAt: new Date().toISOString(),
-      });
+      const delivery = await deliverLocalDataExport(
+        {
+          ...data,
+          exportedAt: new Date().toISOString(),
+        },
+        undefined,
+        context,
+      );
       if (delivery === 'cancelled') return;
       setStatus({
         kind: 'success',

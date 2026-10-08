@@ -1,6 +1,13 @@
 import type { VoiceEntryRecord } from '@mighty-cringe/contracts';
 
-import { db, type LocalVoiceEntry } from './db';
+import type { LocalVoiceEntry } from './db';
+import {
+  assertDataContext,
+  getDataContext,
+  isDataContextValid,
+  sportingRequest,
+  type DataContext,
+} from './dataContext';
 
 export type VoiceConfig = {
   enabled: boolean;
@@ -19,30 +26,56 @@ export type VoicePollOptions = {
 
 const voiceConsentMetaKey = 'voiceConsentVersion';
 
-let activeFlush: Promise<VoiceSyncOutcome> | null = null;
-let retryTimer: ReturnType<typeof setTimeout> | null = null;
+const activeFlushes = new Map<DataContext, Promise<VoiceSyncOutcome>>();
+const retryTimers = new Map<DataContext, ReturnType<typeof setTimeout>>();
 
-export async function loadVoiceConfig(): Promise<VoiceConfig | null> {
+export function isVoiceContextValid(context: DataContext) {
+  return Boolean(context.actorId) && !context.relationshipId && isDataContextValid(context);
+}
+
+export function assertVoiceContext(context: DataContext) {
+  assertDataContext(context);
+  if (!context.actorId || context.relationshipId) throw new Error('voice_context_unavailable');
+}
+
+async function voiceRequest(input: string, init: RequestInit, context: DataContext) {
+  assertVoiceContext(context);
+  const response = await sportingRequest(input, init, context);
+  assertVoiceContext(context);
+  return response;
+}
+
+export async function loadVoiceConfig(context = getDataContext()): Promise<VoiceConfig | null> {
+  if (!isVoiceContextValid(context)) return null;
+  const db = context.database;
   if (browserOnline()) {
     try {
-      const response = await fetch('/api/v1/voice/config', { credentials: 'same-origin' });
+      const response = await voiceRequest(
+        '/api/v1/voice/config',
+        { credentials: 'same-origin' },
+        context,
+      );
       if (response.status === 401) {
         notifyUnauthorized();
         return null;
       }
       if (response.ok) {
         const config = parseVoiceConfig(await response.json());
+        assertVoiceContext(context);
         if (config) {
           await db.meta.put({ key: 'voiceConfig', value: JSON.stringify(config) });
+          assertVoiceContext(context);
           return config;
         }
       }
     } catch {
+      if (!isVoiceContextValid(context)) return null;
       // A previously authenticated device may continue recording into its private local queue.
     }
   }
 
   const cached = await db.meta.get('voiceConfig');
+  if (!isVoiceContextValid(context)) return null;
   if (!cached) return null;
   try {
     return parseVoiceConfig(JSON.parse(cached.value));
@@ -51,25 +84,35 @@ export async function loadVoiceConfig(): Promise<VoiceConfig | null> {
   }
 }
 
-export async function hasAcceptedVoiceConsent(version: string) {
-  return (await db.meta.get(voiceConsentMetaKey))?.value === version;
+export async function hasAcceptedVoiceConsent(version: string, context = getDataContext()) {
+  if (!isVoiceContextValid(context)) return false;
+  const consent = await context.database.meta.get(voiceConsentMetaKey);
+  return isVoiceContextValid(context) && consent?.value === version;
 }
 
-export async function acceptVoiceConsent(version: string) {
-  await db.meta.put({ key: voiceConsentMetaKey, value: version });
+export async function acceptVoiceConsent(version: string, context = getDataContext()) {
+  assertVoiceContext(context);
+  await context.database.meta.put({ key: voiceConsentMetaKey, value: version });
+  assertVoiceContext(context);
 }
 
-export async function revokeVoiceConsent() {
-  await db.meta.delete(voiceConsentMetaKey);
+export async function revokeVoiceConsent(context = getDataContext()) {
+  assertVoiceContext(context);
+  await context.database.meta.delete(voiceConsentMetaKey);
+  assertVoiceContext(context);
 }
 
-export async function queueVoiceRecording(input: {
-  workoutId: string | null;
-  audio: Blob;
-  consentVersion: string;
-  id?: string;
-  now?: Date;
-}) {
+export async function queueVoiceRecording(
+  input: {
+    workoutId: string | null;
+    audio: Blob;
+    consentVersion: string;
+    id?: string;
+    now?: Date;
+  },
+  context = getDataContext(),
+) {
+  assertVoiceContext(context);
   const now = (input.now ?? new Date()).toISOString();
   const entry: LocalVoiceEntry = {
     id: input.id ?? crypto.randomUUID(),
@@ -87,7 +130,8 @@ export async function queueVoiceRecording(input: {
     updatedAt: now,
     lastError: null,
   };
-  await db.voiceEntries.put(entry);
+  await context.database.voiceEntries.put(entry);
+  assertVoiceContext(context);
   return entry;
 }
 
@@ -109,29 +153,41 @@ export function classifyVoiceLocalSaveFailure(error: unknown): VoiceLocalSaveFai
   return 'storage';
 }
 
-export function flushVoiceQueue() {
-  if (activeFlush) return activeFlush;
-  activeFlush = performFlush()
+export function flushVoiceQueue(context = getDataContext()): Promise<VoiceSyncOutcome> {
+  if (context.relationshipId) return Promise.resolve('success');
+  if (!isVoiceContextValid(context)) return Promise.resolve('unauthorized');
+  const running = activeFlushes.get(context);
+  if (running) return running;
+  const activeFlush = performFlush(context)
     .catch(() => {
-      scheduleFlush(5_000);
+      if (!isVoiceContextValid(context)) return 'unauthorized' as const;
+      scheduleFlush(5_000, context);
       return 'retry' as const;
     })
     .finally(() => {
-      activeFlush = null;
+      activeFlushes.delete(context);
     });
+  activeFlushes.set(context, activeFlush);
   return activeFlush;
 }
 
-export async function refreshVoiceEntries(): Promise<VoiceSyncOutcome> {
+export async function refreshVoiceEntries(context = getDataContext()): Promise<VoiceSyncOutcome> {
+  if (context.relationshipId) return 'success';
+  if (!isVoiceContextValid(context)) return 'unauthorized';
+  const db = context.database;
   if (!browserOnline()) return 'offline';
   let response: Response;
   try {
-    response = await fetch('/api/v1/voice-entries', {
-      cache: 'no-store',
-      credentials: 'same-origin',
-    });
+    response = await voiceRequest(
+      '/api/v1/voice-entries',
+      {
+        cache: 'no-store',
+        credentials: 'same-origin',
+      },
+      context,
+    );
   } catch {
-    return 'retry';
+    return isVoiceContextValid(context) ? 'retry' : 'unauthorized';
   }
   if (response.status === 401) {
     notifyUnauthorized();
@@ -141,11 +197,14 @@ export async function refreshVoiceEntries(): Promise<VoiceSyncOutcome> {
 
   try {
     const payload = (await response.json()) as { items?: unknown };
+    assertVoiceContext(context);
     if (!Array.isArray(payload.items)) return 'retry';
     const records = payload.items.map(parseVoiceEntry).filter(Boolean) as VoiceEntryRecord[];
     await db.transaction('rw', db.voiceEntries, async () => {
+      assertVoiceContext(context);
       for (const record of records) {
         const local = await db.voiceEntries.get(record.id);
+        assertVoiceContext(context);
         if (local?.status === 'deleting') continue;
         if (local) {
           await db.voiceEntries.update(record.id, {
@@ -173,32 +232,47 @@ export async function refreshVoiceEntries(): Promise<VoiceSyncOutcome> {
         });
       }
     });
+    assertVoiceContext(context);
     return 'success';
   } catch {
-    return 'retry';
+    return isVoiceContextValid(context) ? 'retry' : 'unauthorized';
   }
 }
 
 export async function waitForVoiceEntry(
   id: string,
   options: VoicePollOptions = {},
+  context = getDataContext(),
 ): Promise<LocalVoiceEntry | undefined> {
+  if (!isVoiceContextValid(context)) return undefined;
+  const db = context.database;
   const intervalMs = options.intervalMs ?? 900;
   let entry = await db.voiceEntries.get(id);
+  if (!isVoiceContextValid(context)) return undefined;
   while (entry && voiceEntryIsInProgress(entry) && !options.signal?.aborted) {
     const shouldContinue = await waitForPoll(intervalMs, options.signal);
+    if (!isVoiceContextValid(context)) return undefined;
     if (!shouldContinue) break;
-    await refreshVoiceEntries();
+    await refreshVoiceEntries(context);
+    if (!isVoiceContextValid(context)) return undefined;
     entry = await db.voiceEntries.get(id);
+    if (!isVoiceContextValid(context)) return undefined;
   }
   return entry;
 }
 
-export async function requestVoiceDeletion(id: string): Promise<VoiceSyncOutcome> {
+export async function requestVoiceDeletion(
+  id: string,
+  context = getDataContext(),
+): Promise<VoiceSyncOutcome> {
+  assertVoiceContext(context);
+  const db = context.database;
   const entry = await db.voiceEntries.get(id);
+  assertVoiceContext(context);
   if (!entry) return 'success';
   if (!entry.serverStored) {
     await db.voiceEntries.delete(id);
+    assertVoiceContext(context);
     return 'success';
   }
 
@@ -211,10 +285,13 @@ export async function requestVoiceDeletion(id: string): Promise<VoiceSyncOutcome
     nextAttemptAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   });
-  return deleteServerEntry(id);
+  assertVoiceContext(context);
+  return deleteServerEntry(id, context);
 }
 
-async function performFlush(): Promise<VoiceSyncOutcome> {
+async function performFlush(context: DataContext): Promise<VoiceSyncOutcome> {
+  assertVoiceContext(context);
+  const db = context.database;
   if (!browserOnline()) return 'offline';
   const entries = (await db.voiceEntries.orderBy('createdAt').toArray()).filter((entry) => {
     if (entry.status === 'deleting') return due(entry);
@@ -224,48 +301,66 @@ async function performFlush(): Promise<VoiceSyncOutcome> {
       due(entry)
     );
   });
+  assertVoiceContext(context);
 
   for (const entry of entries) {
     if (entry.status === 'deleting') {
-      const outcome = await deleteServerEntry(entry.id);
+      const outcome = await deleteServerEntry(entry.id, context);
       if (outcome !== 'success') return outcome;
       continue;
     }
-    const outcome = await uploadEntry(entry);
+    const outcome = await uploadEntry(entry, context);
     if (outcome !== 'success') return outcome;
   }
   return 'success';
 }
 
-async function uploadEntry(entry: LocalVoiceEntry): Promise<VoiceSyncOutcome> {
+async function uploadEntry(
+  entry: LocalVoiceEntry,
+  context: DataContext,
+): Promise<VoiceSyncOutcome> {
+  assertVoiceContext(context);
+  const db = context.database;
   if (!entry.audio) {
-    await failUpload(entry, 'Локальная аудиозапись недоступна.', false);
+    await failUpload(entry, 'Локальная аудиозапись недоступна.', false, context);
     return 'success';
   }
   await db.voiceEntries.update(entry.id, {
     status: 'uploading',
     updatedAt: new Date().toISOString(),
   });
+  assertVoiceContext(context);
 
   let response: Response;
   try {
     const workout = entry.workoutId ? `?workoutId=${encodeURIComponent(entry.workoutId)}` : '';
-    response = await fetch(`/api/v1/voice-entries/${entry.id}/audio${workout}`, {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: {
-        'content-type': entry.mimeType,
-        'x-voice-consent-version': entry.consentVersion,
+    response = await voiceRequest(
+      `/api/v1/voice-entries/${entry.id}/audio${workout}`,
+      {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'content-type': entry.mimeType,
+          'x-voice-consent-version': entry.consentVersion,
+        },
+        body: entry.audio,
       },
-      body: entry.audio,
-    });
+      context,
+    );
   } catch {
-    await failUpload(entry, 'Нет связи с сервером. Повторим автоматически.', true);
+    assertVoiceContext(context);
+    await failUpload(entry, 'Нет связи с сервером. Повторим автоматически.', true, context);
     return browserOnline() ? 'retry' : 'offline';
   }
 
   if (response.status === 401) {
-    await failUpload(entry, 'Сессия истекла. Войди снова, запись останется на устройстве.', true);
+    await failUpload(
+      entry,
+      'Сессия истекла. Войди снова, запись останется на устройстве.',
+      true,
+      context,
+    );
+    assertVoiceContext(context);
     notifyUnauthorized();
     return 'unauthorized';
   }
@@ -277,14 +372,21 @@ async function uploadEntry(entry: LocalVoiceEntry): Promise<VoiceSyncOutcome> {
         ? 'Сервер временно недоступен. Повторим автоматически.'
         : 'Сервер не принял запись. Удали её и запиши снова.',
       retryable,
+      context,
     );
     return retryable ? 'retry' : 'success';
   }
 
   const payload = (await response.json()) as { entry?: unknown };
+  assertVoiceContext(context);
   const server = parseVoiceEntry(payload.entry);
   if (!server) {
-    await failUpload(entry, 'Сервер вернул некорректный статус. Повторим автоматически.', true);
+    await failUpload(
+      entry,
+      'Сервер вернул некорректный статус. Повторим автоматически.',
+      true,
+      context,
+    );
     return 'retry';
   }
   await db.voiceEntries.update(entry.id, {
@@ -294,35 +396,52 @@ async function uploadEntry(entry: LocalVoiceEntry): Promise<VoiceSyncOutcome> {
     nextAttemptAt: null,
     uploadAttempts: entry.uploadAttempts + 1,
   });
+  assertVoiceContext(context);
   return 'success';
 }
 
-async function deleteServerEntry(id: string): Promise<VoiceSyncOutcome> {
+async function deleteServerEntry(id: string, context: DataContext): Promise<VoiceSyncOutcome> {
+  assertVoiceContext(context);
+  const db = context.database;
   if (!browserOnline()) return 'offline';
   let response: Response;
   try {
-    response = await fetch(`/api/v1/voice-entries/${id}`, {
-      method: 'DELETE',
-      credentials: 'same-origin',
-    });
+    response = await voiceRequest(
+      `/api/v1/voice-entries/${id}`,
+      {
+        method: 'DELETE',
+        credentials: 'same-origin',
+      },
+      context,
+    );
   } catch {
-    await scheduleDeleteRetry(id);
+    assertVoiceContext(context);
+    await scheduleDeleteRetry(id, context);
     return browserOnline() ? 'retry' : 'offline';
   }
   if (response.status === 401) {
-    await scheduleDeleteRetry(id);
+    await scheduleDeleteRetry(id, context);
+    assertVoiceContext(context);
     notifyUnauthorized();
     return 'unauthorized';
   }
   if (response.ok || response.status === 404) {
     await db.voiceEntries.delete(id);
+    assertVoiceContext(context);
     return 'success';
   }
-  await scheduleDeleteRetry(id);
+  await scheduleDeleteRetry(id, context);
   return 'retry';
 }
 
-async function failUpload(entry: LocalVoiceEntry, lastError: string, retryable: boolean) {
+async function failUpload(
+  entry: LocalVoiceEntry,
+  lastError: string,
+  retryable: boolean,
+  context: DataContext,
+) {
+  assertVoiceContext(context);
+  const db = context.database;
   const uploadAttempts = entry.uploadAttempts + 1;
   const delayMs = Math.min(2_000 * 2 ** Math.max(0, uploadAttempts - 1), 60_000);
   const now = new Date();
@@ -334,10 +453,13 @@ async function failUpload(entry: LocalVoiceEntry, lastError: string, retryable: 
     nextAttemptAt: retryable ? new Date(now.getTime() + delayMs).toISOString() : null,
     updatedAt: now.toISOString(),
   });
-  if (retryable) scheduleFlush(delayMs);
+  assertVoiceContext(context);
+  if (retryable) scheduleFlush(delayMs, context);
 }
 
-async function scheduleDeleteRetry(id: string) {
+async function scheduleDeleteRetry(id: string, context: DataContext) {
+  assertVoiceContext(context);
+  const db = context.database;
   const now = new Date();
   await db.voiceEntries.update(id, {
     status: 'deleting',
@@ -345,15 +467,17 @@ async function scheduleDeleteRetry(id: string) {
     nextAttemptAt: new Date(now.getTime() + 5_000).toISOString(),
     updatedAt: now.toISOString(),
   });
-  scheduleFlush(5_000);
+  assertVoiceContext(context);
+  scheduleFlush(5_000, context);
 }
 
-function scheduleFlush(delayMs: number) {
-  if (retryTimer) return;
-  retryTimer = setTimeout(() => {
-    retryTimer = null;
-    void flushVoiceQueue();
+function scheduleFlush(delayMs: number, context: DataContext) {
+  if (!isVoiceContextValid(context) || retryTimers.has(context)) return;
+  const retryTimer = setTimeout(() => {
+    retryTimers.delete(context);
+    if (isVoiceContextValid(context)) void flushVoiceQueue(context);
   }, delayMs);
+  retryTimers.set(context, retryTimer);
   if (typeof retryTimer === 'object' && 'unref' in retryTimer) retryTimer.unref();
 }
 

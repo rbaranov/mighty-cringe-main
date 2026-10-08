@@ -1,14 +1,28 @@
 import { useEffect, useState } from 'react';
 
-import type { CurrentUser, Exercise, ExercisePreferenceValue } from '@mighty-cringe/contracts';
+import type {
+  CurrentUser,
+  Exercise,
+  ExercisePreferenceValue,
+  SetRecord,
+  WorkoutRecord,
+  TrainerAthleteSummary,
+} from '@mighty-cringe/contracts';
 import { useLiveQuery } from 'dexie-react-hooks';
 
 import { db, type SyncConflict } from '../lib/db';
 import { getNotificationSettings } from '../lib/notifications';
-import { exerciseName, tr, updateProfilePreferences, usePreferences } from '../lib/preferences';
+import {
+  exerciseName,
+  formatSourceWeight,
+  tr,
+  updateProfilePreferences,
+  usePreferences,
+} from '../lib/preferences';
 import { getTrainerRelationship } from '../lib/trainer';
 import { hasAcceptedVoiceConsent, loadVoiceConfig } from '../lib/voice';
 import { DataExportPanel } from './DataExportPanel';
+import { JournalActivity } from './JournalActivity';
 import { PushReminderSettings } from './PushReminderSettings';
 import { ScreenNavigation } from './ScreenNavigation';
 import { TrainerRelationshipCard } from './TrainerAccess';
@@ -152,6 +166,7 @@ export function SettingsView({
               )}
             </p>
             <DataExportPanel />
+            <JournalActivity />
             {conflicts.length > 0 && (
               <ConflictSettings conflicts={conflicts} onResolveConflict={onResolveConflict} />
             )}
@@ -225,8 +240,8 @@ export function SettingsView({
         <MenuItem
           description={tr(
             locale,
-            'Кто может видеть тренировки и замеры',
-            'Who can see workouts and measurements',
+            'Кто может смотреть и изменять твой журнал',
+            'Who can view and edit your journal',
           )}
           icon="◎"
           onClick={() => setSection('coach')}
@@ -241,8 +256,8 @@ export function SettingsView({
           <MenuItem
             description={tr(
               locale,
-              'Приглашения и read-only просмотр',
-              'Invitations and read-only access',
+              'Приглашения и ведение тренировок',
+              'Invitations and training management',
             )}
             icon="↗"
             onClick={onOpenTrainer}
@@ -296,6 +311,36 @@ export function SettingsView({
         />
       </div>
       <AboutMightyCringe />
+    </section>
+  );
+}
+
+export function AthleteJournalSettings({
+  athlete,
+  conflicts,
+  onResolveConflict,
+}: {
+  athlete: TrainerAthleteSummary;
+  conflicts: SyncConflict[];
+  onResolveConflict: (conflict: SyncConflict, strategy: 'server' | 'mine') => void;
+}) {
+  const { locale } = usePreferences();
+  return (
+    <section className="screen settings-home">
+      <p className="eyebrow">{tr(locale, 'Журнал подопечного', 'Athlete journal')}</p>
+      <h1>{athlete.displayName}</h1>
+      <p className="intro">
+        {tr(
+          locale,
+          'Ты можешь вести тренировки, подходы, замеры, избранное и личный каталог. Доступом и аккаунтом управляет сам подопечный.',
+          'You can manage workouts, sets, measurements, favorites and the personal catalog. Account and access settings belong to the athlete.',
+        )}
+      </p>
+      {conflicts.length > 0 && (
+        <ConflictSettings conflicts={conflicts} onResolveConflict={onResolveConflict} />
+      )}
+      <DataExportPanel />
+      <JournalActivity />
     </section>
   );
 }
@@ -513,16 +558,32 @@ function ProfileCard({ user }: { user: CurrentUser }) {
   );
 }
 
-function ConflictSettings({
+export function ConflictSettings({
   conflicts,
   onResolveConflict,
 }: {
   conflicts: SyncConflict[];
   onResolveConflict: (conflict: SyncConflict, strategy: 'server' | 'mine') => void;
 }) {
-  const { locale } = usePreferences();
+  const { locale, unitSystem } = usePreferences();
   const exercises = useLiveQuery(() => db.exercises.toArray(), [], []);
   const preferences = useLiveQuery(() => db.exercisePreferences.toArray(), [], []);
+  const localSets = useLiveQuery(
+    () =>
+      db.sets.bulkGet(
+        conflicts.filter((item) => item.entityType === 'set').map((item) => item.entityId),
+      ),
+    [conflicts],
+    [],
+  );
+  const localWorkouts = useLiveQuery(
+    () =>
+      db.workouts.bulkGet(
+        conflicts.filter((item) => item.entityType === 'workout').map((item) => item.entityId),
+      ),
+    [conflicts],
+    [],
+  );
   return (
     <section className="conflict-panel" aria-live="polite">
       <p className="eyebrow">{tr(locale, 'Нужен выбор', 'Choose a version')}</p>
@@ -542,7 +603,31 @@ function ConflictSettings({
       {conflicts.map((conflict) => (
         <article className="conflict-card" key={conflict.id}>
           <strong>{conflictLabel(conflict, exercises, locale)}</strong>
-          <small>{conflict.message}</small>
+          <small>
+            {conflict.current
+              ? tr(
+                  locale,
+                  'Запись уже изменилась в журнале. Сравни варианты перед сохранением.',
+                  'The journal entry has changed. Compare the versions before saving.',
+                )
+              : tr(
+                  locale,
+                  'Записи больше нет в журнале или сервер не смог принять изменение. Локальный вариант сохранён.',
+                  'The entry is no longer in the journal or the server could not accept the change. Your local version is preserved.',
+                )}
+          </small>
+          {conflictComparison(
+            conflict,
+            locale,
+            unitSystem,
+            localSets,
+            localWorkouts,
+            exercises,
+          ).map(({ label, value }) => (
+            <small key={label} style={{ overflowWrap: 'anywhere' }}>
+              <b>{label}:</b> {value}
+            </small>
+          ))}
           {conflict.entityType === 'exercisePreference' && (
             <small>{preferenceConflictSummary(conflict, preferences, locale)}</small>
           )}
@@ -553,7 +638,7 @@ function ConflictSettings({
               type="button"
             >
               {conflict.current
-                ? tr(locale, 'Оставить серверную', 'Keep server version')
+                ? tr(locale, 'Оставить текущую', 'Keep current version')
                 : tr(locale, 'Удалить локальную', 'Delete local version')}
             </button>
             <button
@@ -569,6 +654,139 @@ function ConflictSettings({
       ))}
     </section>
   );
+}
+
+function conflictComparison(
+  conflict: SyncConflict,
+  locale: CurrentUser['locale'],
+  unitSystem: CurrentUser['unitSystem'],
+  localSets: Array<SetRecord | undefined>,
+  localWorkouts: Array<Omit<WorkoutRecord, 'sets'> | undefined>,
+  exercises: Exercise[],
+): Array<{ label: string; value: string }> {
+  const mutation = conflict.mutation;
+  const absent = tr(locale, 'Записи нет', 'Entry is absent');
+  let mine: string;
+  let server: string;
+  if (conflict.entityType === 'set') {
+    const current = conflict.current && 'workoutId' in conflict.current ? conflict.current : null;
+    const local = localSets.find((item) => item?.id === conflict.entityId);
+    const proposed =
+      mutation.type === 'set.create'
+        ? mutation.payload.set
+        : mutation.type === 'set.update'
+          ? { ...(current ?? local), ...mutation.payload.changes }
+          : local;
+    mine =
+      mutation.type === 'set.delete'
+        ? tr(locale, 'Удалить подход', 'Delete this set')
+        : proposed
+          ? setConflictValue(proposed, locale, unitSystem)
+          : tr(locale, 'Сохранённое изменение', 'Saved change');
+    server = current ? setConflictValue(current, locale, unitSystem) : absent;
+  } else if (conflict.entityType === 'workout') {
+    const current = conflict.current && 'startedAt' in conflict.current ? conflict.current : null;
+    const local = localWorkouts.find((item) => item?.id === conflict.entityId);
+    const changedFields =
+      mutation.type === 'workout.update' ? Object.keys(mutation.payload.changes) : null;
+    const proposed =
+      mutation.type === 'workout.create'
+        ? mutation.payload
+        : mutation.type === 'workout.update'
+          ? { ...(current ?? local), ...mutation.payload.changes }
+          : local;
+    mine =
+      mutation.type === 'workout.delete'
+        ? tr(locale, 'Удалить тренировку', 'Delete this workout')
+        : proposed
+          ? workoutConflictValue(proposed, changedFields, locale, exercises)
+          : tr(locale, 'Сохранённое изменение', 'Saved change');
+    server = current ? workoutConflictValue(current, changedFields, locale, exercises) : absent;
+  } else return [];
+  return [
+    { label: tr(locale, 'Мой вариант', 'My version'), value: mine },
+    { label: tr(locale, 'Сейчас в журнале', 'Currently in the journal'), value: server },
+  ];
+}
+
+function setConflictValue(
+  value: Partial<SetRecord>,
+  locale: CurrentUser['locale'],
+  unitSystem: CurrentUser['unitSystem'],
+) {
+  const parts: string[] = [];
+  if (value.weightKg !== undefined)
+    parts.push(formatSourceWeight(value.weightKg, locale, unitSystem));
+  if (value.reps !== undefined) parts.push(`× ${value.reps}`);
+  if ('rir' in value) parts.push(`· RIR ${value.rir ?? '—'}`);
+  if ('comment' in value)
+    parts.push(
+      `· ${tr(locale, 'Комментарий', 'Comment')}: ${value.comment || tr(locale, 'нет', 'none')}`,
+    );
+  return parts.join(' ') || tr(locale, 'Изменение подхода', 'Set change');
+}
+
+function workoutConflictValue(
+  value: Partial<WorkoutRecord>,
+  fields: string[] | null,
+  locale: CurrentUser['locale'],
+  exercises: Exercise[],
+) {
+  const parts: string[] = [];
+  const includes = (...keys: string[]) => !fields || keys.some((key) => fields.includes(key));
+  if (includes('notes') && 'notes' in value)
+    parts.push(
+      `${tr(locale, 'Комментарий', 'Notes')}: ${value.notes || tr(locale, 'нет', 'none')}`,
+    );
+  if (includes('isFavorite', 'favoriteName') && 'isFavorite' in value)
+    parts.push(
+      value.isFavorite
+        ? tr(
+            locale,
+            `В избранном${value.favoriteName ? `: ${value.favoriteName}` : ''}`,
+            `Favorite${value.favoriteName ? `: ${value.favoriteName}` : ''}`,
+          )
+        : tr(locale, 'Не в избранном', 'Not a favorite'),
+    );
+  if (includes('startedAt') && value.startedAt)
+    parts.push(
+      new Intl.DateTimeFormat(locale === 'ru' ? 'ru-RU' : 'en-US', {
+        dateStyle: 'short',
+        timeStyle: 'short',
+      }).format(new Date(value.startedAt)),
+    );
+  if (includes('endedAt', 'durationSeconds', 'activeSegmentStartedAt', 'completionReason')) {
+    if ('endedAt' in value)
+      parts.push(
+        value.endedAt
+          ? tr(locale, 'Завершена', 'Finished')
+          : tr(locale, 'Идёт тренировка', 'In progress'),
+      );
+    if (value.durationSeconds !== undefined)
+      parts.push(
+        tr(
+          locale,
+          `${Math.round(value.durationSeconds / 60)} мин`,
+          `${Math.round(value.durationSeconds / 60)} min`,
+        ),
+      );
+  }
+  if (includes('exercises') && value.exercises) {
+    const plan = [...value.exercises]
+      .sort((left, right) => left.position - right.position)
+      .map((item) => {
+        const exercise = exercises.find((entry) => entry.id === item.exerciseId);
+        const name = exercise
+          ? exerciseName(exercise, locale)
+          : tr(locale, 'Упражнение', 'Exercise');
+        return item.supersetGroup
+          ? `${name} (${tr(locale, 'суперсет', 'superset')} ${item.supersetGroup})`
+          : name;
+      })
+      .join(' → ');
+    parts.push(`${tr(locale, 'План', 'Plan')}: ${plan || tr(locale, 'пустой', 'empty')}`);
+  }
+  return parts.join(' · ') || tr(locale, 'Изменение тренировки', 'Workout change');
 }
 
 function conflictLabel(

@@ -1,3 +1,4 @@
+import { AthleteContextLabel } from './AthleteContext';
 import { useEffect, useState } from 'react';
 
 import {
@@ -88,6 +89,7 @@ export function ExerciseAddPanel({
   if (mode === 'online') {
     return (
       <div className="exercise-add-panel">
+        <AthleteContextLabel />
         <div className="panel-navigation">
           <BackButton
             label={tr(locale, 'К вариантам добавления', 'Back to add options')}
@@ -112,6 +114,7 @@ export function ExerciseAddPanel({
         className="exercise-add-panel manual"
         aria-label={tr(locale, 'Создать упражнение', 'Create exercise')}
       >
+        <AthleteContextLabel />
         <div className="panel-navigation">
           <BackButton
             label={tr(locale, 'К вариантам добавления', 'Back to add options')}
@@ -181,6 +184,7 @@ export function ExerciseAddPanel({
       className="exercise-add-panel choice"
       aria-label={tr(locale, 'Новое упражнение', 'New exercise')}
     >
+      <AthleteContextLabel />
       <strong>
         {hasMatches
           ? tr(locale, 'Нужно другое упражнение?', 'Need a different exercise?')

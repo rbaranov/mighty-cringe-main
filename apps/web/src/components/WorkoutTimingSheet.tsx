@@ -1,3 +1,4 @@
+import { AthleteContextLabel } from './AthleteContext';
 import { useEffect, useMemo, useState } from 'react';
 
 import type { LocalWorkout } from '../lib/db';
@@ -6,11 +7,16 @@ import { tr, usePreferences } from '../lib/preferences';
 type Props = {
   workout: LocalWorkout | null;
   onClose: () => void;
-  onSave: (startedAt: string, durationSeconds: number) => void | Promise<void>;
+  onSave: (
+    startedAt: string,
+    durationSeconds: number,
+    workout: LocalWorkout,
+  ) => void | Promise<void>;
 };
 
 export function WorkoutTimingSheet({ workout, onClose, onSave }: Props) {
   const { locale } = usePreferences();
+  const [source, setSource] = useState(workout);
   const initial = timingDraft(workout);
   const [date, setDate] = useState(initial.date);
   const [time, setTime] = useState(initial.time);
@@ -19,6 +25,7 @@ export function WorkoutTimingSheet({ workout, onClose, onSave }: Props) {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    setSource(workout);
     if (!workout) return;
     const next = timingDraft(workout);
     setDate(next.date);
@@ -26,7 +33,7 @@ export function WorkoutTimingSheet({ workout, onClose, onSave }: Props) {
     setHours(next.hours);
     setMinutes(next.minutes);
     setSaving(false);
-  }, [workout?.id, workout?.startedAt, workout?.durationSeconds]);
+  }, [workout?.id]);
 
   useEffect(() => {
     if (!workout) return;
@@ -63,12 +70,13 @@ export function WorkoutTimingSheet({ workout, onClose, onSave }: Props) {
       : null;
 
   if (!workout) return null;
+  const currentWorkout = source?.id === workout.id ? source : workout;
 
   function submit() {
     if (!valid || !startedAt || totalMinutes === null || saving) return;
     setSaving(true);
-    void Promise.resolve(onSave(startedAt.toISOString(), totalMinutes * 60)).catch(() =>
-      setSaving(false),
+    void Promise.resolve(onSave(startedAt.toISOString(), totalMinutes * 60, currentWorkout)).catch(
+      () => setSaving(false),
     );
   }
 
@@ -86,6 +94,7 @@ export function WorkoutTimingSheet({ workout, onClose, onSave }: Props) {
         role="dialog"
       >
         <div className="sheet-handle" />
+        <AthleteContextLabel />
         <p className="eyebrow">{tr(locale, 'История тренировки', 'Workout history')}</p>
         <h2>{tr(locale, 'Дата и длительность', 'Date and duration')}</h2>
         <form

@@ -1,3 +1,4 @@
+import { AthleteContextLabel } from './AthleteContext';
 import { useEffect, useRef, useState } from 'react';
 
 import type { LocalWorkout } from '../lib/db';
@@ -18,16 +19,18 @@ export function WorkoutFavoriteNameSheet({
   workout: LocalWorkout | null;
 }) {
   const { locale } = usePreferences();
+  const [source, setSource] = useState(workout);
   const [draft, setDraft] = useState(workout?.favoriteName ?? '');
   const [saving, setSaving] = useState(false);
   const sheetRef = useRef<HTMLElement>(null);
   const viewportStyle = useKeyboardViewport(Boolean(workout), sheetRef);
 
   useEffect(() => {
+    setSource(workout);
     if (!workout) return;
     setDraft(workout.favoriteName ?? '');
     setSaving(false);
-  }, [workout?.id, workout?.favoriteName]);
+  }, [workout?.id]);
 
   useEffect(() => {
     if (!workout) return;
@@ -40,7 +43,7 @@ export function WorkoutFavoriteNameSheet({
 
   if (!workout) return null;
 
-  const currentWorkout = workout;
+  const currentWorkout = source?.id === workout.id ? source : workout;
   const normalized = normalizeWorkoutFavoriteName(draft);
   const adding = !currentWorkout.isFavorite;
   const changed = adding || normalized !== currentWorkout.favoriteName;
@@ -73,6 +76,7 @@ export function WorkoutFavoriteNameSheet({
         role="dialog"
       >
         <div className="sheet-handle" />
+        <AthleteContextLabel />
         <p className="eyebrow">{tr(locale, 'Избранная тренировка', 'Favorite workout')}</p>
         <h2>
           {tr(

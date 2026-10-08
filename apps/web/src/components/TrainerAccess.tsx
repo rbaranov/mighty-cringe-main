@@ -17,15 +17,18 @@ import {
   revokeTrainerAthlete,
   revokeTrainerInvite,
   revokeTrainerRelationship,
+  updateTrainerRelationshipAccess,
 } from '../lib/trainer';
 import { displayMeasurement, formatWeight, tr, usePreferences } from '../lib/preferences';
 import { ScreenNavigation } from './ScreenNavigation';
+import './AthleteContextHeader.css';
 
 export function TrainerRelationshipCard({ refreshKey = 0 }: { refreshKey?: number }) {
   const { locale } = usePreferences();
   const [trainer, setTrainer] = useState<TrainerSummary | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
-  const [confirming, setConfirming] = useState(false);
+  const [confirmation, setConfirmation] = useState<'grant' | 'withdraw' | 'revoke' | null>(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -47,16 +50,37 @@ export function TrainerRelationshipCard({ refreshKey = 0 }: { refreshKey?: numbe
 
   async function revoke() {
     setError(null);
+    setSaving(true);
     try {
       await revokeTrainerRelationship();
       setTrainer(null);
-      setConfirming(false);
+      setConfirmation(null);
     } catch (requestError) {
       setError(
         requestError instanceof Error
           ? requestError.message
           : tr(locale, 'Не удалось отозвать доступ.', 'Could not revoke access.'),
       );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function updateAccess(access: 'read' | 'manage') {
+    setError(null);
+    setSaving(true);
+    try {
+      const result = await updateTrainerRelationshipAccess(access);
+      setTrainer(result.trainer);
+      setConfirmation(null);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : tr(locale, 'Не удалось изменить доступ.', 'Could not change access.'),
+      );
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -70,26 +94,93 @@ export function TrainerRelationshipCard({ refreshKey = 0 }: { refreshKey?: numbe
             : (trainer?.displayName ?? tr(locale, 'Не подключён', 'Not connected'))}
         </strong>
       </div>
-      {trainer && !confirming && (
-        <button className="button ghost small" onClick={() => setConfirming(true)} type="button">
-          {tr(locale, 'Отозвать доступ тренера', 'Revoke coach access')}
-        </button>
-      )}
-      {trainer && confirming && (
-        <div className="inline-confirmation">
+      {trainer && (
+        <div className="trainer-permission-actions">
           <p>
-            {tr(
-              locale,
-              'Тренер сразу перестанет видеть тренировки и замеры. Продолжить?',
-              'The coach will immediately lose access to workouts and measurements. Continue?',
-            )}
+            {trainer.access === 'manage'
+              ? tr(
+                  locale,
+                  'Разрешены просмотр и изменения: тренировки, подходы, замеры, избранное и личный каталог упражнений. Доступ к аккаунту остаётся только у тебя.',
+                  'Viewing and editing are allowed: workouts, sets, measurements, favorites and your personal exercise catalog. Your account remains under your control.',
+                )
+              : tr(
+                  locale,
+                  'Сейчас тренер может только смотреть тренировки и замеры. Изменения доступны только после твоего разрешения.',
+                  'Your coach can currently only view workouts and measurements. Editing requires your permission.',
+                )}
           </p>
-          <button className="button danger small" onClick={() => void revoke()} type="button">
-            {tr(locale, 'Да, отозвать', 'Revoke')}
-          </button>
-          <button className="button ghost small" onClick={() => setConfirming(false)} type="button">
-            {tr(locale, 'Отмена', 'Cancel')}
-          </button>
+          {!confirmation ? (
+            <>
+              <button
+                className="button ghost full"
+                onClick={() => setConfirmation(trainer.access === 'manage' ? 'withdraw' : 'grant')}
+                type="button"
+              >
+                {trainer.access === 'manage'
+                  ? tr(
+                      locale,
+                      'Запретить изменения, оставить просмотр',
+                      'Disable editing, keep viewing',
+                    )
+                  : tr(locale, 'Разрешить тренеру изменения', 'Allow your coach to edit')}
+              </button>
+              <button
+                className="button ghost small"
+                onClick={() => setConfirmation('revoke')}
+                type="button"
+              >
+                {tr(locale, 'Отозвать весь доступ тренера', 'Revoke all coach access')}
+              </button>
+            </>
+          ) : (
+            <div className="inline-confirmation">
+              <p>
+                {confirmation === 'grant'
+                  ? tr(
+                      locale,
+                      `Тренер ${trainer.displayName} сможет добавлять, изменять и удалять твои тренировки, подходы, замеры, избранное и упражнения в личном каталоге. Аккаунт и управление доступом останутся только у тебя. Разрешить?`,
+                      `Coach ${trainer.displayName} will be able to add, edit and delete your workouts, sets, measurements, favorites and personal exercises. Your account and access settings stay under your control. Allow editing?`,
+                    )
+                  : confirmation === 'withdraw'
+                    ? tr(
+                        locale,
+                        'Тренер сразу потеряет право изменять твои данные. Просмотр тренировок и замеров останется. Уже сохранённые изменения останутся в журнале.',
+                        'Your coach will immediately lose editing access, but can still view workouts and measurements. Previously saved changes will remain in your log.',
+                      )
+                    : tr(
+                        locale,
+                        'Тренер сразу перестанет видеть и изменять твои данные. Уже сохранённые изменения останутся в журнале. Продолжить?',
+                        'Your coach will immediately lose access to view and edit your data. Previously saved changes will remain in your log. Continue?',
+                      )}
+              </p>
+              <button
+                className={`button ${confirmation === 'grant' ? 'primary' : 'danger'} small`}
+                disabled={saving}
+                onClick={() =>
+                  void (confirmation === 'revoke'
+                    ? revoke()
+                    : updateAccess(confirmation === 'grant' ? 'manage' : 'read'))
+                }
+                type="button"
+              >
+                {saving
+                  ? tr(locale, 'Сохраняем…', 'Saving…')
+                  : confirmation === 'grant'
+                    ? tr(locale, 'Да, разрешить изменения', 'Allow editing')
+                    : confirmation === 'withdraw'
+                      ? tr(locale, 'Оставить только просмотр', 'Keep view-only access')
+                      : tr(locale, 'Да, отозвать', 'Revoke')}
+              </button>
+              <button
+                className="button ghost small"
+                disabled={saving}
+                onClick={() => setConfirmation(null)}
+                type="button"
+              >
+                {tr(locale, 'Отмена', 'Cancel')}
+              </button>
+            </div>
+          )}
         </div>
       )}
       {error && <p className="auth-error">{error}</p>}
@@ -97,7 +188,13 @@ export function TrainerRelationshipCard({ refreshKey = 0 }: { refreshKey?: numbe
   );
 }
 
-export function TrainerDashboard({ onBack }: { onBack: () => void }) {
+export function TrainerDashboard({
+  onBack,
+  onOpenAthlete,
+}: {
+  onBack: () => void;
+  onOpenAthlete?: (athlete: TrainerAthleteSummary) => void;
+}) {
   const { locale } = usePreferences();
   const [athletes, setAthletes] = useState<TrainerAthleteSummary[]>([]);
   const [invites, setInvites] = useState<TrainerInviteRecord[]>([]);
@@ -223,8 +320,29 @@ export function TrainerDashboard({ onBack }: { onBack: () => void }) {
           <div>
             <h1>{selected.displayName}</h1>
           </div>
-          <span className="read-only-badge">👁 {tr(locale, 'Только чтение', 'Read only')}</span>
+          <span className="read-only-badge">
+            {selected.access === 'manage'
+              ? tr(locale, 'Просмотр и изменения', 'View and edit')
+              : tr(locale, 'Только просмотр', 'View only')}
+          </span>
         </div>
+        {onOpenAthlete && selected.access === 'manage' ? (
+          <button
+            className="button primary full"
+            onClick={() => onOpenAthlete(selected)}
+            type="button"
+          >
+            {tr(locale, 'Открыть режим подопечного', 'Open athlete mode')}
+          </button>
+        ) : selected.access !== 'manage' ? (
+          <p className="intro">
+            {tr(
+              locale,
+              'Чтобы вести тренировки подопечного, он должен разрешить изменения в «Настройки → Тренер и доступ».',
+              'To manage this athlete’s workouts, they must allow editing in Settings → Coach and access.',
+            )}
+          </p>
+        ) : null}
         {error && <p className="auth-error">{error}</p>}
         {!details ? (
           <p className="sets-line muted">{tr(locale, 'Загружаем историю…', 'Loading history…')}</p>
@@ -279,13 +397,12 @@ export function TrainerDashboard({ onBack }: { onBack: () => void }) {
         <div>
           <h1>{tr(locale, 'Подопечные', 'Athletes')}</h1>
         </div>
-        <span className="read-only-badge">👁 {tr(locale, 'Только чтение', 'Read only')}</span>
       </div>
       <p className="intro">
         {tr(
           locale,
-          'Ты видишь тренировки и замеры только после принятого приглашения.',
-          'You can see workouts and measurements only after an invitation is accepted.',
+          'Приглашение открывает просмотр тренировок и замеров. Подопечный отдельно разрешает изменения в своих настройках.',
+          'An accepted invitation allows viewing workouts and measurements. Each athlete separately allows editing in their settings.',
         )}
       </p>
       <section className="trainer-invite-card">
@@ -325,7 +442,10 @@ export function TrainerDashboard({ onBack }: { onBack: () => void }) {
             <button onClick={() => void openAthlete(athlete)} key={athlete.id} type="button">
               <span>{athlete.displayName}</span>
               <small>
-                {tr(locale, 'Подключён', 'Connected')} {formatDate(athlete.linkedAt, locale)}
+                {athlete.access === 'manage'
+                  ? tr(locale, 'Просмотр и изменения', 'View and edit')
+                  : tr(locale, 'Только просмотр', 'View only')}{' '}
+                · {formatDate(athlete.linkedAt, locale)}
               </small>
               <b>›</b>
             </button>
@@ -373,9 +493,9 @@ function AthleteReadOnlyDetails({
   return (
     <div className="athlete-read-only-details">
       <section>
-        <h2>{tr(locale, 'Последние тренировки', 'Recent workouts')}</h2>
+        <h2>{tr(locale, 'Все тренировки', 'All workouts')}</h2>
         {workouts.length ? (
-          workouts.slice(0, 10).map((workout) => (
+          workouts.map((workout) => (
             <article key={workout.id}>
               <strong>{formatDate(workout.startedAt, locale)}</strong>
               <span>
@@ -384,7 +504,6 @@ function AthleteReadOnlyDetails({
               </span>
               <small>
                 {workout.sets
-                  .slice(0, 8)
                   .map((set) => `${formatWeight(set.weightKg, locale, unitSystem)}×${set.reps}`)
                   .join(' · ') || tr(locale, 'Без подходов', 'No sets')}
               </small>
@@ -395,9 +514,9 @@ function AthleteReadOnlyDetails({
         )}
       </section>
       <section>
-        <h2>{tr(locale, 'Последние замеры', 'Recent measurements')}</h2>
+        <h2>{tr(locale, 'Все замеры', 'All measurements')}</h2>
         {measurements.length ? (
-          measurements.slice(0, 5).map((measurement) => (
+          measurements.map((measurement) => (
             <article key={measurement.id}>
               <strong>{formatDate(measurement.measuredOn, locale)}</strong>
               <span>{formatMeasurements(measurement, locale, unitSystem)}</span>

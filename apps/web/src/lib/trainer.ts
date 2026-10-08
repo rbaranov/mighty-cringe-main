@@ -39,8 +39,25 @@ export async function revokeTrainerRelationship(request: Request = fetch) {
   await requestNoContent('/api/v1/trainer/relationship', 'DELETE', request);
 }
 
+export async function updateTrainerRelationshipAccess(
+  access: 'read' | 'manage',
+  request: Request = fetch,
+) {
+  return requestJson<{ trainer: TrainerSummary }>('/api/v1/trainer/relationship', request, {
+    method: 'PATCH',
+    body: JSON.stringify({ access }),
+  });
+}
+
 export async function listTrainerAthletes(request: Request = fetch) {
   return requestJson<{ items: TrainerAthleteSummary[] }>('/api/v1/trainer/athletes', request);
+}
+
+export async function getTrainerAthleteContext(athleteId: string, request: Request = fetch) {
+  return requestJson<{ athlete: TrainerAthleteSummary }>(
+    `/api/v1/trainer/athletes/${encodeURIComponent(athleteId)}/context`,
+    request,
+  );
 }
 
 export async function listTrainerInvites(request: Request = fetch) {
@@ -105,6 +122,9 @@ async function trainerRequestError(response: Response, fallback: string) {
     invite_used: 'Это приглашение уже использовано.',
     invite_email_mismatch: 'Приглашение создано для другого Google-аккаунта.',
     self_link: 'Нельзя подключить свой аккаунт как собственного тренера.',
+    trainer_access_revoked: 'Подопечный отозвал доступ. Вернись к своим тренировкам.',
+    trainer_manage_required:
+      'Подопечный разрешил только просмотр. Для изменений нужно его согласие.',
   };
   return new Error((payload?.code && known[payload.code]) || payload?.error || fallback);
 }

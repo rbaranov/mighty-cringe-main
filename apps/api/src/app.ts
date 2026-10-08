@@ -20,6 +20,7 @@ import {
   trainerInviteAcceptSchema,
   trainerInviteCreateSchema,
   trainerInviteIdSchema,
+  updateTrainerAccessSchema,
   updateMeasurementSchema,
   updateNotificationPreferencesSchema,
   updateExerciseSchema,
@@ -46,6 +47,7 @@ import {
   RepositoryConflictError,
   RepositoryInviteError,
   RepositoryNotFoundError,
+  RepositoryTrainerAccessError,
   type WorkoutRepository,
 } from './repository.js';
 
@@ -85,6 +87,106 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
   void app.register(cors, {
     origin: process.env.WEB_ORIGIN ?? 'http://localhost:5173',
     credentials: true,
+  });
+
+  app.addHook('onRoute', (route) => {
+    const handler = route.handler;
+    route.handler = async function (request, reply) {
+      const expectedActorId = request.headers['x-actor-id'];
+      if (expectedActorId !== undefined) {
+        if (!trainerAthleteIdSchema.safeParse(expectedActorId).success) {
+          return reply
+            .status(400)
+            .send({ code: 'invalid_actor_context', error: 'A valid actor identifier is required' });
+        }
+        const actor = await getCurrentUser(request, repository, now());
+        if (actor?.id !== expectedActorId) {
+          return reply.status(403).send({
+            code: 'actor_session_changed',
+            error: 'The signed-in account changed. Reload before continuing.',
+          });
+        }
+      }
+      const athleteId = request.headers['x-athlete-id'];
+      const linkId = request.headers['x-trainer-link-id'];
+      if (athleteId === undefined && linkId === undefined)
+        return handler.call(this, request, reply);
+      if (!isSportingRoute(route.url)) {
+        return reply.status(403).send({
+          code: 'trainer_scope_forbidden',
+          error: 'Athlete context is only valid for sporting data',
+        });
+      }
+      if (
+        !trainerAthleteIdSchema.safeParse(athleteId).success ||
+        !trainerInviteIdSchema.safeParse(linkId).success
+      ) {
+        return reply.status(400).send({
+          code: 'invalid_trainer_context',
+          error: 'Both athlete and trainer link identifiers are required',
+        });
+      }
+      if (
+        route.url === '/api/v1/exercises/:exerciseId' &&
+        ['PUT', 'DELETE'].includes(request.method) &&
+        parseExerciseRevision(request) === undefined
+      ) {
+        return reply.status(428).send({
+          code: 'exercise_revision_required',
+          error: 'Reload the exercise before editing it',
+        });
+      }
+      const actor = await getCurrentUser(request, repository, now());
+      if (!actor) return reply.status(401).send({ error: 'Authentication required' });
+      // Defer sending until the transaction, authorization and audit have committed.
+      const send = reply.send;
+      let staged = false;
+      let payload: unknown;
+      reply.send = function (value: unknown) {
+        staged = true;
+        payload = value;
+        return value as FastifyReply;
+      };
+      try {
+        const result = await repository.withTrainerAccess(
+          {
+            actorId: actor.id,
+            athleteId: athleteId as string,
+            linkId: linkId as string,
+            write: request.method !== 'GET' && request.method !== 'HEAD',
+            operation: sportingAction(request.method, route.url, request.body),
+            details: { params: request.params, body: request.body ?? null },
+          },
+          async () => {
+            const references = sportingExerciseReferences(request.body);
+            if (references.length) {
+              const available = new Set(
+                (await repository.listExercises(athleteId as string)).map(
+                  (exercise) => exercise.id,
+                ),
+              );
+              if (references.some((id) => !available.has(id))) throw new RepositoryNotFoundError();
+            }
+            const value = await handler.call(this, request, reply);
+            const response = staged ? payload : value;
+            const duplicate = Boolean(
+              response &&
+              typeof response === 'object' &&
+              'duplicate' in response &&
+              response.duplicate,
+            );
+            return { value, successful: reply.statusCode < 400 && !duplicate };
+          },
+        );
+        reply.send = send;
+        return staged ? reply.send(payload) : result;
+      } catch (error) {
+        reply.send = send;
+        return sendRepositoryError(reply, error);
+      } finally {
+        reply.send = send;
+      }
+    };
   });
 
   app.get('/health', async () => ({ status: 'ok' }));
@@ -293,6 +395,37 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
     return { trainer: await repository.getAthleteTrainer(user.id) };
   });
 
+  app.patch('/api/v1/trainer/relationship', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    const input = updateTrainerAccessSchema.safeParse(request.body);
+    if (!input.success) return reply.status(400).send({ error: input.error.flatten() });
+    try {
+      return { trainer: await repository.updateTrainerAccess(user.id, input.data.access, now()) };
+    } catch (error) {
+      return sendRepositoryError(reply, error);
+    }
+  });
+
+  app.get('/api/v1/trainer/athletes/:athleteId/context', async (request, reply) => {
+    const user = await getCurrentUser(request, repository, now());
+    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    if (!canUseTrainerConsole(user.role))
+      return reply.status(403).send({ error: 'Trainer role required' });
+    const id = trainerAthleteIdSchema.safeParse(
+      (request.params as { athleteId?: unknown }).athleteId,
+    );
+    if (!id.success) return reply.status(400).send({ error: 'Invalid athlete id' });
+    const athlete = (await repository.listTrainerAthletes(user.id)).find(
+      (item) => item.id === id.data,
+    );
+    return athlete
+      ? { athlete }
+      : reply
+          .status(403)
+          .send({ code: 'trainer_access_revoked', error: 'Trainer access is no longer available' });
+  });
+
   app.delete('/api/v1/trainer/relationship', async (request, reply) => {
     const user = await getCurrentUser(request, repository, now());
     if (!user) return reply.status(401).send({ error: 'Authentication required' });
@@ -361,21 +494,27 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
     }
   });
 
+  app.get('/api/v1/journal-activity', async (request, reply) => {
+    const ownerId = await getSportingOwnerId(request, repository, now());
+    if (!ownerId) return reply.status(401).send({ error: 'Authentication required' });
+    return { items: await repository.listJournalActivity(ownerId) };
+  });
+
   app.get('/api/v1/exercises', async (request, reply) => {
-    const user = await getCurrentUser(request, repository, now());
-    if (!user) return reply.status(401).send({ error: 'Authentication required' });
-    return { items: await repository.listExercises(user.id) };
+    const ownerId = await getSportingOwnerId(request, repository, now());
+    if (!ownerId) return reply.status(401).send({ error: 'Authentication required' });
+    return { items: await repository.listExercises(ownerId) };
   });
 
   app.get('/api/v1/exercise-preferences', async (request, reply) => {
-    const user = await getCurrentUser(request, repository, now());
-    if (!user) return reply.status(401).send({ error: 'Authentication required' });
-    return { items: await repository.listExercisePreferences(user.id) };
+    const ownerId = await getSportingOwnerId(request, repository, now());
+    if (!ownerId) return reply.status(401).send({ error: 'Authentication required' });
+    return { items: await repository.listExercisePreferences(ownerId) };
   });
 
   app.post('/api/v1/exercises/discover', async (request, reply) => {
-    const user = await getCurrentUser(request, repository, now());
-    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    const ownerId = await getSportingOwnerId(request, repository, now());
+    if (!ownerId) return reply.status(401).send({ error: 'Authentication required' });
     if (!options.exerciseDiscovery) {
       return reply.status(503).send({ error: 'Online exercise discovery is not configured' });
     }
@@ -390,15 +529,15 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
   });
 
   app.post('/api/v1/exercise-discoveries', async (request, reply) => {
-    const user = await getCurrentUser(request, repository, now());
-    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    const ownerId = await getSportingOwnerId(request, repository, now());
+    if (!ownerId) return reply.status(401).send({ error: 'Authentication required' });
     if (!exerciseDiscoveryJobs) {
       return reply.status(503).send({ error: 'Online exercise discovery is not configured' });
     }
     const input = startExerciseDiscoverySchema.safeParse(request.body);
     if (!input.success) return reply.status(400).send({ error: input.error.flatten() });
     const exercise = input.data.exerciseId
-      ? (await repository.listExercises(user.id)).find(
+      ? (await repository.listExercises(ownerId)).find(
           (item) => item.id === input.data.exerciseId && item.scope === 'user' && !item.deletedAt,
         )
       : undefined;
@@ -407,7 +546,7 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
     }
     return reply.status(202).send({
       job: exerciseDiscoveryJobs.start(
-        user.id,
+        ownerId,
         input.data.query,
         input.data.locale,
         exercise
@@ -426,32 +565,32 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
   });
 
   app.get('/api/v1/exercise-discoveries/:jobId', async (request, reply) => {
-    const user = await getCurrentUser(request, repository, now());
-    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    const ownerId = await getSportingOwnerId(request, repository, now());
+    if (!ownerId) return reply.status(401).send({ error: 'Authentication required' });
     const jobId = exerciseIdSchema.safeParse((request.params as { jobId?: unknown }).jobId);
     if (!jobId.success) return reply.status(400).send({ error: 'Invalid discovery id' });
-    const job = exerciseDiscoveryJobs?.get(user.id, jobId.data);
+    const job = exerciseDiscoveryJobs?.get(ownerId, jobId.data);
     return job ? { job } : reply.status(404).send({ error: 'Discovery not found' });
   });
 
   app.delete('/api/v1/exercise-discoveries/:jobId', async (request, reply) => {
-    const user = await getCurrentUser(request, repository, now());
-    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    const ownerId = await getSportingOwnerId(request, repository, now());
+    if (!ownerId) return reply.status(401).send({ error: 'Authentication required' });
     const jobId = exerciseIdSchema.safeParse((request.params as { jobId?: unknown }).jobId);
     if (!jobId.success) return reply.status(400).send({ error: 'Invalid discovery id' });
-    const job = exerciseDiscoveryJobs?.cancel(user.id, jobId.data);
+    const job = exerciseDiscoveryJobs?.cancel(ownerId, jobId.data);
     return job
       ? reply.status(204).send()
       : reply.status(404).send({ error: 'Discovery not found' });
   });
 
   app.post('/api/v1/exercises', async (request, reply) => {
-    const user = await getCurrentUser(request, repository, now());
-    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    const ownerId = await getSportingOwnerId(request, repository, now());
+    if (!ownerId) return reply.status(401).send({ error: 'Authentication required' });
     const input = createExerciseSchema.safeParse(request.body);
     if (!input.success) return reply.status(400).send({ error: input.error.flatten() });
     try {
-      const exercise = await repository.createExercise(user.id, input.data);
+      const exercise = await repository.createExercise(ownerId, input.data);
       return reply.status(201).send({ exercise });
     } catch (error) {
       return sendRepositoryError(reply, error);
@@ -459,8 +598,8 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
   });
 
   app.put('/api/v1/exercises/:exerciseId', async (request, reply) => {
-    const user = await getCurrentUser(request, repository, now());
-    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    const ownerId = await getSportingOwnerId(request, repository, now());
+    if (!ownerId) return reply.status(401).send({ error: 'Authentication required' });
     const exerciseId = exerciseIdSchema.safeParse(
       (request.params as { exerciseId?: unknown }).exerciseId,
     );
@@ -468,7 +607,12 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
     const input = updateExerciseSchema.safeParse(request.body);
     if (!input.success) return reply.status(400).send({ error: input.error.flatten() });
     try {
-      const exercise = await repository.updateExercise(user.id, exerciseId.data, input.data);
+      const exercise = await repository.updateExercise(
+        ownerId,
+        exerciseId.data,
+        input.data,
+        parseExerciseRevision(request),
+      );
       return reply.send({ exercise });
     } catch (error) {
       return sendRepositoryError(reply, error);
@@ -476,14 +620,19 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
   });
 
   app.delete('/api/v1/exercises/:exerciseId', async (request, reply) => {
-    const user = await getCurrentUser(request, repository, now());
-    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    const ownerId = await getSportingOwnerId(request, repository, now());
+    if (!ownerId) return reply.status(401).send({ error: 'Authentication required' });
     const exerciseId = exerciseIdSchema.safeParse(
       (request.params as { exerciseId?: unknown }).exerciseId,
     );
     if (!exerciseId.success) return reply.status(400).send({ error: 'Invalid exercise id' });
     try {
-      const exercise = await repository.deleteExercise(user.id, exerciseId.data, now());
+      const exercise = await repository.deleteExercise(
+        ownerId,
+        exerciseId.data,
+        now(),
+        parseExerciseRevision(request),
+      );
       return reply.send({ exercise });
     } catch (error) {
       return sendRepositoryError(reply, error);
@@ -491,9 +640,9 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
   });
 
   app.get('/api/v1/workouts', async (request, reply) => {
-    const user = await getCurrentUser(request, repository, now());
-    if (!user) return reply.status(401).send({ error: 'Authentication required' });
-    return { items: await repository.listWorkouts(user.id) };
+    const ownerId = await getSportingOwnerId(request, repository, now());
+    if (!ownerId) return reply.status(401).send({ error: 'Authentication required' });
+    return { items: await repository.listWorkouts(ownerId) };
   });
 
   app.get('/api/v1/voice/config', async (request, reply) => {
@@ -663,19 +812,19 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
   });
 
   app.post('/api/v1/workouts', async (request, reply) => {
-    const user = await getCurrentUser(request, repository, now());
-    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    const ownerId = await getSportingOwnerId(request, repository, now());
+    if (!ownerId) return reply.status(401).send({ error: 'Authentication required' });
 
     const parsed = createWorkoutSchema.safeParse(request.body);
     if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() });
 
-    const result = await repository.createWorkout(user.id, parsed.data);
+    const result = await repository.createWorkout(ownerId, parsed.data);
     return reply.status(result.duplicate ? 200 : 201).send(result);
   });
 
   app.patch('/api/v1/workouts/:workoutId', async (request, reply) => {
-    const user = await getCurrentUser(request, repository, now());
-    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    const ownerId = await getSportingOwnerId(request, repository, now());
+    if (!ownerId) return reply.status(401).send({ error: 'Authentication required' });
 
     const workoutId = (request.params as { workoutId?: unknown }).workoutId;
     const parsed = updateWorkoutSchema.safeParse({
@@ -685,36 +834,36 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
     if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() });
 
     try {
-      return await repository.updateWorkout(user.id, parsed.data);
+      return await repository.updateWorkout(ownerId, parsed.data);
     } catch (error) {
       return sendRepositoryError(reply, error);
     }
   });
 
   app.delete('/api/v1/workouts/:workoutId', async (request, reply) => {
-    const user = await getCurrentUser(request, repository, now());
-    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    const ownerId = await getSportingOwnerId(request, repository, now());
+    if (!ownerId) return reply.status(401).send({ error: 'Authentication required' });
 
     const workoutId = (request.params as { workoutId?: unknown }).workoutId;
     const parsed = deleteWorkoutSchema.safeParse({ ...(request.body as object), workoutId });
     if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() });
 
     try {
-      return await repository.deleteWorkout(user.id, parsed.data);
+      return await repository.deleteWorkout(ownerId, parsed.data);
     } catch (error) {
       return sendRepositoryError(reply, error);
     }
   });
 
   app.post('/api/v1/sets', async (request, reply) => {
-    const user = await getCurrentUser(request, repository, now());
-    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    const ownerId = await getSportingOwnerId(request, repository, now());
+    if (!ownerId) return reply.status(401).send({ error: 'Authentication required' });
 
     const parsed = createSetSchema.safeParse(request.body);
     if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() });
 
     try {
-      const result = await repository.createSet(user.id, parsed.data);
+      const result = await repository.createSet(ownerId, parsed.data);
       return reply.status(result.duplicate ? 200 : 201).send(result);
     } catch (error) {
       return sendRepositoryError(reply, error);
@@ -722,48 +871,48 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
   });
 
   app.patch('/api/v1/sets/:setId', async (request, reply) => {
-    const user = await getCurrentUser(request, repository, now());
-    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    const ownerId = await getSportingOwnerId(request, repository, now());
+    if (!ownerId) return reply.status(401).send({ error: 'Authentication required' });
 
     const setId = (request.params as { setId?: unknown }).setId;
     const parsed = updateSetSchema.safeParse({ ...(request.body as object), setId });
     if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() });
 
     try {
-      return await repository.updateSet(user.id, parsed.data);
+      return await repository.updateSet(ownerId, parsed.data);
     } catch (error) {
       return sendRepositoryError(reply, error);
     }
   });
 
   app.delete('/api/v1/sets/:setId', async (request, reply) => {
-    const user = await getCurrentUser(request, repository, now());
-    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    const ownerId = await getSportingOwnerId(request, repository, now());
+    if (!ownerId) return reply.status(401).send({ error: 'Authentication required' });
 
     const setId = (request.params as { setId?: unknown }).setId;
     const parsed = deleteSetSchema.safeParse({ ...(request.body as object), setId });
     if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() });
 
     try {
-      return await repository.deleteSet(user.id, parsed.data);
+      return await repository.deleteSet(ownerId, parsed.data);
     } catch (error) {
       return sendRepositoryError(reply, error);
     }
   });
 
   app.get('/api/v1/measurements', async (request, reply) => {
-    const user = await getCurrentUser(request, repository, now());
-    if (!user) return reply.status(401).send({ error: 'Authentication required' });
-    return { items: await repository.listMeasurements(user.id) };
+    const ownerId = await getSportingOwnerId(request, repository, now());
+    if (!ownerId) return reply.status(401).send({ error: 'Authentication required' });
+    return { items: await repository.listMeasurements(ownerId) };
   });
 
   app.post('/api/v1/measurements', async (request, reply) => {
-    const user = await getCurrentUser(request, repository, now());
-    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    const ownerId = await getSportingOwnerId(request, repository, now());
+    if (!ownerId) return reply.status(401).send({ error: 'Authentication required' });
     const parsed = createMeasurementSchema.safeParse(request.body);
     if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() });
     try {
-      const result = await repository.createMeasurement(user.id, parsed.data);
+      const result = await repository.createMeasurement(ownerId, parsed.data);
       return reply.status(result.duplicate ? 200 : 201).send(result);
     } catch (error) {
       return sendRepositoryError(reply, error);
@@ -771,8 +920,8 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
   });
 
   app.patch('/api/v1/measurements/:measurementId', async (request, reply) => {
-    const user = await getCurrentUser(request, repository, now());
-    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    const ownerId = await getSportingOwnerId(request, repository, now());
+    if (!ownerId) return reply.status(401).send({ error: 'Authentication required' });
     const measurementId = (request.params as { measurementId?: unknown }).measurementId;
     const parsed = updateMeasurementSchema.safeParse({
       ...(request.body as object),
@@ -780,15 +929,15 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
     });
     if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() });
     try {
-      return await repository.updateMeasurement(user.id, parsed.data);
+      return await repository.updateMeasurement(ownerId, parsed.data);
     } catch (error) {
       return sendRepositoryError(reply, error);
     }
   });
 
   app.delete('/api/v1/measurements/:measurementId', async (request, reply) => {
-    const user = await getCurrentUser(request, repository, now());
-    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    const ownerId = await getSportingOwnerId(request, repository, now());
+    if (!ownerId) return reply.status(401).send({ error: 'Authentication required' });
     const measurementId = (request.params as { measurementId?: unknown }).measurementId;
     const parsed = deleteMeasurementSchema.safeParse({
       ...(request.body as object),
@@ -796,15 +945,15 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
     });
     if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() });
     try {
-      return await repository.deleteMeasurement(user.id, parsed.data);
+      return await repository.deleteMeasurement(ownerId, parsed.data);
     } catch (error) {
       return sendRepositoryError(reply, error);
     }
   });
 
   app.post('/api/v1/sync', async (request, reply) => {
-    const user = await getCurrentUser(request, repository, now());
-    if (!user) return reply.status(401).send({ error: 'Authentication required' });
+    const ownerId = await getSportingOwnerId(request, repository, now());
+    if (!ownerId) return reply.status(401).send({ error: 'Authentication required' });
 
     const parsed = syncMutationSchema.safeParse(request.body);
     if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() });
@@ -816,43 +965,43 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
           const { clientMutationId: _clientMutationId, ...input } = parsed.data.payload;
           result = {
             entityType: 'exercise' as const,
-            entity: await repository.createExercise(user.id, input),
+            entity: await repository.createExercise(ownerId, input),
             duplicate: false,
           };
           break;
         }
         case 'exercise-preference.set':
-          result = await repository.setExercisePreference(user.id, parsed.data.payload);
+          result = await repository.setExercisePreference(ownerId, parsed.data.payload);
           break;
         case 'workout.create':
-          result = await repository.createWorkout(user.id, parsed.data.payload);
+          result = await repository.createWorkout(ownerId, parsed.data.payload);
           break;
         case 'workout.update':
-          result = await repository.updateWorkout(user.id, parsed.data.payload);
+          result = await repository.updateWorkout(ownerId, parsed.data.payload);
           break;
         case 'workout.touch':
-          result = await repository.touchWorkout(user.id, parsed.data.payload);
+          result = await repository.touchWorkout(ownerId, parsed.data.payload);
           break;
         case 'workout.delete':
-          result = await repository.deleteWorkout(user.id, parsed.data.payload);
+          result = await repository.deleteWorkout(ownerId, parsed.data.payload);
           break;
         case 'set.create':
-          result = await repository.createSet(user.id, parsed.data.payload);
+          result = await repository.createSet(ownerId, parsed.data.payload);
           break;
         case 'set.update':
-          result = await repository.updateSet(user.id, parsed.data.payload);
+          result = await repository.updateSet(ownerId, parsed.data.payload);
           break;
         case 'set.delete':
-          result = await repository.deleteSet(user.id, parsed.data.payload);
+          result = await repository.deleteSet(ownerId, parsed.data.payload);
           break;
         case 'measurement.create':
-          result = await repository.createMeasurement(user.id, parsed.data.payload);
+          result = await repository.createMeasurement(ownerId, parsed.data.payload);
           break;
         case 'measurement.update':
-          result = await repository.updateMeasurement(user.id, parsed.data.payload);
+          result = await repository.updateMeasurement(ownerId, parsed.data.payload);
           break;
         case 'measurement.delete':
-          result = await repository.deleteMeasurement(user.id, parsed.data.payload);
+          result = await repository.deleteMeasurement(ownerId, parsed.data.payload);
           break;
       }
       const created =
@@ -880,6 +1029,70 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
   return app;
 }
 
+function sportingExerciseReferences(body: unknown): string[] {
+  if (!body || typeof body !== 'object') return [];
+  const input = body as Record<string, unknown>;
+  const references: string[] = [];
+  if (typeof input.exerciseId === 'string') references.push(input.exerciseId);
+  for (const key of ['payload', 'set', 'changes'])
+    references.push(...sportingExerciseReferences(input[key]));
+  if (Array.isArray(input.exercises)) {
+    for (const item of input.exercises) references.push(...sportingExerciseReferences(item));
+  }
+  return references;
+}
+
+function sportingAction(method: string, route: string, body: unknown): string {
+  if (route === '/api/v1/sync' && body && typeof body === 'object' && 'type' in body)
+    return String(body.type);
+  if (route === '/api/v1/exercises/discover') return 'exercise.discover';
+  const kind = route.split('/')[3];
+  const entity =
+    (
+      {
+        workouts: 'workout',
+        sets: 'set',
+        measurements: 'measurement',
+        exercises: 'exercise',
+        'exercise-discoveries': 'exercise-discovery',
+      } as Record<string, string>
+    )[kind] ?? kind;
+  const action =
+    method === 'DELETE'
+      ? entity === 'exercise-discovery'
+        ? 'cancel'
+        : 'delete'
+      : method === 'POST'
+        ? entity === 'exercise-discovery'
+          ? 'start'
+          : 'create'
+        : 'update';
+  return `${entity}.${action}`;
+}
+
+function parseExerciseRevision(request: FastifyRequest): number | undefined {
+  const value = request.headers['if-match'];
+  if (typeof value !== 'string' || !/^"?[1-9]\d*"?$/.test(value)) return undefined;
+  const revision = Number(value.replaceAll('"', ''));
+  return Number.isSafeInteger(revision) ? revision : undefined;
+}
+
+function isSportingRoute(url: string) {
+  return /^\/api\/v1\/(?:workouts|sets|measurements|exercises|exercise-preferences|exercise-discoveries|sync|journal-activity)(?:\/|$)/.test(
+    url,
+  );
+}
+
+async function getSportingOwnerId(
+  request: FastifyRequest,
+  repository: WorkoutRepository,
+  now: Date,
+) {
+  const actor = await getCurrentUser(request, repository, now);
+  if (!actor) return null;
+  return (request.headers['x-athlete-id'] as string | undefined) ?? actor.id;
+}
+
 async function getCurrentUser(request: FastifyRequest, repository: WorkoutRepository, now: Date) {
   const sessionToken = request.cookies[sessionCookieName];
   if (!sessionToken) return developmentUserFor(request);
@@ -901,6 +1114,9 @@ function safeReturnTo(value: unknown) {
 }
 
 function sendRepositoryError(reply: FastifyReply, error: unknown) {
+  if (error instanceof RepositoryTrainerAccessError) {
+    return reply.status(403).send({ code: error.code, error: error.message });
+  }
   if (error instanceof RepositoryInviteError) {
     const statusCode =
       error.code === 'invite_expired' ? 410 : error.code === 'invite_email_mismatch' ? 403 : 409;

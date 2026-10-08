@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { Exercise } from '@mighty-cringe/contracts';
 
 import type { LocalSet } from '../lib/db';
+import { AthleteContextProvider } from './AthleteContext';
 import {
   claimSetSubmission,
   keyboardViewportStyle,
@@ -41,6 +42,35 @@ const existingSet: LocalSet = {
 };
 
 describe('SetSheet', () => {
+  it('identifies the athlete and offers text entry without a voice trigger in delegated mode', () => {
+    const html = renderToStaticMarkup(
+      <AthleteContextProvider
+        athlete={{
+          id: '10000000-0000-4000-8000-000000000002',
+          displayName: 'Дмитрий Иванов',
+          avatarUrl: null,
+          access: 'manage',
+          linkId: '10000000-0000-4000-8000-000000000009',
+          linkedAt: '2026-10-08T00:00:00.000Z',
+        }}
+      >
+        <SetSheet
+          defaults={null}
+          exercise={exercise}
+          initial={null}
+          onClose={() => {}}
+          onDelete={null}
+          onExplain={() => {}}
+          onSave={() => {}}
+        />
+      </AthleteContextProvider>,
+    );
+    expect(html).toContain('Дмитрий Иванов');
+    expect(html).toContain('aria-label="Написать подход"');
+    expect(html).not.toContain('Сказать или написать');
+    expect(html).not.toContain('<rect x="9" y="2" width="6" height="12"');
+  });
+
   it('opens without forcing iOS Safari to focus and move the viewport', () => {
     const html = renderToStaticMarkup(
       <SetSheet

@@ -1,0 +1,52 @@
+.journal-activity {
+  margin-top: 24px;
+}
+
+.journal-activity-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.journal-activity-heading h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.journal-activity-heading .button {
+  flex: none;
+}
+
+.journal-activity > p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.journal-activity-list {
+  display: grid;
+  max-height: 360px;
+  margin: 12px 0 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.journal-activity-list li {
+  display: grid;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+  padding: 12px 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.journal-activity-list li:last-child {
+  border: 0;
+}
+
+.journal-activity-list time {
+  color: var(--muted);
+  font-size: 12px;
+}

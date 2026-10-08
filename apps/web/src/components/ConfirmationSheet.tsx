@@ -1,3 +1,4 @@
+import { AthleteContextLabel } from './AthleteContext';
 import { tr, usePreferences } from '../lib/preferences';
 import type { PendingConfirmation } from '../lib/confirmation';
 
@@ -33,6 +34,7 @@ export function ConfirmationSheet({
         role="dialog"
       >
         <div className="sheet-handle" />
+        <AthleteContextLabel />
         <p className="eyebrow">{eyebrow}</p>
         <h2>{step.title}</h2>
         <p className="confirmation-message">{step.message}</p>
