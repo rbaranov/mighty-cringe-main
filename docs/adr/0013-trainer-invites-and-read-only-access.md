@@ -4,9 +4,9 @@
 - Date: 2026-07-22
 
 The read-only-only policy below records the original decision. ADR 0022 adds athlete-authorized
-management of sporting data through an explicit journal context. Existing links remain read-only
-until the athlete grants management permission; invitation protections and explicit revocation
-remain in force.
+management of sporting data through an explicit journal context. Its single-access follow-up makes
+every active link grant sporting journal management without a second permission step; invitation
+protections and full revocation remain in force.
 
 ## Context (original decision)
 

@@ -166,12 +166,8 @@ export class RepositoryInviteError extends Error {
 }
 
 export class RepositoryTrainerAccessError extends Error {
-  constructor(readonly code: 'trainer_access_revoked' | 'trainer_manage_required') {
-    super(
-      code === 'trainer_access_revoked'
-        ? 'Trainer access is no longer available'
-        : 'Athlete permission to manage training is required',
-    );
+  constructor(readonly code: 'trainer_access_revoked') {
+    super('Trainer access is no longer available');
   }
 }
 
@@ -261,7 +257,6 @@ export interface WorkoutRepository {
   ): Promise<TrainerSummary>;
   getAthleteTrainer(athleteId: string): Promise<TrainerSummary | null>;
   listTrainerAthletes(trainerId: string): Promise<TrainerAthleteSummary[]>;
-  updateTrainerAccess(athleteId: string, access: TrainerAccess, now: Date): Promise<TrainerSummary>;
   withTrainerAccess<T>(
     scope: TrainerDataScope,
     operation: () => Promise<{ value: T; successful: boolean }>,
@@ -1057,7 +1052,7 @@ export class MemoryRepository implements WorkoutRepository {
       trainerId: trainer.id,
       athleteId,
       active: true,
-      access: 'read',
+      access: 'manage',
       revokedAt: null,
       createdAt: now,
       updatedAt: now,
@@ -1088,39 +1083,13 @@ export class MemoryRepository implements WorkoutRepository {
                 displayName: athlete.displayName,
                 avatarUrl: athlete.avatarUrl,
                 linkedAt: link.createdAt.toISOString(),
-                access: link.access,
+                access: 'manage' as const,
                 linkId: link.id,
               },
             ]
           : [];
       })
       .sort((left, right) => left.displayName.localeCompare(right.displayName));
-  }
-
-  async updateTrainerAccess(athleteId: string, access: TrainerAccess, now: Date) {
-    const link = [...this.trainerLinks.values()].find(
-      (item) => item.athleteId === athleteId && item.active,
-    );
-    const trainer = link ? this.users.get(link.trainerId) : null;
-    if (!link || !trainer) throw new RepositoryNotFoundError();
-    if (link.access !== access) {
-      this.trainerLinks.delete(link.id);
-      link.id = randomUUID();
-      link.access = access;
-      link.updatedAt = now;
-      this.trainerLinks.set(link.id, link);
-      this.trainerAudit.push({
-        id: randomUUID(),
-        actorId: athleteId,
-        athleteId,
-        linkId: link.id,
-        write: true,
-        operation: 'trainer.access.update',
-        details: { access },
-        createdAt: now.toISOString(),
-      });
-    }
-    return toTrainerSummary(trainer, link);
   }
 
   async withTrainerAccess<T>(
@@ -1138,8 +1107,6 @@ export class MemoryRepository implements WorkoutRepository {
     ) {
       throw new RepositoryTrainerAccessError('trainer_access_revoked');
     }
-    if (scope.write && link.access !== 'manage')
-      throw new RepositoryTrainerAccessError('trainer_manage_required');
     const result = await operation();
     if (scope.write && result.successful)
       this.trainerAudit.push({ id: randomUUID(), ...scope, createdAt: new Date().toISOString() });
@@ -2491,6 +2458,7 @@ export class PostgresRepository implements WorkoutRepository {
           trainerId: trainer.id,
           athleteId,
           active: true,
+          access: 'manage',
           revokedAt: null,
           createdAt: now,
           updatedAt: now,
@@ -2545,40 +2513,9 @@ export class PostgresRepository implements WorkoutRepository {
       displayName: record.displayName,
       avatarUrl: record.avatarUrl,
       linkedAt: record.linkedAt.toISOString(),
-      access: record.access,
+      access: 'manage' as const,
       linkId: record.linkId,
     }));
-  }
-
-  async updateTrainerAccess(athleteId: string, access: TrainerAccess, now: Date) {
-    await this.db.transaction(async (transaction) => {
-      const [link] = await transaction
-        .select()
-        .from(trainerAthleteLinks)
-        .where(
-          and(eq(trainerAthleteLinks.athleteId, athleteId), eq(trainerAthleteLinks.active, true)),
-        )
-        .for('update');
-      if (!link) throw new RepositoryNotFoundError();
-      if (link.access === access) return;
-      const linkId = randomUUID();
-      await transaction
-        .update(trainerAthleteLinks)
-        .set({ id: linkId, access, accessChangedAt: now, updatedAt: now })
-        .where(eq(trainerAthleteLinks.id, link.id));
-      await transaction.insert(trainerAuditEvents).values({
-        id: randomUUID(),
-        actorId: athleteId,
-        athleteId,
-        linkId,
-        operation: 'trainer.access.update',
-        details: { access, previousAccess: link.access },
-        createdAt: now,
-      });
-    });
-    const trainer = await this.getAthleteTrainer(athleteId);
-    if (!trainer) throw new RepositoryNotFoundError();
-    return trainer;
   }
 
   async withTrainerAccess<T>(
@@ -2606,8 +2543,6 @@ export class PostgresRepository implements WorkoutRepository {
         .for('update');
       if (!actor || !canUseTrainerConsole(actor.role) || !link)
         throw new RepositoryTrainerAccessError('trainer_access_revoked');
-      if (scope.write && link.access !== 'manage')
-        throw new RepositoryTrainerAccessError('trainer_manage_required');
       return this.transactionContext.run(
         transaction as unknown as ReturnType<typeof createDatabase>,
         async () => {
@@ -3143,7 +3078,7 @@ function toTrainerSummary(
     displayName: user.displayName,
     avatarUrl: user.avatarUrl,
     linkId: link.id,
-    access: link.access,
+    access: 'manage',
   };
 }
 

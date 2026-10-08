@@ -1,6 +1,6 @@
 # ADR 0022: Trainer access to an athlete journal through an explicit data context
 
-- Status: accepted; owner authorized merge on 2026-10-08
+- Status: accepted; owner authorized the single-access follow-up merge on 2026-10-08
 - Date: 2026-10-08
 - Supersedes: the read-only-only trainer policy in [ADR 0013](./0013-trainer-invites-and-read-only-access.md)
 - Extends: [ADR 0004](./0004-offline-sync-and-conflicts.md), [ADR 0020](./0020-workout-active-time-and-auto-completion.md),
@@ -27,11 +27,18 @@ Interface language and display units remain the operator's preferences.
 
 ### Consent and server authorization
 
-Trainer links retain the single-active-trainer constraint. Existing and newly accepted invitations
-start with `access = read`; deployment does not upgrade anyone's permission. The athlete can explicitly
-grant or withdraw `manage` through `PATCH /api/v1/trainer/relationship`. Removing the relationship
-remains available to both parties. The current read-only trainer dashboard remains usable without
-management permission.
+Trainer links retain the single-active-trainer constraint. An active relationship grants full access
+to the sporting journal: accepting the invitation is the only permission step. Both existing and
+newly accepted links follow this rule. The athlete can revoke access entirely, and the trainer can
+disconnect the relationship. There is no separate read-only level or editing switch.
+
+For rolling deployments and cached clients, the legacy `trainer_access` enum and `access` column
+remain. Migration `0018` changes the default to `manage` and upgrades only active `read` links without
+changing their identifiers; inactive links stay inactive. A database CHECK requires every active link
+to have `manage`, so an old API instance cannot successfully downgrade it during rollout. Runtime authorization depends on the active
+relationship rather than this legacy field; summaries return `access: manage`. The old
+`PATCH /api/v1/trainer/relationship` returns `410 trainer_access_model_changed` rather than pretending
+that a downgrade succeeded. Full revocation through DELETE remains available to cached clients.
 
 `GET /api/v1/trainer/athletes/:athleteId/context` returns the currently authorized athlete summary,
 including `access` and `linkId`. Entering a managed journal requires a fresh online check. Sporting
@@ -41,9 +48,9 @@ a different account, the server returns `403 actor_session_changed` before runni
 This prevents a stale tab from sending its own journal queue into an account opened in another tab.
 The header is a consistency check, not an authentication credential; the server still authenticates
 the session. Older clients without it remain compatible.
-An access-level change rotates the link identifier; accepting a replacement invitation also creates
-a new identifier. Old queued operations therefore remain invalid even if the same trainer later
-receives management permission again.
+Accepting a replacement invitation creates a new link identifier. Old queued operations therefore
+remain invalid even if the same trainer reconnects. Identifiers rotated by the previous access-level
+model remain invalid too; migration never restores them.
 
 Scoped access is restricted to workouts, sets, measurements, exercises, personal exercise preferences,
 sync, exercise discovery, and the journal activity feed. Authentication, account preferences, raw
@@ -51,8 +58,8 @@ voice recordings and processing, notifications, administrative functions, and tr
 management reject these headers. A trainer cannot use athlete context to grant themselves permission.
 The owner remains responsible for account access and consent.
 
-Every scoped request checks the current trainer role, active link, exact link identifier, and required
-access level. Existing repository ownership checks still apply; referenced personal exercises must
+Every scoped request checks the current trainer role, active link, and exact link identifier.
+Existing repository ownership checks still apply; referenced personal exercises must
 also belong to the selected athlete. Global exercise catalog rows cannot be edited or deleted through
 personal exercise endpoints. Personal catalog deletion preserves historical workouts and sets, as in
 ADR 0018.
@@ -61,7 +68,7 @@ In PostgreSQL, the authorization check locks the current trainer role and link. 
 operations and their audit event run in that same transaction, with response sending deferred until
 commit. A concurrent revocation waits for an already authorized operation; after revocation commits,
 subsequent requests and retries cannot use the old grant. Invalid access returns `403` with
-`trainer_access_revoked` or `trainer_manage_required`.
+`trainer_access_revoked`.
 
 ### Local data and offline delivery
 
@@ -120,7 +127,7 @@ not automatic undo or a complete version-restoration interface.
 ## Consequences and limits
 
 - Athlete and trainer use the same sporting screens with an explicit, visible owner boundary.
-- Management permission is revocable and cannot silently arise from an old read-only invitation.
+- A linked trainer can manage the sporting journal immediately; access can be revoked in full.
 - A trainer's own workout, drafts, and pending changes remain separate while working with an athlete.
 - Account control, voice permissions, notifications, and global catalog administration are outside
   delegated journal access. Assigning trainer roles remains separate administration work.

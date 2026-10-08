@@ -1,5 +1,6 @@
 import {
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -108,7 +109,7 @@ export const trainerAthleteLinks = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     active: boolean('active').notNull().default(true),
-    access: trainerAccessEnum('access').notNull().default('read'),
+    access: trainerAccessEnum('access').notNull().default('manage'),
     accessChangedAt: timestamp('access_changed_at', { withTimezone: true }),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -119,6 +120,10 @@ export const trainerAthleteLinks = pgTable(
       .on(table.athleteId)
       .where(sql`${table.active} = true`),
     index('trainer_athlete_trainer_idx').on(table.trainerId),
+    check(
+      'active_trainer_link_has_manage_access',
+      sql`NOT ${table.active} OR ${table.access} = 'manage'`,
+    ),
   ],
 );
 

@@ -40,8 +40,8 @@ test(
       athlete.email,
       new Date(),
     );
-    assert.equal(initial.access, 'read');
-    const grant = await repository.updateTrainerAccess(athlete.id, 'manage', new Date());
+    assert.equal(initial.access, 'manage');
+    const grant = initial;
     const scope = {
       actorId: trainer.id,
       athleteId: athlete.id,
@@ -123,7 +123,7 @@ test(
     });
     await inside;
     let revoked = false;
-    const revoke = repository.updateTrainerAccess(athlete.id, 'read', new Date()).then(() => {
+    const revoke = repository.revokeAthleteTrainer(athlete.id, new Date()).then(() => {
       revoked = true;
     });
     await new Promise((resolve) => setTimeout(resolve, 30));
@@ -134,7 +134,25 @@ test(
       repository.withTrainerAccess(scope, async () => ({ value: true, successful: true })),
       RepositoryTrainerAccessError,
     );
-    await repository.updateTrainerAccess(athlete.id, 'manage', new Date());
+    const replacementHash = randomUUID();
+    await repository.createTrainerInvite(
+      {
+        id: randomUUID(),
+        trainerId: trainer.id,
+        email: athlete.email,
+        tokenHash: replacementHash,
+        expiresAt: new Date(Date.now() + 60000),
+      },
+      new Date(),
+    );
+    const replacement = await repository.acceptTrainerInvite(
+      replacementHash,
+      athlete.id,
+      athlete.email,
+      new Date(),
+    );
+    assert.equal(replacement.access, 'manage');
+    assert.notEqual(replacement.linkId, grant.linkId);
     assert.equal(
       (await app.inject({ method: 'GET', url: '/api/v1/workouts', headers })).statusCode,
       403,

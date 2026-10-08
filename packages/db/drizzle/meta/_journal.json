@@ -127,6 +127,13 @@
       "when": 1791440137174,
       "tag": "0017_hesitant_screwball",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791451938035,
+      "tag": "0018_mysterious_kid_colt",
+      "breakpoints": true
     }
   ]
 }

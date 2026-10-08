@@ -36,8 +36,7 @@ function renderHeader(selected: TrainerAthleteSummary | null, actor = user) {
         {
           ...athlete,
           id: '10000000-0000-4000-8000-000000000003',
-          displayName: 'Подопечный без разрешения',
-          access: 'read',
+          displayName: 'Второй подопечный',
         },
       ]}
       onSelectAthlete={vi.fn()}
@@ -48,12 +47,14 @@ function renderHeader(selected: TrainerAthleteSummary | null, actor = user) {
 }
 
 describe('athlete context identity', () => {
-  it('keeps full selected identity accessible, an explicit return, and both access levels in the chooser', () => {
+  it('keeps selected identity and return accessible while every connected athlete opens the same journal', () => {
     const html = renderHeader(athlete);
     expect(html).toContain(`Подопечный: ${athlete.displayName}. Сменить профиль`);
     expect(html).toContain('>К себе</button>');
-    expect(html).toContain('Просмотр и изменения');
-    expect(html).toContain('Только просмотр');
+    expect(html.match(/>Спортивный журнал<\/small>/g)).toHaveLength(2);
+    expect(html).toContain('Второй подопечный');
+    expect(html).not.toContain('Только просмотр');
+    expect(html).not.toContain('разрешение');
     expect(html).toContain('Управлять подопечными');
     expect(html).not.toContain('Привет, Дмитрий');
   });

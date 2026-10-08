@@ -20,7 +20,6 @@ import {
   trainerInviteAcceptSchema,
   trainerInviteCreateSchema,
   trainerInviteIdSchema,
-  updateTrainerAccessSchema,
   updateMeasurementSchema,
   updateNotificationPreferencesSchema,
   updateExerciseSchema,
@@ -398,13 +397,11 @@ export function buildApp(repository: WorkoutRepository, options: AppOptions = {}
   app.patch('/api/v1/trainer/relationship', async (request, reply) => {
     const user = await getCurrentUser(request, repository, now());
     if (!user) return reply.status(401).send({ error: 'Authentication required' });
-    const input = updateTrainerAccessSchema.safeParse(request.body);
-    if (!input.success) return reply.status(400).send({ error: input.error.flatten() });
-    try {
-      return { trainer: await repository.updateTrainerAccess(user.id, input.data.access, now()) };
-    } catch (error) {
-      return sendRepositoryError(reply, error);
-    }
+    return reply.status(410).send({
+      code: 'trainer_access_model_changed',
+      error:
+        'Доступ тренера теперь включает ведение журнала. Обнови приложение. Чтобы закрыть доступ, отключи тренера.',
+    });
   });
 
   app.get('/api/v1/trainer/athletes/:athleteId/context', async (request, reply) => {

@@ -7,7 +7,7 @@ import { MemoryRepository } from './repository.js';
 
 const exerciseId = '10000000-0000-4000-8000-000000000001';
 
-test('athlete permission scopes sporting reads and writes, preserves actor identity, and rejects stale grants', async (t) => {
+test('one active trainer link manages sporting data, preserves actor identity, and rejects stale links', async (t) => {
   const repository = new MemoryRepository();
   const createUser = (name: string, role: 'athlete' | 'trainer') =>
     repository.upsertGoogleUser(
@@ -39,11 +39,11 @@ test('athlete permission scopes sporting reads and writes, preserves actor ident
     return repository.acceptTrainerInvite(tokenHash, athlete.id, athlete.email, new Date());
   }
   const initialLink = await linkAthlete();
-  assert.equal(initialLink.access, 'read');
+  assert.equal(initialLink.access, 'manage');
   coachApp.delete('/api/v1/sets/:setId/no-content', async (_request, reply) =>
     reply.status(204).send(),
   );
-  const readHeaders = { 'x-athlete-id': athlete.id, 'x-trainer-link-id': initialLink.linkId };
+  const headers = { 'x-athlete-id': athlete.id, 'x-trainer-link-id': initialLink.linkId };
   const workout = {
     id: randomUUID(),
     clientMutationId: randomUUID(),
@@ -88,7 +88,7 @@ test('athlete permission scopes sporting reads and writes, preserves actor ident
   const history = await coachApp.inject({
     method: 'GET',
     url: '/api/v1/workouts',
-    headers: readHeaders,
+    headers: headers,
   });
   assert.equal(history.statusCode, 200);
   assert.equal(history.json().items[0].id, workout.id);
@@ -97,7 +97,7 @@ test('athlete permission scopes sporting reads and writes, preserves actor ident
     0,
   );
   assert.equal(
-    (await strangerApp.inject({ method: 'GET', url: '/api/v1/workouts', headers: readHeaders }))
+    (await strangerApp.inject({ method: 'GET', url: '/api/v1/workouts', headers: headers }))
       .statusCode,
     403,
   );
@@ -106,28 +106,23 @@ test('athlete permission scopes sporting reads and writes, preserves actor ident
       await coachApp.inject({
         method: 'GET',
         url: '/api/v1/workouts',
-        headers: { ...readHeaders, 'x-athlete-id': stranger.id },
+        headers: { ...headers, 'x-athlete-id': stranger.id },
       })
     ).statusCode,
     403,
   );
-  const deniedWrite = await coachApp.inject({
-    method: 'POST',
-    url: '/api/v1/workouts',
-    headers: readHeaders,
-    payload: { ...workout, id: randomUUID(), clientMutationId: randomUUID() },
-  });
-  assert.equal(deniedWrite.json().code, 'trainer_manage_required');
-
-  const grant = await athleteApp.inject({
+  const rejectedLegacyChange = await athleteApp.inject({
     method: 'PATCH',
     url: '/api/v1/trainer/relationship',
-    payload: { access: 'manage' },
+    payload: { access: 'read' },
   });
-  assert.equal(grant.statusCode, 200);
-  assert.equal(grant.json().trainer.access, 'manage');
-  assert.notEqual(grant.json().trainer.linkId, initialLink.linkId);
-  const headers = { 'x-athlete-id': athlete.id, 'x-trainer-link-id': grant.json().trainer.linkId };
+  assert.equal(rejectedLegacyChange.statusCode, 410);
+  assert.equal(rejectedLegacyChange.json().code, 'trainer_access_model_changed');
+  const relationship = (
+    await athleteApp.inject({ method: 'GET', url: '/api/v1/trainer/relationship' })
+  ).json().trainer;
+  assert.equal(relationship.linkId, initialLink.linkId);
+  assert.equal(relationship.access, 'manage');
   const noContent = await coachApp.inject({
     method: 'DELETE',
     url: `/api/v1/sets/${randomUUID()}/no-content`,
@@ -322,36 +317,107 @@ test('athlete permission scopes sporting reads and writes, preserves actor ident
     403,
   );
 
-  await athleteApp.inject({
-    method: 'PATCH',
-    url: '/api/v1/trainer/relationship',
-    payload: { access: 'read' },
-  });
+  assert.equal(
+    (await athleteApp.inject({ method: 'DELETE', url: '/api/v1/trainer/relationship' })).statusCode,
+    204,
+  );
   const stale = await coachApp.inject({
     method: 'POST',
     url: '/api/v1/sync',
     headers,
     payload: { type: 'set.create', payload: setInput },
   });
+  assert.equal(stale.statusCode, 403);
   assert.equal(stale.json().code, 'trainer_access_revoked');
-  await athleteApp.inject({
-    method: 'PATCH',
-    url: '/api/v1/trainer/relationship',
-    payload: { access: 'manage' },
-  });
-  assert.equal(
-    (await coachApp.inject({ method: 'GET', url: '/api/v1/workouts', headers })).statusCode,
-    403,
-  );
-  assert.equal(
-    (await athleteApp.inject({ method: 'DELETE', url: '/api/v1/trainer/relationship' })).statusCode,
-    204,
-  );
   const newLink = await linkAthlete();
-  assert.equal(newLink.access, 'read');
+  assert.equal(newLink.access, 'manage');
   assert.notEqual(newLink.linkId, headers['x-trainer-link-id']);
   assert.equal(
     (await coachApp.inject({ method: 'GET', url: '/api/v1/workouts', headers })).statusCode,
     403,
+  );
+  const reconnected = await coachApp.inject({
+    method: 'POST',
+    url: '/api/v1/sync',
+    headers: { ...headers, 'x-trainer-link-id': newLink.linkId },
+    payload: {
+      type: 'set.create',
+      payload: {
+        ...setInput,
+        clientMutationId: randomUUID(),
+        set: { ...setInput.set, id: randomUUID() },
+      },
+    },
+  });
+  assert.equal(reconnected.statusCode, 201, reconnected.body);
+});
+
+test('an active pre-migration read link provides full access, but inactive links and removed roles do not', async () => {
+  const repository = new MemoryRepository();
+  const trainer = await repository.upsertGoogleUser(
+    {
+      subject: 'legacy-coach',
+      email: 'legacy-coach@example.test',
+      displayName: 'Coach',
+      avatarUrl: null,
+    },
+    'trainer',
+  );
+  const athlete = await repository.upsertGoogleUser(
+    {
+      subject: 'legacy-athlete',
+      email: 'legacy-athlete@example.test',
+      displayName: 'Athlete',
+      avatarUrl: null,
+    },
+    'athlete',
+  );
+  const tokenHash = randomUUID();
+  await repository.createTrainerInvite(
+    {
+      id: randomUUID(),
+      trainerId: trainer.id,
+      email: null,
+      tokenHash,
+      expiresAt: new Date(Date.now() + 60000),
+    },
+    new Date(),
+  );
+  const link = await repository.acceptTrainerInvite(
+    tokenHash,
+    athlete.id,
+    athlete.email,
+    new Date(),
+  );
+  // Simulate the old persisted value before migration. Production has no tier-changing operation.
+  const persisted = repository as unknown as {
+    trainerLinks: Map<string, { access: 'read' | 'manage'; active: boolean }>;
+    users: Map<string, { role: string }>;
+  };
+  persisted.trainerLinks.get(link.linkId)!.access = 'read';
+  assert.equal((await repository.getAthleteTrainer(athlete.id))?.access, 'manage');
+  assert.equal((await repository.listTrainerAthletes(trainer.id))[0].access, 'manage');
+  const scope = {
+    actorId: trainer.id,
+    athleteId: athlete.id,
+    linkId: link.linkId,
+    write: true,
+    operation: 'set.create',
+    details: {},
+  };
+  assert.equal(
+    await repository.withTrainerAccess(scope, async () => ({ value: true, successful: true })),
+    true,
+  );
+  persisted.users.get(trainer.id)!.role = 'athlete';
+  await assert.rejects(
+    repository.withTrainerAccess(scope, async () => ({ value: true, successful: true })),
+    /Trainer access is no longer available/,
+  );
+  persisted.users.get(trainer.id)!.role = 'trainer';
+  await repository.revokeAthleteTrainer(athlete.id, new Date());
+  await assert.rejects(
+    repository.withTrainerAccess(scope, async () => ({ value: true, successful: true })),
+    /Trainer access is no longer available/,
   );
 });

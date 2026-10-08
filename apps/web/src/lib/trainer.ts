@@ -5,6 +5,12 @@ import type {
   TrainerSummary,
   WorkoutRecord,
 } from '@mighty-cringe/contracts';
+import {
+  assertDataContext,
+  getDataContext,
+  invalidateDataContext,
+  type DataContext,
+} from './dataContext';
 
 type Request = typeof fetch;
 
@@ -15,14 +21,16 @@ export async function acceptTrainerInviteFromUrl(
   const url = new URL(href);
   const token = url.searchParams.get('trainerInvite');
   if (!token) return null;
-  const response = await request('/api/v1/trainer/invites/accept', {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ token }),
-  });
-  if (!response.ok) throw await trainerRequestError(response, 'Не удалось принять приглашение');
-  const payload = (await response.json()) as { trainer: TrainerSummary };
+  const payload = await requestJson<{ trainer: TrainerSummary }>(
+    '/api/v1/trainer/invites/accept',
+    request,
+    {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token }),
+    },
+  );
   url.searchParams.delete('trainerInvite');
   return { trainer: payload.trainer, cleanUrl: `${url.pathname}${url.search}${url.hash}` };
 }
@@ -37,16 +45,6 @@ export async function getTrainerRelationship(request: Request = fetch) {
 
 export async function revokeTrainerRelationship(request: Request = fetch) {
   await requestNoContent('/api/v1/trainer/relationship', 'DELETE', request);
-}
-
-export async function updateTrainerRelationshipAccess(
-  access: 'read' | 'manage',
-  request: Request = fetch,
-) {
-  return requestJson<{ trainer: TrainerSummary }>('/api/v1/trainer/relationship', request, {
-    method: 'PATCH',
-    body: JSON.stringify({ access }),
-  });
 }
 
 export async function listTrainerAthletes(request: Request = fetch) {
@@ -98,18 +96,61 @@ export async function loadTrainerAthlete(athleteId: string, request: Request = f
 }
 
 async function requestJson<T>(url: string, request: Request, init: RequestInit = {}): Promise<T> {
-  const response = await request(url, {
-    credentials: 'include',
-    headers: { 'content-type': 'application/json', ...init.headers },
-    ...init,
-  });
+  const context = getDataContext();
+  const response = await trainerRequest(
+    url,
+    request,
+    {
+      credentials: 'include',
+      headers: { 'content-type': 'application/json', ...init.headers },
+      ...init,
+    },
+    context,
+  );
   if (!response.ok) throw await trainerRequestError(response, 'Ошибка доступа к данным тренера');
-  return (await response.json()) as T;
+  const payload = (await response.json()) as T;
+  assertDataContext(context);
+  return payload;
 }
 
 async function requestNoContent(url: string, method: string, request: Request) {
-  const response = await request(url, { method, credentials: 'include' });
+  const response = await trainerRequest(
+    url,
+    request,
+    { method, credentials: 'include' },
+    getDataContext(),
+  );
   if (!response.ok) throw await trainerRequestError(response, 'Не удалось отозвать доступ');
+}
+
+async function trainerRequest(
+  url: string,
+  request: Request,
+  init: RequestInit,
+  context: DataContext,
+) {
+  assertDataContext(context);
+  const headers = new Headers(init.headers);
+  headers.delete('X-Athlete-Id');
+  headers.delete('X-Trainer-Link-Id');
+  headers.delete('X-Actor-Id');
+  if (context.actorId) headers.set('X-Actor-Id', context.actorId);
+  const response = await request(url, { ...init, headers });
+  assertDataContext(context);
+  if (response.status === 403) {
+    const payload = (await response
+      .clone()
+      .json()
+      .catch(() => ({}))) as { code?: string; error?: string };
+    assertDataContext(context);
+    if ((payload.code ?? payload.error) === 'actor_session_changed') {
+      invalidateDataContext();
+      if (typeof window !== 'undefined')
+        window.dispatchEvent(new Event('mighty-cringe:unauthorized'));
+      throw new Error('Сессия аккаунта изменилась. Войди снова.');
+    }
+  }
+  return response;
 }
 
 async function trainerRequestError(response: Response, fallback: string) {
@@ -123,8 +164,6 @@ async function trainerRequestError(response: Response, fallback: string) {
     invite_email_mismatch: 'Приглашение создано для другого Google-аккаунта.',
     self_link: 'Нельзя подключить свой аккаунт как собственного тренера.',
     trainer_access_revoked: 'Подопечный отозвал доступ. Вернись к своим тренировкам.',
-    trainer_manage_required:
-      'Подопечный разрешил только просмотр. Для изменений нужно его согласие.',
   };
   return new Error((payload?.code && known[payload.code]) || payload?.error || fallback);
 }

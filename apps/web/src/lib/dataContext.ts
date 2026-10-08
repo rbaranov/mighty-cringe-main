@@ -81,7 +81,7 @@ export function setOwnDataContext() {
   return selectContext(ownContext);
 }
 
-/** Only call after the server has confirmed this exact relationship grants manage access. */
+/** Only call after the server has confirmed this exact trainer relationship is active. */
 export function setAthleteDataContext(input: {
   actorId: string;
   athleteId: string;
