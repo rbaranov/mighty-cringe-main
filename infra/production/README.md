@@ -59,7 +59,10 @@ Monitoring can be activated without SSH by setting the `HEALTHCHECKS_PING_URL` e
 in GitHub's `production` environment. The main-only deploy runner validates and atomically installs
 that one setting in the existing private host environment before preflight. An absent secret leaves
 the host configuration unchanged, including any already configured monitoring URL. Other production
-secrets stay on the server. See the [monitoring runbook](../../docs/deployment/hetzner-first-deploy.md#9-мониторинг-и-уведомления).
+secrets stay on the server. For initial activation or URL rotation, run **Deploy production** directly
+on the verified current `main` after saving the secret. The first CI-triggered deployment after secret
+creation received an empty value; the direct dispatch installed it successfully. See the
+[monitoring runbook](../../docs/deployment/hetzner-first-deploy.md#9-мониторинг-и-уведомления).
 
 Caddy obtains and renews TLS certificates after the domain records resolve to the server. The
 `migrate` applies the committed Drizzle migrations before the API and worker start. PostgreSQL is
