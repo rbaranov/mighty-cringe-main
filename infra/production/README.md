@@ -55,6 +55,12 @@ The **Deploy production** workflow can also be started manually on `main` to rep
 deployment of its current revision. A failed Compose operation or health check keeps the Actions
 run red and includes service status and bounded logs for diagnosis.
 
+Monitoring can be activated without SSH by setting the `HEALTHCHECKS_PING_URL` environment secret
+in GitHub's `production` environment. The main-only deploy runner validates and atomically installs
+that one setting in the existing private host environment before preflight. An absent secret leaves
+the host configuration unchanged, including any already configured monitoring URL. Other production
+secrets stay on the server. See the [monitoring runbook](../../docs/deployment/hetzner-first-deploy.md#9-мониторинг-и-уведомления).
+
 Caddy obtains and renews TLS certificates after the domain records resolve to the server. The
 `migrate` applies the committed Drizzle migrations before the API and worker start. PostgreSQL is
 private and has no published host port. The worker also publishes no port, but has outbound access

@@ -60,6 +60,12 @@ jobs:
           echo "deploy=true" >> "$GITHUB_OUTPUT"
           echo "Deploying verified main revision $DEPLOY_REVISION"
 
+      - name: Configure monitoring from the production environment secret
+        if: steps.revision.outputs.deploy == 'true'
+        env:
+          HEALTHCHECKS_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}
+        run: node scripts/configure-production-monitoring.mjs /etc/mighty-cringe/production.env
+
       - name: Validate production configuration
         if: steps.revision.outputs.deploy == 'true'
         id: configuration
