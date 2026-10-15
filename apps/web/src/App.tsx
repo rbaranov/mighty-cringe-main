@@ -1468,17 +1468,7 @@ function AuthenticatedAppContent({
   async function moveExercise(itemId: string, direction: -1 | 1) {
     assertLocalContext();
     if (!workoutContext) return;
-    const nextPlan = workoutContext.exercises
-      .map((item) => ({ ...item }))
-      .sort((left, right) => left.position - right.position);
-    const index = nextPlan.findIndex((item) => item.id === itemId);
-    const destination = index + direction;
-    if (index < 0 || destination < 0 || destination >= nextPlan.length) return;
-    if (nextPlan[index].supersetGroup !== nextPlan[destination].supersetGroup) {
-      nextPlan[index].supersetGroup = null;
-    }
-    [nextPlan[index], nextPlan[destination]] = [nextPlan[destination], nextPlan[index]];
-    await updateWorkoutPlan(nextPlan);
+    await updateWorkoutPlan(moveWorkoutPlanExercise(workoutContext.exercises, itemId, direction));
   }
 
   async function toggleSuperset(itemId: string) {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { WorkoutExercise } from '@mighty-cringe/contracts';
+import { workoutPlanSchema, type WorkoutExercise } from '@mighty-cringe/contracts';
 
 import {
   addExerciseToWorkoutPlan,
@@ -106,5 +106,110 @@ describe('workout groups', () => {
       1,
       1,
     ]);
+  });
+});
+
+describe('exercise ordering', () => {
+  it.each<{
+    name: string;
+    groups: (number | null)[];
+    source: number;
+    direction: -1 | 1;
+    expectedOrder: number[];
+  }>([
+    {
+      name: 'within a superset',
+      groups: [1, 1, 2, 2, 3, 3],
+      source: 0,
+      direction: 1,
+      expectedOrder: [1, 0, 2, 3, 4, 5],
+    },
+    {
+      name: 'up between three supersets',
+      groups: [1, 1, 2, 2, 3, 3],
+      source: 4,
+      direction: -1,
+      expectedOrder: [0, 1, 2, 4, 3, 5],
+    },
+    {
+      name: 'down between three supersets',
+      groups: [1, 1, 2, 2, 3, 3],
+      source: 3,
+      direction: 1,
+      expectedOrder: [0, 1, 2, 4, 3, 5],
+    },
+    {
+      name: 'from a standalone position into a superset',
+      groups: [1, 1, null],
+      source: 2,
+      direction: -1,
+      expectedOrder: [0, 2, 1],
+    },
+    {
+      name: 'from a superset into a standalone position',
+      groups: [null, 1, 1],
+      source: 1,
+      direction: -1,
+      expectedOrder: [1, 0, 2],
+    },
+    {
+      name: 'between a triset and a quadriset',
+      groups: [1, 1, 1, 2, 2, 2, 2],
+      source: 3,
+      direction: -1,
+      expectedOrder: [0, 1, 3, 2, 4, 5, 6],
+    },
+  ])(
+    'preserves group boundaries when swapping $name',
+    ({ groups, source, direction, expectedOrder }) => {
+      const plan = groups.map((group, position) => item(position, group));
+      const original = structuredClone(plan);
+
+      const moved = moveWorkoutPlanExercise(plan, plan[source].id, direction);
+
+      expect(moved.map((entry) => entry.id)).toEqual(expectedOrder.map((index) => plan[index].id));
+      expect(moved.map((entry) => entry.exerciseId)).toEqual(
+        expectedOrder.map((index) => plan[index].exerciseId),
+      );
+      expect(moved.map((entry) => entry.supersetGroup)).toEqual(groups);
+      expect(moved.map((entry) => entry.position)).toEqual(plan.map((entry) => entry.position));
+      expect(workoutPlanSchema.safeParse(moved).success).toBe(true);
+      expect(plan).toEqual(original);
+    },
+  );
+
+  it('can move the fifth exercise to the top and back without breaking any superset', () => {
+    const plan = [1, 1, 2, 2, 3, 3].map((group, position) => item(position, group));
+    const exercise = plan[4];
+    let moved = plan;
+
+    for (let step = 0; step < 4; step += 1) {
+      moved = moveWorkoutPlanExercise(moved, exercise.id, -1);
+      expect(moved.map((entry) => entry.supersetGroup)).toEqual([1, 1, 2, 2, 3, 3]);
+    }
+    expect(moved.map((entry) => entry.id)).toEqual(
+      [4, 0, 1, 2, 3, 5].map((index) => plan[index].id),
+    );
+    for (let step = 0; step < 4; step += 1) {
+      moved = moveWorkoutPlanExercise(moved, exercise.id, 1);
+    }
+
+    expect(moved).toEqual(plan);
+  });
+
+  it('uses stored positions when the incoming plan array is unordered', () => {
+    const plan = [1, 1, 2, 2].map((group, position) => item(position, group));
+    const moved = moveWorkoutPlanExercise([plan[3], plan[1], plan[0], plan[2]], plan[2].id, -1);
+
+    expect(moved.map((entry) => entry.id)).toEqual([0, 2, 1, 3].map((index) => plan[index].id));
+    expect(moved.map((entry) => entry.supersetGroup)).toEqual([1, 1, 2, 2]);
+  });
+
+  it('keeps the plan intact for an absent item or a move outside the list', () => {
+    const plan = [item(0, 1), item(1, 1), item(2, null)];
+
+    expect(moveWorkoutPlanExercise(plan, 'missing', -1)).toEqual(plan);
+    expect(moveWorkoutPlanExercise(plan, plan[0].id, -1)).toEqual(plan);
+    expect(moveWorkoutPlanExercise(plan, plan[2].id, 1)).toEqual(plan);
   });
 });

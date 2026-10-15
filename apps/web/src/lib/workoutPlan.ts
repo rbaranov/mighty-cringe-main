@@ -52,14 +52,17 @@ export function moveWorkoutPlanExercise(
   itemId: string,
   direction: -1 | 1,
 ) {
-  const nextPlan = normalizeWorkoutPlan(plan).map((item) => ({ ...item }));
+  const nextPlan = normalizeWorkoutPlan(
+    [...plan].sort((left, right) => left.position - right.position),
+  );
   const index = nextPlan.findIndex((item) => item.id === itemId);
   const destination = index + direction;
   if (index < 0 || destination < 0 || destination >= nextPlan.length) return nextPlan;
-  if (nextPlan[index].supersetGroup !== nextPlan[destination].supersetGroup) {
-    nextPlan[index].supersetGroup = null;
-  }
-  [nextPlan[index], nextPlan[destination]] = [nextPlan[destination], nextPlan[index]];
+  const source = nextPlan[index];
+  const target = nextPlan[destination];
+  // Group boundaries belong to the slots; exercises keep their identity as they move.
+  nextPlan[index] = { ...target, supersetGroup: source.supersetGroup };
+  nextPlan[destination] = { ...source, supersetGroup: target.supersetGroup };
   return normalizeWorkoutPlan(nextPlan);
 }
 

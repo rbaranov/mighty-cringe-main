@@ -442,6 +442,8 @@ small,
   padding: 1px 2px 4px;
   flex: 1;
   gap: 4px;
+  align-content: start;
+  grid-auto-rows: max-content;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
