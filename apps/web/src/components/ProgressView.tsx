@@ -104,6 +104,13 @@ export function ProgressView({
   const todayKey = dateKeyInTimeZone(new Date(), timeZone);
   const visibleSets = useMemo(() => sets.filter(isValidResultSet), [sets]);
   const completedWorkouts = useMemo(() => workouts.filter(isCompletedResultWorkout), [workouts]);
+  const latestCompletedWorkout = useMemo(
+    () =>
+      [...completedWorkouts].sort(
+        (left, right) => Date.parse(right.startedAt) - Date.parse(left.startedAt),
+      )[0],
+    [completedWorkouts],
+  );
   const workoutDays = useMemo(
     () => buildWorkoutDays(completedWorkouts, visibleSets, timeZone),
     [timeZone, visibleSets, completedWorkouts],
@@ -265,6 +272,20 @@ export function ProgressView({
           'Your workouts, strength and body changes.',
         )}
       </p>
+
+      {latestCompletedWorkout && onShowWorkoutResult && (
+        <button
+          className="progress-latest-result"
+          type="button"
+          onClick={() => onShowWorkoutResult(latestCompletedWorkout)}
+        >
+          <span>{tr(locale, 'Итог последней тренировки', 'Latest workout result')}</span>
+          <time dateTime={latestCompletedWorkout.startedAt}>
+            {formatDate(dateKeyInTimeZone(latestCompletedWorkout.startedAt, timeZone), locale)}
+          </time>
+          <span aria-hidden="true">→</span>
+        </button>
+      )}
 
       {hasUnsyncedData && (
         <p className="progress-notice">

@@ -13,6 +13,7 @@ export function WorkoutResultView({
   sets,
   exercises,
   onDone,
+  doneLabel,
   onOpenWorkout,
   onProgress,
   onFavorite,
@@ -22,6 +23,7 @@ export function WorkoutResultView({
   sets: LocalSet[];
   exercises: Exercise[];
   onDone: () => void;
+  doneLabel?: string;
   onOpenWorkout: () => void;
   onProgress: () => void;
   onFavorite: () => void;
@@ -76,8 +78,42 @@ export function WorkoutResultView({
       ref={resultRef}
       aria-labelledby="workout-result-heading"
     >
+      <nav
+        className="result-actions"
+        aria-label={tr(locale, 'Действия с итогом', 'Result actions')}
+      >
+        <button type="button" onClick={onDone}>
+          <span aria-hidden="true">←</span> {doneLabel ?? tr(locale, 'К плану', 'To plan')}
+        </button>
+        <button type="button" onClick={onProgress}>
+          {tr(locale, 'Прогресс', 'Progress')}
+        </button>
+        <button
+          type="button"
+          onClick={onOpenWorkout}
+          aria-label={tr(locale, 'Открыть тренировку', 'Open workout')}
+        >
+          {tr(locale, 'Править', 'Edit')}
+        </button>
+        <button
+          type="button"
+          className={workout.isFavorite ? 'result-favorite selected' : 'result-favorite'}
+          onClick={onFavorite}
+          aria-label={
+            workout.isFavorite
+              ? tr(locale, 'Изменить название избранного', 'Rename favorite')
+              : tr(locale, 'В избранное', 'Add to favorites')
+          }
+          title={
+            workout.isFavorite
+              ? tr(locale, 'Изменить название избранного', 'Rename favorite')
+              : tr(locale, 'В избранное', 'Add to favorites')
+          }
+        >
+          <span aria-hidden="true">{workout.isFavorite ? '★' : '☆'}</span>
+        </button>
+      </nav>
       <div className="result-heading">
-        <p className="eyebrow">{tr(locale, 'Работа сделана', 'Work done')}</p>
         <h1 id="workout-result-heading">
           {tr(locale, 'Тренировка завершена', 'Workout complete')}
         </h1>
@@ -123,23 +159,12 @@ export function WorkoutResultView({
       </p>
 
       {result.achievements.length > 0 && (
-        <section
-          className="result-achievements"
-          aria-label={tr(locale, 'Новые рекорды', 'New records')}
-        >
-          <h2>
-            {tr(locale, 'Новые рекорды', 'New records')} <span>{result.achievements.length}</span>
-          </h2>
-          <ul className="result-records">{result.achievements.slice(0, 3).map(achievementRow)}</ul>
-          {result.achievements.length > 3 && (
-            <details>
-              <summary>
-                {tr(locale, 'Все рекорды тренировки', 'All workout records')} ·{' '}
-                {result.achievements.length}
-              </summary>
-              <ul className="result-records">{result.achievements.slice(3).map(achievementRow)}</ul>
-            </details>
-          )}
+        <details className="result-achievements">
+          <summary>
+            <span>{tr(locale, 'Новые рекорды', 'New records')}</span>
+            <strong>{result.achievements.length}</strong>
+          </summary>
+          <ul className="result-records">{result.achievements.map(achievementRow)}</ul>
           {result.achievements.some((item) => item.kind === 'estimatedOneRepMax') && (
             <p className="result-note">
               {tr(
@@ -149,12 +174,12 @@ export function WorkoutResultView({
               )}
             </p>
           )}
-        </section>
+        </details>
       )}
 
       <section className="result-comparison" aria-labelledby="result-comparison-heading">
         <h2 id="result-comparison-heading">
-          {tr(locale, 'По сравнению с прошлым разом', 'Compared with last time')}
+          {tr(locale, 'Упражнения · максимальный вес', 'Exercises · top weight')}
         </h2>
         {result.setCount === 0 ? (
           <p>
@@ -168,50 +193,65 @@ export function WorkoutResultView({
           <ul className="result-exercises">
             {result.exercises.map((item) => (
               <li key={item.exerciseId}>
-                <strong>
-                  {names.get(item.exerciseId) ?? tr(locale, 'Упражнение', 'Exercise')}
-                </strong>
-                {item.previous ? (
-                  <>
-                    <small>
-                      {tr(locale, 'Прошлая тренировка', 'Previous workout')}:{' '}
-                      {new Intl.DateTimeFormat(locale === 'ru' ? 'ru-RU' : 'en-US', {
-                        day: 'numeric',
-                        month: 'short',
-                      }).format(new Date(item.previous.startedAt))}
-                    </small>
-                    <div className="result-comparison-values">
-                      <span>{tr(locale, 'Макс. вес', 'Top weight')}</span>
-                      <span>
-                        {weight(item.previous.topWeightKg)} → <b>{weight(item.topWeightKg)}</b>
-                      </span>
-                    </div>
-                    {item.repsComparisons
-                      .filter((comparison) => comparison.delta !== 0)
-                      .map((comparison) => (
-                        <div className="result-comparison-values" key={comparison.weightKg}>
+                <details>
+                  <summary className="result-exercise-summary">
+                    <span className="result-exercise-name">
+                      <strong>
+                        {names.get(item.exerciseId) ?? tr(locale, 'Упражнение', 'Exercise')}
+                      </strong>
+                      <small>
+                        {item.setCount} {tr(locale, 'подх.', 'sets')}
+                      </small>
+                    </span>
+                    <span className="result-exercise-weight">
+                      {item.previous && <small>{weight(item.previous.topWeightKg)} → </small>}
+                      <b>{weight(item.topWeightKg)}</b>
+                    </span>
+                  </summary>
+                  <div className="result-exercise-detail">
+                    {item.previous ? (
+                      <>
+                        <small>
+                          {tr(locale, 'Прошлая тренировка', 'Previous workout')}:{' '}
+                          {new Intl.DateTimeFormat(locale === 'ru' ? 'ru-RU' : 'en-US', {
+                            day: 'numeric',
+                            month: 'short',
+                          }).format(new Date(item.previous.startedAt))}
+                        </small>
+                        <div className="result-comparison-values">
+                          <span>{tr(locale, 'Макс. вес', 'Top weight')}</span>
                           <span>
-                            {tr(locale, 'При', 'At')} {weight(comparison.weightKg)}
-                          </span>
-                          <span>
-                            {comparison.previousReps} →{' '}
-                            <b>
-                              {comparison.reps} {tr(locale, 'повт.', 'reps')}
-                            </b>
+                            {weight(item.previous.topWeightKg)} → <b>{weight(item.topWeightKg)}</b>
                           </span>
                         </div>
-                      ))}
-                  </>
-                ) : (
-                  <p className="result-note">
-                    {tr(
-                      locale,
-                      'Первый результат — точка отсчёта для следующих тренировок.',
-                      'First result — a baseline for your next workouts.',
-                    )}{' '}
-                    {weight(item.topWeightKg)} · {item.setCount} {tr(locale, 'подх.', 'sets')}
-                  </p>
-                )}
+                        {item.repsComparisons
+                          .filter((comparison) => comparison.delta !== 0)
+                          .map((comparison) => (
+                            <div className="result-comparison-values" key={comparison.weightKg}>
+                              <span>
+                                {tr(locale, 'При', 'At')} {weight(comparison.weightKg)}
+                              </span>
+                              <span>
+                                {comparison.previousReps} →{' '}
+                                <b>
+                                  {comparison.reps} {tr(locale, 'повт.', 'reps')}
+                                </b>
+                              </span>
+                            </div>
+                          ))}
+                      </>
+                    ) : (
+                      <p className="result-note">
+                        {tr(
+                          locale,
+                          'Первый результат — точка отсчёта для следующих тренировок.',
+                          'First result — a baseline for your next workouts.',
+                        )}{' '}
+                        {weight(item.topWeightKg)} · {item.setCount} {tr(locale, 'подх.', 'sets')}
+                      </p>
+                    )}
+                  </div>
+                </details>
               </li>
             ))}
           </ul>
@@ -226,23 +266,6 @@ export function WorkoutResultView({
           </p>
         )}
       </section>
-
-      <div className="result-actions">
-        <button className="button primary" onClick={onProgress}>
-          {tr(locale, 'Посмотреть прогресс', 'View progress')}
-        </button>
-        <button className="button ghost" onClick={onOpenWorkout}>
-          {tr(locale, 'Открыть тренировку', 'Open workout')}
-        </button>
-        <button className="button ghost" onClick={onFavorite}>
-          {workout.isFavorite
-            ? tr(locale, 'Изменить название избранного', 'Rename favorite')
-            : tr(locale, 'В избранное', 'Add to favorites')}
-        </button>
-        <button className="button ghost" onClick={onDone}>
-          {tr(locale, 'К плану тренировки', 'Back to workout')}
-        </button>
-      </div>
     </section>
   );
 }
