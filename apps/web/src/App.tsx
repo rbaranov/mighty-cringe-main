@@ -39,6 +39,7 @@ import { FavoriteWorkoutsSection } from './components/FavoriteWorkoutsSection';
 import type { MeasurementDraft } from './components/BodyMeasurementsSection';
 import { ProgressView } from './components/ProgressView';
 import { WorkoutResultView } from './components/WorkoutResultView';
+import { isCompletedResultWorkout } from './lib/workoutResults';
 import { SettingsView, AthleteJournalSettings } from './components/SettingsView';
 import { TrainerDashboard } from './components/TrainerAccess';
 import { AthleteContextHeader } from './components/AthleteContextHeader';
@@ -472,6 +473,7 @@ function AuthenticatedAppContent({
   const [confirmation, setConfirmation] = useState<PendingConfirmation | null>(null);
   const [explainContext, setExplainContext] = useState<{ exercise: Exercise | null } | null>(null);
   const [editingWorkoutId, setEditingWorkoutId] = useState<string | null>(null);
+  const [resultReturnView, setResultReturnView] = useState<View>('workout');
   const [timingWorkoutId, setTimingWorkoutId] = useState<string | null>(null);
   const [favoriteNameWorkoutId, setFavoriteNameWorkoutId] = useState<string | null>(null);
   const [lifecycleNow, setLifecycleNow] = useState(() => Date.now());
@@ -1128,6 +1130,7 @@ function AuthenticatedAppContent({
     processedAt = new Date().toISOString(),
   ) {
     assertLocalContext();
+    setResultReturnView('workout');
     const workoutId = activeWorkout?.id;
     if (!workoutId || finishingWorkoutId.current === workoutId) return;
     finishingWorkoutId.current = workoutId;
@@ -1249,6 +1252,7 @@ function AuthenticatedAppContent({
     await writeLocal(async () => {
       await db.meta.put({ key: 'workoutResultId', value: workout.id });
     });
+    setResultReturnView(view === 'progress' ? 'progress' : 'workout');
     setEditingWorkoutId(null);
     setExerciseDetailId(null);
     setView('workout');
@@ -1820,6 +1824,11 @@ function AuthenticatedAppContent({
           (!resultWorkout || editingWorkout) &&
           'app-shell-live',
         editingWorkout && 'app-shell-history-edit',
+        view === 'workout' &&
+          resultWorkout &&
+          !editingWorkout &&
+          !exerciseDetail &&
+          'app-shell-result',
       ]
         .filter(Boolean)
         .join(' ')}
@@ -1962,11 +1971,16 @@ function AuthenticatedAppContent({
                 workouts={workouts}
                 sets={sets}
                 exercises={exercises}
-                onDone={() => void dismissWorkoutResult()}
-                onOpenWorkout={() => {
+                doneLabel={
+                  resultReturnView === 'progress'
+                    ? tr(locale, 'Назад', 'Back')
+                    : tr(locale, 'К плану', 'To plan')
+                }
+                onDone={() => {
                   void dismissWorkoutResult();
-                  editCompletedWorkout(resultWorkout);
+                  setView(resultReturnView);
                 }}
+                onOpenWorkout={() => editCompletedWorkout(resultWorkout)}
                 onProgress={() => {
                   void dismissWorkoutResult();
                   setView('progress');
@@ -2002,8 +2016,10 @@ function AuthenticatedAppContent({
                 onFinishNow={() => void finishWorkout('manual')}
                 onFinishEditing={() => {
                   setEditingWorkoutId(null);
-                  setView('progress');
+                  setView(resultWorkout?.id === editingWorkout?.id ? 'workout' : 'progress');
                 }}
+                latestCompletedWorkout={workouts.find(isCompletedResultWorkout)}
+                onShowWorkoutResult={(workout) => void showWorkoutResult(workout)}
                 onDismissAutoFinish={() => void dismissAutoFinishNotice()}
                 onEditTiming={(workout) => setTimingWorkoutId(workout.id)}
                 onMoveExercise={(itemId, direction) =>
@@ -2355,6 +2371,8 @@ function LoginScreen({
 }
 
 function WorkoutView({
+  latestCompletedWorkout,
+  onShowWorkoutResult,
   activeWorkout,
   autoFinishedWorkout,
   catalog,
@@ -2392,6 +2410,8 @@ function WorkoutView({
   recovered,
   onDismissRecovery,
 }: {
+  latestCompletedWorkout: LocalWorkout | undefined;
+  onShowWorkoutResult: (workout: LocalWorkout) => void;
   activeWorkout: LocalWorkout | undefined;
   autoFinishedWorkout: LocalWorkout | undefined;
   catalog: Exercise[];
@@ -2523,6 +2543,22 @@ function WorkoutView({
             setCount={autoFinishedSetCount}
             workout={autoFinishedWorkout}
           />
+        )}
+        {latestCompletedWorkout && (
+          <button
+            className="latest-workout-result"
+            type="button"
+            onClick={() => onShowWorkoutResult(latestCompletedWorkout)}
+          >
+            <span>{tr(locale, 'Итог последней тренировки', 'Latest workout result')}</span>
+            <small>
+              {new Intl.DateTimeFormat(locale === 'ru' ? 'ru-RU' : 'en-US', {
+                day: 'numeric',
+                month: 'short',
+              }).format(new Date(latestCompletedWorkout.startedAt))}
+            </small>
+            <span aria-hidden="true">→</span>
+          </button>
         )}
         <FavoriteWorkoutsSection
           exercises={catalog}

@@ -60,6 +60,7 @@ function view(
   workouts = [workout()],
   sets = [set()],
   initialSection: ProgressSection = 'strength',
+  onShowWorkoutResult: ((workout: LocalWorkout) => void) | null = () => {},
 ) {
   return (
     <ProgressView
@@ -75,7 +76,7 @@ function view(
       onResumeWorkout={() => {}}
       onSaveMeasurement={async () => {}}
       onToggleFavorite={() => {}}
-      onShowWorkoutResult={() => {}}
+      onShowWorkoutResult={onShowWorkoutResult ?? undefined}
       sets={sets}
       workouts={workouts}
     />
@@ -134,6 +135,32 @@ describe('ProgressView', () => {
     expect(html).not.toContain('role="slider"');
   });
 
+  it('offers the latest completed workout above the tabs, including an empty workout outside the current month', () => {
+    const latest = workout('latest', '2026-06-25');
+    const earlier = {
+      ...workout('earlier', '2026-06-24'),
+      endedAt: '2026-06-26T18:00:00.000Z',
+    };
+    const active = { ...workout('active', '2026-07-30'), endedAt: null };
+    const invalid = { ...workout('invalid', '2026-07-29'), durationSeconds: -1 };
+    const html = renderToStaticMarkup(view([earlier, active, latest, invalid], []));
+    expect(html).toContain('Итог последней тренировки');
+    expect(html).toContain(`<time dateTime="${latest.startedAt}">`);
+    expect(html.indexOf('Итог последней тренировки')).toBeLessThan(
+      html.indexOf('class="progress-tabs"'),
+    );
+  });
+
+  it('hides the latest result shortcut when there are no completed workouts or no result callback', () => {
+    expect(renderToStaticMarkup(view([], []))).not.toContain('progress-latest-result');
+    expect(renderToStaticMarkup(view([{ ...workout(), endedAt: null }], []))).not.toContain(
+      'progress-latest-result',
+    );
+    expect(renderToStaticMarkup(view(undefined, undefined, 'history', null))).not.toContain(
+      'progress-latest-result',
+    );
+  });
+
   it('retains the full period and every original valid set, excluding deleted and malformed data', () => {
     const workouts = Array.from({ length: 16 }, (_, index) =>
       workout(`w-${index}`, `2026-07-${String(index + 10).padStart(2, '0')}`),
@@ -164,7 +191,8 @@ describe('ProgressView', () => {
     expect(html).not.toContain('999');
     expect(html).not.toContain('NaN');
     // The expandable history contains all 16 workouts, independently of chart points.
-    expect((html.match(/<time dateTime="2026-07-/gu) ?? []).length).toBe(16);
+    const history = html.split('<div class="strength-history">')[1]?.split('</details>')[0] ?? '';
+    expect((history.match(/<time dateTime="2026-07-/gu) ?? []).length).toBe(16);
   });
 
   it('keeps earlier records visible while chart and source select only workouts in the current period', () => {
@@ -194,6 +222,7 @@ describe('ProgressView', () => {
       </PreferencesProvider>,
     );
     expect(html).toContain('Bench press');
+    expect(html).toContain('Latest workout result');
     expect(html).toContain('220.5 lb × 5');
     expect(html).toContain('vs the previous 30 days');
     expect(html).toContain('Best estimated 1RM: +51.4 lb');

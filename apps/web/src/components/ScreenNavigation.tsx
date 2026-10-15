@@ -5,11 +5,12 @@ import './screen-navigation.css';
 
 type BackButtonProps = {
   label: string;
+  text?: string;
   onBack: () => void;
   disabled?: boolean;
 };
 
-export function BackButton({ label, onBack, disabled }: BackButtonProps) {
+export function BackButton({ label, text = label, onBack, disabled }: BackButtonProps) {
   return (
     <KeyboardSafeButton
       aria-label={label}
@@ -24,6 +25,7 @@ export function BackButton({ label, onBack, disabled }: BackButtonProps) {
       <svg aria-hidden="true" viewBox="0 0 24 24" fill="none">
         <path d="m14 5-7 7 7 7" />
       </svg>
+      <span className="navigation-back-label">{text}</span>
     </KeyboardSafeButton>
   );
 }
@@ -51,12 +53,12 @@ export function ScreenNavigation({
       <BackButton
         disabled={disabled}
         label={backLabel}
+        text={title}
         onBack={() => {
           header.current?.closest('.app-content')?.scrollTo(0, 0);
           onBack();
         }}
       />
-      <span className="screen-navigation-title">{title}</span>
     </header>
   );
 }

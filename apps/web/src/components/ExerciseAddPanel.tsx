@@ -93,9 +93,9 @@ export function ExerciseAddPanel({
         <div className="panel-navigation">
           <BackButton
             label={tr(locale, 'К вариантам добавления', 'Back to add options')}
+            text={tr(locale, 'Поиск в интернете', 'Search online')}
             onBack={() => setMode('choice')}
           />
-          <strong>{tr(locale, 'Поиск в интернете', 'Search online')}</strong>
         </div>
         <ExerciseDiscoveryPanel
           autoSearch
@@ -118,10 +118,10 @@ export function ExerciseAddPanel({
         <div className="panel-navigation">
           <BackButton
             label={tr(locale, 'К вариантам добавления', 'Back to add options')}
+            text={tr(locale, 'Быстро создать своё', 'Quickly create your own')}
             disabled={saving}
             onBack={() => setMode('choice')}
           />
-          <strong>{tr(locale, 'Быстро создать своё', 'Quickly create your own')}</strong>
         </div>
         <p>
           {tr(
