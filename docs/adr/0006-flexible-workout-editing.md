@@ -18,6 +18,13 @@ the initial plan; a workout update may atomically replace the complete plan. Sup
 contain at least two consecutive plan items. PostgreSQL stores the normalized plan in
 `workout_exercises`, while API history always returns it with the workout.
 
+The “move up” and “move down” actions swap adjacent exercise items while preserving the superset
+group assigned to each position. For example, moving E up in `[A B][C D][E F]` produces
+`[A B][C E][D F]`: group sizes and boundaries stay intact, while stable item IDs and exercise IDs
+travel together. This also applies when swapping a grouped position with a standalone position.
+The same rule is used in the draft plan, an active workout, and completed-workout editing; linking
+or unlinking adjacent positions remains an explicit separate action.
+
 Treat set order as revisioned set data. Each set carries a position within its exercise. Moving sets
 uses the existing optimistic set update protocol. Set deletion is a dedicated idempotent mutation:
 the PWA keeps a hidden local tombstone until the ordered outbox receives server confirmation, and the
