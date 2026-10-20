@@ -38,6 +38,11 @@ export function setEntryHistory(
     ? ordered(candidates.filter((set) => set.workoutId === previousWorkout.id))
     : [];
   const matching = previousSets[ordinal] ?? null;
+  const latestCurrent =
+    [...current]
+      .filter((set) => set.id !== editing?.id)
+      .sort((a, b) => b.performedAt.localeCompare(a.performedAt) || b.position - a.position)[0] ??
+    null;
   const latest = (rows: LocalSet[]) =>
     [...rows]
       .filter((set) => set.id !== editing?.id)
@@ -48,7 +53,14 @@ export function setEntryHistory(
     number: ordinal + 1,
     previousWorkout,
     previousSets,
-    suggestion: matching ?? fallback,
+    suggestion:
+      matching && latestCurrent && latestCurrent.weightKg > matching.weightKg
+        ? { ...matching, weightKg: latestCurrent.weightKg }
+        : (matching ?? fallback),
+    currentSets: current,
+    useCurrentWeight: Boolean(
+      matching && latestCurrent && latestCurrent.weightKg > matching.weightKg,
+    ),
     useLatest: !matching && fallback !== null,
   };
 }

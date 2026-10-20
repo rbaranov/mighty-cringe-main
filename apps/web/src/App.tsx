@@ -2183,8 +2183,10 @@ function AuthenticatedAppContent({
       <SetSheet
         defaults={setHistory.suggestion}
         useLatest={setHistory.useLatest}
+        useCurrentWeight={setHistory.useCurrentWeight}
         setNumber={setHistory.number}
         previousSets={setHistory.previousSets}
+        currentSets={setHistory.currentSets}
         previousWorkoutDate={setHistory.previousWorkout?.startedAt ?? null}
         exercise={sheet?.exercise ?? null}
         initial={sheet?.set ?? null}
@@ -3242,14 +3244,27 @@ function ExerciseDetailView({
         <ExerciseEnrichmentPanel exercise={exercise} onClose={() => setEnriching(false)} />
       )}
 
-      <section className="exercise-detail-section">
+      {canAddSet && (
+        <div
+          aria-label={tr(locale, 'Действия в текущей тренировке', 'Current workout actions')}
+          className="exercise-detail-actions"
+          role="group"
+        >
+          <span className="exercise-detail-actions-label">
+            {tr(locale, 'В текущей тренировке', 'In this workout')}
+          </span>
+          <button className="button ghost" onClick={onReplaceExercise} type="button">
+            ↻ {tr(locale, 'Заменить', 'Replace')}
+          </button>
+          <button className="button primary" onClick={() => onAddSet(exercise)} type="button">
+            ＋ {tr(locale, 'Подход', 'Set')}
+          </button>
+        </div>
+      )}
+
+      <section className="exercise-detail-section exercise-current-sets">
         <div className="section-head">
           <h2>{tr(locale, 'Подходы сегодня', "Today's sets")}</h2>
-          {canAddSet && (
-            <button className="add-set" onClick={() => onAddSet(exercise)} type="button">
-              ＋ {tr(locale, 'Подход', 'Set')}
-            </button>
-          )}
         </div>
         {currentSets.length ? (
           <div className="detail-set-list">
@@ -3297,37 +3312,6 @@ function ExerciseDetailView({
         ) : (
           <p className="detail-empty">
             {tr(locale, 'В этой тренировке подходов ещё нет.', 'No sets in this workout yet.')}
-          </p>
-        )}
-      </section>
-
-      <section className="exercise-detail-section">
-        <h2>{tr(locale, 'Предыдущие результаты', 'Previous results')}</h2>
-        {previous.length ? (
-          <div className="previous-workouts">
-            {previous.map(({ workout, sets: workoutSets }) => (
-              <article key={workout.id}>
-                <time dateTime={workout.startedAt}>
-                  {new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'ru-RU', {
-                    day: 'numeric',
-                    month: 'short',
-                    year: 'numeric',
-                  }).format(new Date(workout.startedAt))}
-                </time>
-                <div>
-                  {workoutSets.map((set) => (
-                    <span key={set.id}>
-                      {formatWeight(set.weightKg, locale, unitSystem)} × {set.reps}
-                      {set.rir === null ? '' : ` · R${set.rir}`}
-                    </span>
-                  ))}
-                </div>
-              </article>
-            ))}
-          </div>
-        ) : (
-          <p className="detail-empty">
-            {tr(locale, 'Предыдущих подходов пока нет.', 'No previous sets yet.')}
           </p>
         )}
       </section>
@@ -3430,23 +3414,36 @@ function ExerciseDetailView({
         )}
       </section>
 
-      {canAddSet && (
-        <div
-          aria-label={tr(locale, 'Действия в текущей тренировке', 'Current workout actions')}
-          className="exercise-detail-actions"
-          role="group"
-        >
-          <span className="exercise-detail-actions-label">
-            {tr(locale, 'В текущей тренировке', 'In this workout')}
-          </span>
-          <button className="button ghost" onClick={onReplaceExercise} type="button">
-            ↻ {tr(locale, 'Заменить', 'Replace')}
-          </button>
-          <button className="button primary" onClick={() => onAddSet(exercise)} type="button">
-            ＋ {tr(locale, 'Подход', 'Set')}
-          </button>
-        </div>
-      )}
+      <section className="exercise-detail-section exercise-history">
+        <h2>{tr(locale, 'Предыдущие результаты', 'Previous results')}</h2>
+        {previous.length ? (
+          <div className="previous-workouts">
+            {previous.map(({ workout, sets: workoutSets }) => (
+              <article key={workout.id}>
+                <time dateTime={workout.startedAt}>
+                  {new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'ru-RU', {
+                    day: 'numeric',
+                    month: 'short',
+                    year: 'numeric',
+                  }).format(new Date(workout.startedAt))}
+                </time>
+                <div>
+                  {workoutSets.map((set) => (
+                    <span key={set.id}>
+                      {formatWeight(set.weightKg, locale, unitSystem)} × {set.reps}
+                      {set.rir === null ? '' : ` · R${set.rir}`}
+                    </span>
+                  ))}
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p className="detail-empty">
+            {tr(locale, 'Предыдущих подходов пока нет.', 'No previous sets yet.')}
+          </p>
+        )}
+      </section>
     </section>
   );
 }

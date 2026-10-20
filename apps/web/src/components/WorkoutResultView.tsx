@@ -159,11 +159,11 @@ export function WorkoutResultView({
       </p>
 
       {result.achievements.length > 0 && (
-        <details className="result-achievements">
-          <summary>
+        <section className="result-achievements" aria-labelledby="result-records-heading">
+          <h2 id="result-records-heading">
             <span>{tr(locale, 'Новые рекорды', 'New records')}</span>
             <strong>{result.achievements.length}</strong>
-          </summary>
+          </h2>
           <ul className="result-records">{result.achievements.map(achievementRow)}</ul>
           {result.achievements.some((item) => item.kind === 'estimatedOneRepMax') && (
             <p className="result-note">
@@ -174,7 +174,7 @@ export function WorkoutResultView({
               )}
             </p>
           )}
-        </details>
+        </section>
       )}
 
       <section className="result-comparison" aria-labelledby="result-comparison-heading">

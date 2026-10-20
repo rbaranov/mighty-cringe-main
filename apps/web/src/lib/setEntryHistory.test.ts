@@ -13,7 +13,7 @@ const priorSets = [
 describe('set entry history', () => {
   it('matches first, second, third by visible order despite gaps and interleaved exercises', () => {
     const sets = [...priorSets, set('row', 'current', 'row', 20, 10)];
-    for (const [index, expected] of [70, 80, 90].entries()) {
+    for (const [index, expected] of [70, 100, 100].entries()) {
       const result = setEntryHistory(sets, [past, current], current, 'bench');
       expect(result.number).toBe(index + 1);
       expect(result.suggestion?.weightKg).toBe(expected);
@@ -80,6 +80,37 @@ describe('set entry history', () => {
     expect(result.suggestion).toMatchObject({ id: 'last', weightKg: 35, reps: 10, rir: 0 });
     expect(result.useLatest).toBe(true);
     expect(result.previousSets).toEqual([]);
+  });
+
+  it('keeps previous reps but carries a heavier current-workout weight forward', () => {
+    const currentHeavier = set('today', 'current', 'bench', 85, 6, {
+      performedAt: '2026-09-03T10:01:00Z',
+    });
+    const result = setEntryHistory(
+      [...priorSets, currentHeavier],
+      [past, current],
+      current,
+      'bench',
+    );
+
+    expect(result.suggestion).toMatchObject({ weightKg: 85, reps: 8 });
+    expect(result.currentSets.map((row) => row.id)).toEqual(['today']);
+    expect(result.useCurrentWeight).toBe(true);
+  });
+
+  it('does not replace a heavier previous-workout weight with a lighter current set', () => {
+    const currentLighter = set('today', 'current', 'bench', 65, 6, {
+      performedAt: '2026-09-03T10:01:00Z',
+    });
+    const result = setEntryHistory(
+      [...priorSets, currentLighter],
+      [past, current],
+      current,
+      'bench',
+    );
+
+    expect(result.suggestion).toMatchObject({ weightKg: 80, reps: 8 });
+    expect(result.useCurrentWeight).toBe(false);
   });
 
   it('locates the edited ordinal and handles missing history', () => {

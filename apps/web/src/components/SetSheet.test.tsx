@@ -122,6 +122,33 @@ describe('SetSheet', () => {
     expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Сохранить подход/);
   });
 
+  it('separates current workout sets from previous workout sets in the add form', () => {
+    const currentSet = { ...existingSet, id: 'today', weightKg: 90, reps: 6 };
+    const html = renderToStaticMarkup(
+      <SetSheet
+        exercise={exercise}
+        initial={null}
+        defaults={{ ...existingSet, weightKg: 90 }}
+        setNumber={2}
+        currentSets={[currentSet]}
+        useCurrentWeight
+        previousWorkoutDate="2026-07-29T12:00:00.000Z"
+        previousSets={[{ ...existingSet, id: 'first', weightKg: 70 }, existingSet]}
+        onClose={() => {}}
+        onDelete={null}
+        onExplain={() => {}}
+        onSave={() => {}}
+      />,
+    );
+
+    expect(html).toContain('Текущая тренировка');
+    expect(html).toContain('90 кг × 6');
+    expect(html).toContain('Последняя тренировка');
+    expect(html).toContain('прошлого подхода №2');
+    expect(html).toContain('Вес из текущей тренировки');
+    expect(html).toContain('value="90"');
+  });
+
   it('keeps the microphone outside collapsed details and prefills the fallback including zero RIR', () => {
     const html = renderToStaticMarkup(
       <SetSheet
