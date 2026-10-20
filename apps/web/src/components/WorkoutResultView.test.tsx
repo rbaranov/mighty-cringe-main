@@ -89,6 +89,8 @@ describe('WorkoutResultView', () => {
       [set('old-set', previous, 8), set('new-set', current, 10)],
     );
     expect(html).toContain('Новые рекорды');
+    expect(html).toContain('<section class="result-achievements"');
+    expect(html).not.toContain('<details class="result-achievements"');
     expect(html).toContain('8 → 10 повт.');
     expect(html).toContain('Исходный подход');
     expect(html).toContain('не проверенный максимальный вес');

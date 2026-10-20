@@ -35,6 +35,8 @@ type Props = {
   useLatest?: boolean;
   setNumber?: number;
   previousSets?: LocalSet[];
+  currentSets?: LocalSet[];
+  useCurrentWeight?: boolean;
   previousWorkoutDate?: string | null;
   onClose: () => void;
   onDelete: (() => void) | null;
@@ -58,6 +60,8 @@ export function SetSheet({
   useLatest = false,
   setNumber = 1,
   previousSets = [],
+  currentSets = [],
+  useCurrentWeight = false,
   previousWorkoutDate = null,
   onClose,
   onDelete,
@@ -71,7 +75,7 @@ export function SetSheet({
     : tr(locale, 'Сказать или написать', 'Speak or type');
   const [historyExpanded, setHistoryExpanded] = useState(() => {
     try {
-      return window.localStorage.getItem(historyExpandedKey) === 'true';
+      return window.localStorage.getItem(historyExpandedKey) !== 'false';
     } catch {
       return false;
     }
@@ -216,6 +220,27 @@ export function SetSheet({
               <span>{explainLabel}</span>
             </button>
           )}
+          {currentSets.length > 0 && (
+            <div className="set-history set-history-current">
+              <p className="set-history-heading">
+                {tr(locale, 'Текущая тренировка', 'Current workout')}
+              </p>
+              <ol>
+                {currentSets.map((set, index) => (
+                  <li
+                    className={index + 1 === currentSets.length ? 'current-set' : undefined}
+                    key={set.id}
+                  >
+                    <span>№{index + 1}</span>
+                    <span>
+                      {formatWeight(set.weightKg, locale, unitSystem)} × {set.reps}
+                    </span>
+                    <span>{set.rir === null ? 'RIR —' : `RIR ${set.rir}`}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
           {previousWorkoutDate ? (
             <div className="set-history">
               <details
@@ -263,9 +288,11 @@ export function SetSheet({
           )}
           {!initial && defaults && (
             <p className="set-entry-source">
-              {useLatest
-                ? tr(locale, 'Последний результат', 'Latest result')
-                : tr(locale, `Прошлый подход №${setNumber}`, `Previous set #${setNumber}`)}
+              {useCurrentWeight
+                ? `${tr(locale, 'Вес из текущей тренировки', 'Weight from this workout')} · ${tr(locale, `повторения из прошлого подхода №${setNumber}`, `reps from previous set #${setNumber}`)}`
+                : useLatest
+                  ? tr(locale, 'Последний результат', 'Latest result')
+                  : tr(locale, `Прошлый подход №${setNumber}`, `Previous set #${setNumber}`)}
               : {formatWeight(defaults.weightKg, locale, unitSystem)} × {defaults.reps}
               {defaults.rir === null ? '' : ` · RIR ${defaults.rir}`}
             </p>
