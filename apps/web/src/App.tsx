@@ -116,6 +116,7 @@ import {
 } from './lib/preferences';
 import { setEntrySourceSuffix } from './lib/setEntrySource';
 import { setEntryHistory } from './lib/setEntryHistory';
+import { PreviousExerciseResult } from './components/PreviousExerciseResult';
 import { nextSetPosition } from './lib/setPosition';
 import { resolveSession } from './lib/session';
 import {
@@ -1985,6 +1986,7 @@ function AuthenticatedAppContent({
             )}
             {view === 'workout' && (!resultWorkout || editingWorkout) && (
               <WorkoutView
+                workouts={workouts}
                 activeWorkout={workoutContext}
                 autoFinishedWorkout={autoFinishedWorkout}
                 catalog={exercises}
@@ -2363,6 +2365,7 @@ function LoginScreen({
 }
 
 function WorkoutView({
+  workouts,
   latestCompletedWorkout,
   onShowWorkoutResult,
   activeWorkout,
@@ -2402,6 +2405,7 @@ function WorkoutView({
   recovered,
   onDismissRecovery,
 }: {
+  workouts: LocalWorkout[];
   latestCompletedWorkout: LocalWorkout | undefined;
   onShowWorkoutResult: (workout: LocalWorkout) => void;
   activeWorkout: LocalWorkout | undefined;
@@ -2523,6 +2527,7 @@ function WorkoutView({
             •••
           </button>
         </div>
+        <PreviousExerciseResult exerciseId={exercise.id} sets={sets} workouts={workouts} />
       </article>
     );
     return (
@@ -2737,6 +2742,12 @@ function WorkoutView({
             </button>
           </div>
         </div>
+        <PreviousExerciseResult
+          exerciseId={exercise.id}
+          sets={sets}
+          workouts={workouts}
+          workout={activeWorkout}
+        />
         {logged.length ? (
           <div className="sets-line compact-set-list">
             {logged.map((set, setIndex) => (

@@ -8287,3 +8287,11 @@ body {
 .sheet:not(.set-entry-sheet) :is(input, textarea, select) {
   font-size: 16px;
 }
+
+.previous-exercise-result {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}

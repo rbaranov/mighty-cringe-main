@@ -4,7 +4,7 @@ import type { LocalSet, LocalWorkout } from './db';
 export function setEntryHistory(
   sets: LocalSet[],
   workouts: LocalWorkout[],
-  workout: LocalWorkout | undefined,
+  workout: Pick<LocalWorkout, 'id' | 'startedAt'> | undefined,
   exerciseId: string | undefined,
   editing: LocalSet | null = null,
 ) {
