@@ -1,7 +1,7 @@
 # MightyCringe
 
 Offline-first PWA for strength training: workout logging, exercise catalog, progress, voice
-capture and read-only coach access.
+capture and coach access to the training journal.
 
 ## About the project
 
@@ -26,7 +26,8 @@ What it does:
   per muscle group and per exercise, body measurements and full history.
 - **Exercise catalog** — shared plus personal, filtered by muscle group and by tag; unknown
   exercise names can be researched online and saved to your own catalog with technique notes.
-- **Coach access** — read-only view of an athlete's workouts and measurements, by invitation.
+- **Coach access** — access to view and edit an athlete's training journal through an active
+  invitation-based relationship.
 
 The interface is in Russian.
 
@@ -123,8 +124,8 @@ See [ADR 0001](docs/adr/0001-production-platform.md) for the decision and
 ## Current implementation boundary
 
 The application includes local-first workout and measurement flows, deterministic typed commands,
-Google OIDC sessions, trainer read-only access, private queued voice processing, opt-in push, and a
-durable ordered outbox with explicit revision conflicts. Provider-backed voice and push remain
+Google OIDC sessions, trainer access to view and edit the training journal, private queued voice
+processing, opt-in push, and a durable ordered outbox with explicit revision conflicts. Provider-backed voice and push remain
 disabled until their complete production credential groups are configured. Unknown exercise names
 can be researched through a server-side, citation-grounded search, explicitly confirmed, and saved
 to the authenticated user's personal catalog. This search remains disabled until the server has
