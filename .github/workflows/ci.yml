@@ -60,8 +60,8 @@ jobs:
           docker run --rm mighty-cringe-web:ci nginx -t
           docker run --rm mighty-cringe-web:ci nginx -v
           container=$(docker run -d --rm -p 127.0.0.1:18080:80 mighty-cringe-web:ci)
-          trap 'docker stop "$container"' EXIT
-          curl --fail --retry 10 --retry-connrefused --retry-delay 1 http://127.0.0.1:18080/ -o /tmp/web-index.html
+          trap 'docker logs "$container"; docker stop "$container"' EXIT
+          curl --fail --max-time 5 --retry 10 --retry-all-errors --retry-delay 1 --retry-max-time 30 http://127.0.0.1:18080/ -o /tmp/web-index.html
           curl --fail http://127.0.0.1:18080/workouts/new -o /tmp/web-route.html
           cmp /tmp/web-index.html /tmp/web-route.html
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18080/missing.js)" = 404
